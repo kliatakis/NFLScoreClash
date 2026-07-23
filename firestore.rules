@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── users/{uid} — one doc per person: profile, avatar, lastSeen markers ──
+    match /users/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null; // profile writes are self-only in practice (enforced client-side)
+    }
+
+    // ── leagues/{leagueId} — one doc per league (was a single mega-doc before) ──
+    // Anyone signed in can read (needed to look up a league by its join code).
+    // Writes are gated in the app (super admin / admin checks) rather than here —
+    // same pragmatic stance as the original project: this is a private
+    // friend-group tool, not a public multi-tenant SaaS. Tighten if that changes.
+    match /leagues/{leagueId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // ── predictions/{uid} — one doc per person, SHARED across every league ──
+    // they're in (this is the key scaling fix vs. the old per-league copies).
+    // Admin overrides need to write into another user's doc, so this can't be
+    // locked to request.auth.uid == uid at the rules layer without Firestore
+    // being able to check "is requester an admin of a league this uid is also
+    // in" — which needs a query, not just a get(), and rules can't do that.
+    // So, same as leagues: app-level checks gate who can actually call this.
+    match /predictions/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // ── results/{seasonId} — one small doc for the whole season's scores ──
+    match /results/{seasonId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}
