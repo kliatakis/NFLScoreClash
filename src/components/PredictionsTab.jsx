@@ -96,9 +96,9 @@ function GameRow({ fixture, pick, result, uid, timezone }) {
           <span className="lock-badge locked">🔒 Locked</span>
         ) : (
           <>
-            <input className="score-input" value={away} disabled={locked} onChange={e => { setAway(e.target.value); setDirty(true); }} />
+            <input className="score-input" placeholder="A" value={away} disabled={locked} onChange={e => { setAway(e.target.value); setDirty(true); }} />
             <span style={{ color: "var(--muted)" }}>–</span>
-            <input className="score-input" value={home} disabled={locked} onChange={e => { setHome(e.target.value); setDirty(true); }} />
+            <input className="score-input" placeholder="H" value={home} disabled={locked} onChange={e => { setHome(e.target.value); setDirty(true); }} />
             <button className="btn btn-primary btn-sm" disabled={!dirty} onClick={save}>Save</button>
           </>
         )}

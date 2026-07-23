@@ -129,8 +129,7 @@ export const css = (dark = true) => `
   .fixture-body { display: flex; align-items: center; gap: 14px; padding: 10px 18px 14px; flex-wrap: wrap; }
   .fixture-teams { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .fixture-team-row { display: flex; align-items: center; }
-  .fixture-vs { padding-left: 34px; }
-  .fixture-vs { font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+  .fixture-vs { padding-left: 34px; font-size: 10px; color: var(--muted); letter-spacing: 1px; }
   .score-input { width: 46px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: var(--font-body); font-size: 17px; font-weight: 800; padding: 6px; border-radius: 8px; text-align: center; outline: none; }
   .score-input:focus { border-color: var(--accent); }
   .score-input:disabled { opacity: 0.5; }
@@ -166,10 +165,12 @@ export const css = (dark = true) => `
 
   .tiebreak-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: var(--surface3); color: var(--accent); font-size: 11px; font-style: normal; cursor: help; flex-shrink: 0; }
   .standings-legend { margin-top: 10px; padding: 14px 16px 4px; font-size: 11px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--border); }
-  .standings-legend-title { font-family: var(--font-display); font-size: 12px; letter-spacing: 1px; color: var(--text); margin-bottom: 6px; text-transform: uppercase; }
+  .standings-legend-title { font-family: var(--font-body); font-size: 12px; font-weight: 800; letter-spacing: 1.5px; color: var(--text); margin-bottom: 6px; text-transform: uppercase; }
   .standings-legend ol { margin: 0; padding-left: 18px; }
   .standings-legend li { margin-bottom: 4px; }
   .standings-legend li:last-child { margin-bottom: 0; }
+  .standings-legend ol ol { list-style: lower-alpha; margin-top: 4px; padding-left: 16px; }
+  .standings-legend ol ol li { margin-bottom: 2px; }
 
   /* MODALS */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 500; padding: 20px; }
@@ -199,7 +200,7 @@ export const css = (dark = true) => `
   .chip.super { background: rgba(245,158,11,0.15); color: var(--gold); border-color: rgba(245,158,11,0.35); }
   .league-code-pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; border-radius: 20px; background: var(--surface2); border: 1px solid var(--border); }
   .league-code-pill-label { font-size: 9px; font-weight: 800; letter-spacing: 1px; color: var(--muted); }
-  .league-code-pill code { font-family: var(--font-display); font-size: 13px; font-weight: 700; letter-spacing: 1.5px; color: var(--text); background: none; padding: 0; }
+  .league-code-pill code { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 15px; font-weight: 700; letter-spacing: 1px; color: var(--gold); background: none; padding: 0; }
   .league-code-copy { border: none; cursor: pointer; padding: 4px 12px; border-radius: 14px; font-size: 10.5px; font-weight: 700; background: var(--accent); color: #fff; }
   .league-code-copy:hover { filter: brightness(1.1); }
 

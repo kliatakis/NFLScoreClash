@@ -102,7 +102,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
               {f.network ? ` · ${f.network}` : ""}
               {f.note ? ` · ${f.note}` : ""}
             </div>
-            <div className="fixture-body" style={{ flexDirection: "column", alignItems: "flex-start" }}>
+            <div className="fixture-body">
               <span className="fixture-teams">
                 <span className="fixture-team-row"><TeamBadge code={f.away} showName /></span>
                 <span className="fixture-vs">@</span>

@@ -70,8 +70,14 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
             (e.g. predicting 21–7 and it lands 21–7) counts as an Exact Score only, not also an Outcome.
           </li>
           <li>
-            Ties on Total Points are broken in order: 1) Super Bowl pick, 2) conference picks, 3) division picks,
-            4) exact scores — look for the <span className="tiebreak-info" style={{ position: "static" }}>ⓘ</span> next to a name for the reason.
+            Ties on Total Points are broken in this order — look for the <span className="tiebreak-info" style={{ position: "static" }}>ⓘ</span> next
+            to a name for the exact reason:
+            <ol>
+              <li>Super Bowl winner pick</li>
+              <li>Conference (AFC/NFC) winner picks</li>
+              <li>Division winner picks</li>
+              <li>Exact scores</li>
+            </ol>
           </li>
         </ol>
       </div>
