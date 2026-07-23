@@ -127,7 +127,9 @@ export const css = (dark = true) => `
   .fixture-card.predicted { border-color: rgba(59,130,246,0.35); }
   .fixture-meta { padding: 10px 18px 0; font-size: 11px; color: var(--text); opacity: 0.7; letter-spacing: 0.2px; }
   .fixture-body { display: flex; align-items: center; gap: 14px; padding: 10px 18px 14px; flex-wrap: wrap; }
-  .fixture-teams { flex: 1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+  .fixture-teams { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .fixture-team-row { display: flex; align-items: center; }
+  .fixture-vs { padding-left: 34px; }
   .fixture-vs { font-size: 10px; color: var(--muted); letter-spacing: 1px; }
   .score-input { width: 46px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: var(--font-body); font-size: 17px; font-weight: 800; padding: 6px; border-radius: 8px; text-align: center; outline: none; }
   .score-input:focus { border-color: var(--accent); }
@@ -166,7 +168,8 @@ export const css = (dark = true) => `
 
   /* PROFILE DROPDOWN */
   .profile-btn { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 12px; padding: 5px 12px 5px 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
-  .profile-dropdown { position: absolute; top: calc(100% + 10px); right: 28px; width: 280px; border-radius: 16px; z-index: 300; overflow: hidden; animation: dropIn 0.16s ease; }
+  .profile-dropdown { position: absolute; top: calc(100% + 10px); right: 28px; width: 320px; max-width: calc(100vw - 40px); border-radius: 16px; z-index: 300; overflow: hidden; animation: dropIn 0.16s ease; }
+  .profile-dropdown .form-select { font-size: 13.5px; padding: 10px 12px; }
   @keyframes dropIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
   .profile-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
 
@@ -179,6 +182,17 @@ export const css = (dark = true) => `
   .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); }
   .chip.active { background: rgba(59,130,246,0.15); color: var(--accent); border-color: rgba(59,130,246,0.35); }
   .chip.super { background: rgba(245,158,11,0.15); color: var(--gold); border-color: rgba(245,158,11,0.35); }
+
+  /* ADMIN PANEL — larger, more legible text throughout (bumped up from the
+     app's default compact sizing per feedback that it was hard to read). */
+  .admin-panel { font-size: 15px; }
+  .admin-panel .chip { font-size: 13.5px; padding: 7px 16px; font-weight: 700; }
+  .admin-panel .form-label { font-size: 13px; }
+  .admin-panel .form-select, .admin-panel .form-input { font-size: 15px; }
+  .admin-panel .standings-row { font-size: 15px; }
+  .admin-panel p { line-height: 1.5; }
+  .admin-panel .btn-sm { font-size: 13px; padding: 8px 16px; }
+  .admin-panel .score-input { font-size: 15px; }
 
   /* Shared keyframes used by the animated logo intro (components/Logo.jsx) */
   @keyframes draw-ring { to { stroke-dashoffset: 0; } }

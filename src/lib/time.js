@@ -13,9 +13,9 @@ export const DEFAULT_TIMEZONE = "Europe/Athens";
 // A curated list, not the full IANA database — enough spread to cover most
 // leagues without turning the settings dropdown into an unusable 400-entry list.
 export const COMMON_TIMEZONES = [
-  { id: "Europe/Athens", label: "Athens / Eastern Europe (EEST/EET)" },
+  { id: "Europe/Athens", label: "Athens (EEST/EET)" },
   { id: "Europe/London", label: "London (GMT/BST)" },
-  { id: "Europe/Paris", label: "Paris, Berlin, Rome (CEST/CET)" },
+  { id: "Europe/Paris", label: "Central Europe (CEST/CET)" },
   { id: "Europe/Moscow", label: "Moscow (MSK)" },
   { id: "America/New_York", label: "US Eastern (ET)" },
   { id: "America/Chicago", label: "US Central (CT)" },
@@ -24,7 +24,7 @@ export const COMMON_TIMEZONES = [
   { id: "America/Sao_Paulo", label: "São Paulo (BRT)" },
   { id: "Asia/Dubai", label: "Dubai (GST)" },
   { id: "Asia/Kolkata", label: "India (IST)" },
-  { id: "Asia/Singapore", label: "Singapore / Hong Kong (SGT)" },
+  { id: "Asia/Singapore", label: "Singapore / HK (SGT)" },
   { id: "Asia/Tokyo", label: "Tokyo / Seoul (JST)" },
   { id: "Australia/Sydney", label: "Sydney (AEST/AEDT)" },
   { id: "Pacific/Auckland", label: "Auckland (NZST/NZDT)" },

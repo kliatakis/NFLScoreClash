@@ -76,7 +76,9 @@ function GameRow({ fixture, pick, result, uid, timezone }) {
       </div>
       <div className="fixture-body">
         <span className="fixture-teams">
-          <TeamBadge code={fixture.away} showName /> <span className="fixture-vs">@</span> <TeamBadge code={fixture.home} showName />
+          <span className="fixture-team-row"><TeamBadge code={fixture.away} showName /></span>
+          <span className="fixture-vs">@</span>
+          <span className="fixture-team-row"><TeamBadge code={fixture.home} showName /></span>
         </span>
         {hasResult ? (
           <span style={{ fontFamily: "var(--font-display)", fontSize: 18 }}>{result.awayScore}–{result.homeScore}</span>
@@ -98,13 +100,22 @@ function GameRow({ fixture, pick, result, uid, timezone }) {
   );
 }
 
+const SPECIAL_SUBTABS = [
+  { key: "division", label: "Division" },
+  { key: "conference", label: "Conference" },
+  { key: "superbowl", label: "Super Bowl" },
+];
+
 function SpecialPicks({ preds, uid }) {
   const seasonLocked = useSeasonPicksLock();
   const countdown = useCountdown(SEASON.openerKickoffUTC);
+  const [subtab, setSubtab] = useState("division");
 
   const save = async (typeId, team) => {
     await fsSaveSpecialPick(uid, typeId, team);
   };
+
+  const typesForSubtab = SPECIAL_PICK_TYPES.filter(t => t.kind === subtab);
 
   return (
     <div>
@@ -115,7 +126,14 @@ function SpecialPicks({ preds, uid }) {
           <span className="lock-badge open">🔓 Locks in {countdown.days}d {countdown.hours}h {countdown.mins}m</span>
         ) : null}
       </div>
-      {SPECIAL_PICK_TYPES.map(type => {
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {SPECIAL_SUBTABS.map(t => (
+          <button key={t.key} className={`nav-tab ${subtab === t.key ? "active" : ""}`} onClick={() => setSubtab(t.key)}>{t.label}</button>
+        ))}
+      </div>
+
+      {typesForSubtab.map(type => {
         const options = type.kind === "division" ? teamsByDivision(type.division) : TEAM_CODES;
         const current = preds.specials?.[type.id] || "";
         return (

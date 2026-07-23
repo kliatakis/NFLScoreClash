@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   fsCreateLeague, fsGetLeague, fsAddLeagueMember, fsRemoveLeagueMember,
   fsSetLeagueAdmins, fsDeleteLeague, fsGetAllUsers,
@@ -6,11 +6,34 @@ import {
 import { generateCode, DEFAULT_SCORING } from "../lib/scoring.js";
 import Avatar from "./Avatar.jsx";
 import AdminPanel from "./AdminPanel.jsx";
+import StandingsCard from "./StandingsCard.jsx";
 
-export default function LeaguesTab({ user, myLeagues, allUsers, selectedLeague, onSetLeague, refresh }) {
+export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, results, specialResults, selectedLeague, onSetLeague, refresh }) {
   const [modal, setModal] = useState(null); // "create" | "join"
   const [expandedId, setExpandedId] = useState(null);
-  const [expandedPanel, setExpandedPanel] = useState("members"); // members | admin
+  const [expandedPanel, setExpandedPanel] = useState("standings"); // standings | members | admin
+  const [copiedId, setCopiedId] = useState(null);
+
+  // If you're only in one league, jump straight to its standings — no need
+  // to click "Manage" first. With more than one, you pick which to expand.
+  useEffect(() => {
+    if (myLeagues.length === 1 && expandedId === null) {
+      setExpandedId(myLeagues[0].id);
+      setExpandedPanel("standings");
+    }
+  }, [myLeagues.length]);
+
+  const openLeague = (leagueId) => {
+    onSetLeague(leagueId);
+    setExpandedId(id => (id === leagueId ? null : leagueId));
+    setExpandedPanel("standings");
+  };
+
+  const copyCode = (code) => {
+    navigator.clipboard?.writeText(code);
+    setCopiedId(code);
+    setTimeout(() => setCopiedId(null), 1500);
+  };
 
   return (
     <div>
@@ -37,26 +60,37 @@ export default function LeaguesTab({ user, myLeagues, allUsers, selectedLeague, 
         return (
           <div key={league.id} className="glass card" style={{ marginBottom: 14, borderColor: isSelected ? "rgba(59,130,246,0.4)" : undefined }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ cursor: "pointer", flex: 1, minWidth: 180 }} onClick={() => onSetLeague(league.id)}>
+              <div style={{ cursor: "pointer", flex: 1, minWidth: 180 }} onClick={() => openLeague(league.id)}>
                 <div style={{ fontWeight: 800, fontSize: 16 }}>{league.name} {isSelected && <span className="chip active">Active</span>}</div>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   {league.members.length} member{league.members.length !== 1 ? "s" : ""} · code <code>{league.id}</code>
-                  {isSuperAdmin && <span className="chip super" style={{ marginLeft: 8 }}>Super Admin</span>}
-                  {!isSuperAdmin && isAdmin && <span className="chip active" style={{ marginLeft: 8 }}>Admin</span>}
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ padding: "2px 10px", fontSize: 11 }}
+                    onClick={(e) => { e.stopPropagation(); copyCode(league.id); }}
+                  >
+                    {copiedId === league.id ? "Copied!" : "Copy Code"}
+                  </button>
+                  {isSuperAdmin && <span className="chip super">Super Admin</span>}
+                  {!isSuperAdmin && isAdmin && <span className="chip active">Admin</span>}
                 </div>
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setExpandedId(isExpanded ? null : league.id); setExpandedPanel("members"); }}>
-                {isExpanded ? "Hide" : "Manage"}
+              <button className="btn btn-ghost btn-sm" onClick={() => openLeague(league.id)}>
+                {isExpanded ? "Hide" : "View"}
               </button>
             </div>
 
             {isExpanded && (
               <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                  <button className={`nav-tab ${expandedPanel === "standings" ? "active" : ""}`} onClick={() => setExpandedPanel("standings")}>Standings</button>
                   <button className={`nav-tab ${expandedPanel === "members" ? "active" : ""}`} onClick={() => setExpandedPanel("members")}>Members</button>
                   {isAdmin && <button className={`nav-tab ${expandedPanel === "admin" ? "active" : ""}`} onClick={() => setExpandedPanel("admin")}>Admin Panel</button>}
                 </div>
 
+                {expandedPanel === "standings" && (
+                  <StandingsCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} specialResults={specialResults} />
+                )}
                 {expandedPanel === "members" && (
                   <MembersList
                     league={league} user={user} allUsers={allUsers} isSuperAdmin={isSuperAdmin} isAdmin={isAdmin}

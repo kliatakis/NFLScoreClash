@@ -1,9 +1,7 @@
-import { useEffect, useMemo } from "react";
-import { calcStandingsWithMovement, getScoringSettings } from "../lib/scoring.js";
-import { fsSaveLeagueStandingsSnapshot } from "../firebase.js";
+import { useMemo } from "react";
+import { calcStandings, getScoringSettings } from "../lib/scoring.js";
 import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
-import Avatar from "./Avatar.jsx";
-import MovementArrows from "./MovementArrows.jsx";
+import StandingsCard from "./StandingsCard.jsx";
 import TeamBadge from "./TeamBadge.jsx";
 
 export default function DashboardTab({ user, league, allUsers, allPredictions, results, specialResults, lastLoginPrev, setTab }) {
@@ -17,13 +15,11 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
   }
 
   const scoring = getScoringSettings(league);
-  const { standings, movementByUid, shouldPersist, newSnapshot, newVersion } =
-    useMemo(() => calcStandingsWithMovement(league, allUsers, allPredictions, results, specialResults, scoring),
-      [league, allUsers, allPredictions, results, specialResults]);
-
-  useEffect(() => {
-    if (shouldPersist) fsSaveLeagueStandingsSnapshot(league.id, newSnapshot, newVersion);
-  }, [shouldPersist, newVersion]);
+  // Used only for the "my rank / my points / my accuracy" stat cards below;
+  // StandingsCard independently computes (and persists) the same standings
+  // for the movement-arrow table, so this is a light, side-effect-free calc.
+  const standings = useMemo(() => calcStandings(league, allUsers, allPredictions, results, specialResults, scoring),
+    [league, allUsers, allPredictions, results, specialResults]);
 
   // "What's new since you last logged in" — driven by the account-wide
   // lastLoginAt timestamp (see App.jsx / firebase.js), not localStorage, so
@@ -85,17 +81,8 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         </div>
       </div>
 
-      <div className="glass card" style={{ marginBottom: 24 }}>
-        <div className="card-title">Standings</div>
-        {standings.map((entry, i) => (
-          <div key={entry.uid} className="standings-row">
-            <span className={`standings-rank ${i === 0 ? "gold" : i === 1 ? "silver" : i === 2 ? "bronze" : ""}`}>{i + 1}</span>
-            <Avatar user={allUsers[entry.uid]} size={30} />
-            <span className={`standings-name ${entry.uid === user.uid ? "you" : ""}`}>{entry.username}</span>
-            <MovementArrows movement={movementByUid[entry.uid]} />
-            <span className="standings-pts">{entry.points}</span>
-          </div>
-        ))}
+      <div style={{ marginBottom: 24 }}>
+        <StandingsCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} specialResults={specialResults} />
       </div>
 
       <div className="card-title">Upcoming Games</div>

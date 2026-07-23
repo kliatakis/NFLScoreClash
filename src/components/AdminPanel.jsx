@@ -1,15 +1,18 @@
 import { useState } from "react";
-import { REGULAR_SEASON_FIXTURES, PLAYOFF_ROUNDS, SPECIAL_PICK_TYPES, SEASON } from "../data/fixtures.js";
+import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON } from "../data/fixtures.js";
 import { TEAMS, TEAM_CODES, teamsByDivision } from "../data/teams.js";
 import {
   fsSetResult, fsClearResult, fsSetSpecialResult, fsUpdateLeague, fsDeleteLeague,
-  fsAdminOverrideGamePrediction, fsGetPredictions, fsGetAllUsers, fsSetPlayoffFixture,
+  fsAdminOverrideGamePrediction, fsGetPredictions, fsGetAllUsers,
 } from "../firebase.js";
 import { DEFAULT_SCORING, getScoringSettings } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
 import TeamBadge from "./TeamBadge.jsx";
 
-const SECTIONS = ["Results", "Overrides", "Special Picks", "Playoffs", "Scoring", "Danger Zone"];
+// Playoff matchups aren't entered in-app — once real seeding is known, update
+// the schedule data directly (same workflow as the regular-season fixtures)
+// and redeploy, rather than maintaining a separate admin-entry UI for it.
+const SECTIONS = ["Results", "Overrides", "Special Picks", "Scoring Settings", "Danger Zone"];
 
 export default function AdminPanel({ league, user, isSuperAdmin, refresh, onLeagueDeleted }) {
   const [section, setSection] = useState("Results");
@@ -32,7 +35,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, refresh, onLeag
   };
 
   return (
-    <div>
+    <div className="admin-panel">
       <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
         {SECTIONS.filter(s => s !== "Danger Zone" || isSuperAdmin).map(s => (
           <button key={s} className={`chip ${section === s ? "active" : ""}`} style={{ cursor: "pointer" }} onClick={() => setSection(s)}>{s}</button>
@@ -45,7 +48,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, refresh, onLeag
             <button className="btn btn-ghost btn-sm" onClick={fetchLatest} disabled={fetching}>
               {fetching ? "Fetching…" : "Fetch Latest Results (ESPN)"}
             </button>
-            {fetchMsg && <span style={{ fontSize: 12, color: "var(--muted)" }}>{fetchMsg}</span>}
+            {fetchMsg && <span style={{ fontSize: 14, color: "var(--muted)" }}>{fetchMsg}</span>}
           </div>
           <ResultsEntry timezone={user.timezone} />
         </div>
@@ -53,8 +56,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, refresh, onLeag
 
       {section === "Overrides" && <OverridesEntry league={league} adminUid={user.uid} refresh={refresh} />}
       {section === "Special Picks" && <SpecialResultsEntry />}
-      {section === "Playoffs" && <PlayoffFixturesEntry />}
-      {section === "Scoring" && <ScoringSettings league={league} refresh={refresh} />}
+      {section === "Scoring Settings" && <ScoringSettings league={league} refresh={refresh} />}
       {section === "Danger Zone" && isSuperAdmin && <DangerZone league={league} onLeagueDeleted={onLeagueDeleted} />}
     </div>
   );
@@ -77,11 +79,11 @@ function ResultsEntry({ timezone }) {
       <select className="form-select" style={{ marginBottom: 14, maxWidth: 160 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
         {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1).map(w => <option key={w} value={w}>Week {w}</option>)}
       </select>
-      {fixtures.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>No fixtures loaded for this week yet — see the TODO in data/fixtures.js.</div>}
+      {fixtures.length === 0 && <div style={{ color: "var(--muted)", fontSize: 14 }}>No fixtures loaded for this week yet — see the TODO in data/fixtures.js.</div>}
       {fixtures.map(f => (
         <div key={f.id} className="standings-row" style={{ flexWrap: "wrap" }}>
-          <span style={{ flexBasis: "100%", fontSize: 11, color: "var(--muted)" }}>{formatKickoff(f.kickoffUTC, timezone)}</span>
-          <span style={{ flex: 1, fontSize: 13 }}><TeamBadge code={f.away} /> @ <TeamBadge code={f.home} /></span>
+          <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)" }}>{formatKickoff(f.kickoffUTC, timezone)}</span>
+          <span style={{ flex: 1, fontSize: 15 }}><TeamBadge code={f.away} /> @ <TeamBadge code={f.home} /></span>
           <input className="score-input" placeholder="A" defaultValue=""
             onChange={e => setInputs(s => ({ ...s, [f.id]: { ...s[f.id], away: e.target.value } }))} />
           <span className="score-sep">–</span>
@@ -115,7 +117,7 @@ function OverridesEntry({ league, adminUid, refresh }) {
 
   return (
     <div>
-      <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>
+      <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>
         Correct a member's prediction if they made an entry error. They'll see an asterisk marking it as admin-corrected.
       </p>
       {msg && <div className="success-msg">{msg}</div>}
@@ -152,61 +154,20 @@ function SpecialResultsEntry() {
   };
   return (
     <div>
-      <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>Set the actual winner once known — these score everyone's preseason picks across every league.</p>
+      <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>Set the actual winner once known — these score everyone's preseason picks across every league.</p>
       {SPECIAL_PICK_TYPES.map(type => {
         const options = type.kind === "division" ? teamsByDivision(type.division) : TEAM_CODES;
         return (
           <div key={type.id} className="standings-row">
-            <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{type.label}</span>
+            <span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{type.label}</span>
             <select className="form-select" style={{ maxWidth: 200 }} defaultValue="" onChange={e => set(type.id, e.target.value)}>
               <option value="">Not decided yet</option>
               {options.map(code => <option key={code} value={code}>{TEAMS[code].city} {TEAMS[code].name}</option>)}
             </select>
-            {saved[type.id] && <span style={{ color: "var(--green)", fontSize: 12 }}>Saved</span>}
+            {saved[type.id] && <span style={{ color: "var(--green)", fontSize: 13 }}>Saved</span>}
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function PlayoffFixturesEntry() {
-  const [round, setRound] = useState(PLAYOFF_ROUNDS[0].id);
-  const [home, setHome] = useState(""); const [away, setAway] = useState("");
-  const [msg, setMsg] = useState("");
-
-  const add = async () => {
-    if (!home || !away) return;
-    const id = `${round}_${Date.now()}`;
-    await fsSetPlayoffFixture(id, { round, home, away, kickoffUTC: null });
-    setMsg("Matchup added.");
-    setHome(""); setAway("");
-    setTimeout(() => setMsg(""), 2000);
-  };
-
-  return (
-    <div>
-      <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>
-        Playoff matchups can't be pre-loaded like the regular season — enter each round's real games once seeding is set.
-      </p>
-      {msg && <div className="success-msg">{msg}</div>}
-      <div className="form-group">
-        <label className="form-label">Round</label>
-        <select className="form-select" value={round} onChange={e => setRound(e.target.value)}>
-          {PLAYOFF_ROUNDS.map(r => <option key={r.id} value={r.id}>{r.label} ({r.slots} game{r.slots > 1 ? "s" : ""})</option>)}
-        </select>
-      </div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-        <select className="form-select" value={away} onChange={e => setAway(e.target.value)}>
-          <option value="">Away team…</option>
-          {TEAM_CODES.map(c => <option key={c} value={c}>{TEAMS[c].city} {TEAMS[c].name}</option>)}
-        </select>
-        <select className="form-select" value={home} onChange={e => setHome(e.target.value)}>
-          <option value="">Home team…</option>
-          {TEAM_CODES.map(c => <option key={c} value={c}>{TEAMS[c].city} {TEAMS[c].name}</option>)}
-        </select>
-      </div>
-      <button className="btn btn-primary" onClick={add}>Add Matchup</button>
     </div>
   );
 }
@@ -260,7 +221,7 @@ function DangerZone({ league, onLeagueDeleted }) {
   const del = async () => { await fsDeleteLeague(league.id); onLeagueDeleted(); };
   return (
     <div>
-      <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>
+      <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>
         Deleting a league removes it for everyone. Only the super admin (league creator) can do this.
       </p>
       {!confirming ? (

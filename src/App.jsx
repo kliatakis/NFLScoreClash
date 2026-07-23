@@ -146,6 +146,7 @@ export default function App() {
           {tab === "leagues" && (
             <LeaguesTab
               user={user} myLeagues={myLeagues} allUsers={allUsers}
+              allPredictions={allPredictions} results={results} specialResults={specialResults}
               selectedLeague={selectedLeagueId} onSetLeague={setSelectedLeagueId}
               refresh={() => {}}
             />
