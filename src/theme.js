@@ -11,6 +11,7 @@ export const css = (dark = true) => `
     --bg:        ${dark ? "#07070b" : "#f3f4f8"};
     --bg-grad:   ${dark ? "radial-gradient(ellipse 60% 40% at 20% 0%, rgba(59,130,246,0.10) 0%, transparent 60%), radial-gradient(ellipse 60% 40% at 90% 20%, rgba(244,63,94,0.08) 0%, transparent 55%)" : "none"};
     --surface:   ${dark ? "rgba(22,22,32,0.6)" : "rgba(255,255,255,0.85)"};
+    --surface-solid: ${dark ? "rgba(13,13,20,0.98)" : "rgba(255,255,255,0.98)"};
     --surface2:  ${dark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"};
     --surface3:  ${dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"};
     --border:    ${dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"};
@@ -130,6 +131,7 @@ export const css = (dark = true) => `
   .fixture-teams { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .fixture-team-row { display: flex; align-items: center; }
   .fixture-vs { padding-left: 34px; font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+  .fixture-action { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
   .score-input { width: 46px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: var(--font-body); font-size: 17px; font-weight: 800; padding: 6px; border-radius: 8px; text-align: center; outline: none; }
   .score-input:focus { border-color: var(--accent); }
   .score-input:disabled { opacity: 0.5; }
@@ -184,7 +186,13 @@ export const css = (dark = true) => `
 
   /* PROFILE DROPDOWN */
   .profile-btn { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 12px; padding: 5px 12px 5px 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
-  .profile-dropdown { position: absolute; top: calc(100% + 10px); right: 28px; width: 320px; max-width: calc(100vw - 40px); border-radius: 16px; z-index: 300; overflow: hidden; animation: dropIn 0.16s ease; }
+  .profile-dropdown { position: absolute; top: calc(100% + 10px); right: 28px; width: 320px; max-width: calc(100vw - 40px); max-height: calc(100vh - 90px); overflow-y: auto; border-radius: 16px; z-index: 300; animation: dropIn 0.16s ease; }
+  /* Mobile Chrome doesn't reliably render backdrop-filter, and the shared
+     .glass background alone (60% opacity) isn't enough to hide page content
+     behind — override with a near-solid background just for this dropdown,
+     since it sits directly over other real content rather than empty page
+     background like other glass cards do. */
+  .profile-dropdown.glass { background: var(--surface-solid); }
   .profile-dropdown .form-select { font-size: 13.5px; padding: 10px 12px; }
   @keyframes dropIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
   .profile-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
@@ -222,4 +230,23 @@ export const css = (dark = true) => `
   @keyframes slide-in-right { to { opacity: 1; transform: translateX(0); } }
   @keyframes fade-up { to { opacity: 1; } }
   @keyframes pulse-bar { 0%, 100% { width: 20%; margin-left: 0%; } 50% { width: 60%; margin-left: 40%; } }
+
+  /* MOBILE — the app had zero responsive breakpoints until real phone
+     testing surfaced actual overlap bugs (not just "could look nicer"):
+     fixed-width standings columns didn't leave room for player names, and
+     fixture cards let long team names collide with the score inputs. */
+  @media (max-width: 560px) {
+    .standings-row { gap: 4px; padding: 10px 8px; }
+    .standings-col-rank { width: 22px; font-size: 15px; }
+    .standings-col-stat { width: 42px; font-size: 11px; }
+    .standings-col-pts { width: 46px; }
+    .standings-col-move { width: 16px; }
+    .standings-head span { font-size: 8px; letter-spacing: 0.2px; }
+    .standings-name { font-size: 12.5px; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+    .standings-pts { font-size: 16px; }
+
+    .fixture-body { flex-direction: column; align-items: stretch; }
+    .fixture-action { width: 100%; }
+    .fixture-action .score-input { flex: 1; min-width: 0; }
+  }
 `;

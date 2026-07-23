@@ -28,9 +28,9 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
       <div className="standings-row standings-head">
         <span className="standings-col-rank">Rank</span>
         <span className="standings-col-player">Player</span>
-        <span className="standings-col-stat">Exact Score</span>
+        <span className="standings-col-stat">Exact</span>
         <span className="standings-col-stat">Outcome</span>
-        <span className="standings-col-pts">Total Points</span>
+        <span className="standings-col-pts">Points</span>
         <span className="standings-col-move" />
       </div>
 

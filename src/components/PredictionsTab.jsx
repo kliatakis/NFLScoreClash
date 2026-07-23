@@ -90,21 +90,23 @@ function GameRow({ fixture, pick, result, uid, timezone }) {
           <span className="fixture-vs">@</span>
           <span className="fixture-team-row"><TeamBadge code={fixture.home} showName /></span>
         </span>
-        {hasResult ? (
-          <span style={{ fontFamily: "var(--font-display)", fontSize: 18 }}>{result.awayScore}–{result.homeScore}</span>
-        ) : locked ? (
-          <span className="lock-badge locked">🔒 Locked</span>
-        ) : (
-          <>
-            <input className="score-input" placeholder="A" value={away} disabled={locked} onChange={e => { setAway(e.target.value); setDirty(true); }} />
-            <span style={{ color: "var(--muted)" }}>–</span>
-            <input className="score-input" placeholder="H" value={home} disabled={locked} onChange={e => { setHome(e.target.value); setDirty(true); }} />
-            <button className="btn btn-primary btn-sm" disabled={!dirty} onClick={save}>Save</button>
-          </>
-        )}
-        {pick?.overriddenBy && (
-          <span className="overridden-flag" title="This prediction was corrected by a league admin">*corrected</span>
-        )}
+        <span className="fixture-action">
+          {hasResult ? (
+            <span style={{ fontFamily: "var(--font-display)", fontSize: 18 }}>{result.awayScore}–{result.homeScore}</span>
+          ) : locked ? (
+            <span className="lock-badge locked">🔒 Locked</span>
+          ) : (
+            <>
+              <input className="score-input" placeholder="A" value={away} disabled={locked} onChange={e => { setAway(e.target.value); setDirty(true); }} />
+              <span style={{ color: "var(--muted)" }}>–</span>
+              <input className="score-input" placeholder="H" value={home} disabled={locked} onChange={e => { setHome(e.target.value); setDirty(true); }} />
+              <button className="btn btn-primary btn-sm" disabled={!dirty} onClick={save}>Save</button>
+            </>
+          )}
+          {pick?.overriddenBy && (
+            <span className="overridden-flag" title="This prediction was corrected by a league admin">*corrected</span>
+          )}
+        </span>
       </div>
     </div>
   );
