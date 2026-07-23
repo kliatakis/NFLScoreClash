@@ -29,9 +29,15 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
     return Object.values(results).filter(r => r.enteredAt && r.enteredAt > lastLoginPrev).length;
   }, [results, lastLoginPrev]);
 
-  const upcoming = REGULAR_SEASON_FIXTURES
-    .filter(f => !results[f.id])
-    .slice(0, 6);
+  // The full slate for the earliest week that still has unplayed games —
+  // rather than an arbitrary "next 6" cut that could straddle two weeks.
+  const upcomingWeek = useMemo(() => {
+    const weeks = REGULAR_SEASON_FIXTURES.filter(f => !results[f.id]).map(f => f.week);
+    return weeks.length ? Math.min(...weeks) : null;
+  }, [results]);
+  const upcoming = upcomingWeek != null
+    ? REGULAR_SEASON_FIXTURES.filter(f => f.week === upcomingWeek)
+    : [];
 
   const me = standings.find(s => s.uid === user.uid);
   const myRank = me ? standings.indexOf(me) + 1 : null;
@@ -85,11 +91,11 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         <StandingsCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} specialResults={specialResults} />
       </div>
 
-      <div className="card-title">Upcoming Games</div>
+      <div className="card-title">{upcomingWeek != null ? `Week ${upcomingWeek} — Upcoming Games` : "Upcoming Games"}</div>
+      {upcoming.length === 0 && <div className="glass card" style={{ color: "var(--muted)" }}>No upcoming games loaded.</div>}
       <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
         {upcoming.map(f => (
           <div key={f.id} className="glass" style={{ minWidth: 200, borderRadius: 14, padding: 14, flexShrink: 0 }}>
-            <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Week {f.week}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <TeamBadge code={f.away} showName />
               <TeamBadge code={f.home} showName />

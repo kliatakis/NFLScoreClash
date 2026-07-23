@@ -97,13 +97,19 @@ export function calcStandings(league, allUsers, allPredictions, results, special
       }
     }
 
-    let specialCorrect = 0;
+    // Broken out per pick-type (not just a lumped `specialCorrect` total) so
+    // the tiebreaker order below — Super Bowl, then conference, then
+    // division, then exact scores — can compare each level independently.
+    let specialCorrect = 0, superbowlCorrect = 0, conferenceCorrect = 0, divisionCorrect = 0;
     for (const type of SPECIAL_PICK_TYPES) {
       const actual = specialResults[type.id];
       const pick = specials[type.id];
       if (actual && pick && actual === pick) {
         points += specialPickPoints(type.kind, scoring);
         specialCorrect++;
+        if (type.kind === "superbowl") superbowlCorrect++;
+        else if (type.kind === "conference") conferenceCorrect++;
+        else if (type.kind === "division") divisionCorrect++;
       }
     }
 
@@ -111,13 +117,36 @@ export function calcStandings(league, allUsers, allPredictions, results, special
       uid,
       username: user?.username || "Unknown",
       points, exact, correct, gamesScored, specialCorrect,
+      superbowlCorrect, conferenceCorrect, divisionCorrect,
     };
   }).sort((a, b) =>
     b.points - a.points ||
-    b.exact - a.exact ||
-    b.specialCorrect - a.specialCorrect ||
-    b.correct - a.correct
+    b.superbowlCorrect - a.superbowlCorrect ||
+    b.conferenceCorrect - a.conferenceCorrect ||
+    b.divisionCorrect - a.divisionCorrect ||
+    b.exact - a.exact
   );
+}
+
+// Explains WHY `a` outranks `b`, for two entries already known to be tied on
+// total points — used to show an info icon next to whoever a tiebreaker
+// resolved. Returns null if there's nothing (yet) to differentiate them, in
+// which case they're a genuine dead tie and no tiebreaker has fired.
+export function explainTiebreak(a, b) {
+  if (a.points !== b.points) return null;
+  if (a.superbowlCorrect !== b.superbowlCorrect) {
+    return `Ahead of ${b.username} on tiebreaker #1: correctly picked the Super Bowl winner.`;
+  }
+  if (a.conferenceCorrect !== b.conferenceCorrect) {
+    return `Ahead of ${b.username} on tiebreaker #2: ${a.conferenceCorrect} correct conference pick${a.conferenceCorrect === 1 ? "" : "s"} vs ${b.conferenceCorrect}.`;
+  }
+  if (a.divisionCorrect !== b.divisionCorrect) {
+    return `Ahead of ${b.username} on tiebreaker #3: ${a.divisionCorrect} correct division pick${a.divisionCorrect === 1 ? "" : "s"} vs ${b.divisionCorrect}.`;
+  }
+  if (a.exact !== b.exact) {
+    return `Ahead of ${b.username} on tiebreaker #4: ${a.exact} exact score${a.exact === 1 ? "" : "s"} vs ${b.exact}.`;
+  }
+  return null;
 }
 
 // Attaches movement info (dash / 1 arrow / 2 arrows, up or down) based on the

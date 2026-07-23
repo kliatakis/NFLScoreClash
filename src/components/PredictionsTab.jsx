@@ -10,8 +10,15 @@ import TeamBadge from "./TeamBadge.jsx";
 // intentionally NOT scoped to a selected league (see conversation: a pick
 // for a given game is one thing, scored differently only by each league's
 // point values, not re-entered per league).
+const PREDICTIONS_TABS = [
+  { key: "games", label: "Game Scores" },
+  { key: "division", label: "Division" },
+  { key: "conference", label: "Conference" },
+  { key: "superbowl", label: "Super Bowl" },
+];
+
 export default function PredictionsTab({ user }) {
-  const [view, setView] = useState("games"); // games | special
+  const [view, setView] = useState("games"); // games | division | conference | superbowl
   const [week, setWeek] = useState(1);
   const [preds, setPreds] = useState({ picks: {}, specials: {} });
   const [results, setResults] = useState({});
@@ -29,9 +36,10 @@ export default function PredictionsTab({ user }) {
       <div className="page-title">Predictions</div>
       <div className="page-sub">Your picks are shared across every league you're in — enter once.</div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-        <button className={`nav-tab ${view === "games" ? "active" : ""}`} onClick={() => setView("games")}>Game Scores</button>
-        <button className={`nav-tab ${view === "special" ? "active" : ""}`} onClick={() => setView("special")}>Division / Conference / Super Bowl</button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        {PREDICTIONS_TABS.map(t => (
+          <button key={t.key} className={`nav-tab ${view === t.key ? "active" : ""}`} onClick={() => setView(t.key)}>{t.label}</button>
+        ))}
       </div>
 
       {view === "games" && (
@@ -46,7 +54,9 @@ export default function PredictionsTab({ user }) {
         </div>
       )}
 
-      {view === "special" && <SpecialPicks preds={preds} uid={user.uid} />}
+      {(view === "division" || view === "conference" || view === "superbowl") && (
+        <SpecialPicks kind={view} preds={preds} uid={user.uid} />
+      )}
     </div>
   );
 }
@@ -100,22 +110,15 @@ function GameRow({ fixture, pick, result, uid, timezone }) {
   );
 }
 
-const SPECIAL_SUBTABS = [
-  { key: "division", label: "Division" },
-  { key: "conference", label: "Conference" },
-  { key: "superbowl", label: "Super Bowl" },
-];
-
-function SpecialPicks({ preds, uid }) {
+function SpecialPicks({ kind, preds, uid }) {
   const seasonLocked = useSeasonPicksLock();
   const countdown = useCountdown(SEASON.openerKickoffUTC);
-  const [subtab, setSubtab] = useState("division");
 
   const save = async (typeId, team) => {
     await fsSaveSpecialPick(uid, typeId, team);
   };
 
-  const typesForSubtab = SPECIAL_PICK_TYPES.filter(t => t.kind === subtab);
+  const typesForKind = SPECIAL_PICK_TYPES.filter(t => t.kind === kind);
 
   return (
     <div>
@@ -127,13 +130,7 @@ function SpecialPicks({ preds, uid }) {
         ) : null}
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {SPECIAL_SUBTABS.map(t => (
-          <button key={t.key} className={`nav-tab ${subtab === t.key ? "active" : ""}`} onClick={() => setSubtab(t.key)}>{t.label}</button>
-        ))}
-      </div>
-
-      {typesForSubtab.map(type => {
+      {typesForKind.map(type => {
         const options = type.kind === "division" ? teamsByDivision(type.division) : TEAM_CODES;
         const current = preds.specials?.[type.id] || "";
         return (

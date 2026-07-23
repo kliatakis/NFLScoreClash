@@ -144,17 +144,28 @@ export const css = (dark = true) => `
   /* STANDINGS TABLE + MOVEMENT ARROWS */
   .standings-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; margin-bottom: 6px; transition: background 0.15s; }
   .standings-row:hover { background: var(--surface2); }
-  .standings-rank { font-family: var(--font-display); font-size: 18px; color: var(--muted); width: 28px; }
-  .standings-rank.gold { color: var(--gold); }
-  .standings-rank.silver { color: #b7bccb; }
-  .standings-rank.bronze { color: #c98a52; }
-  .standings-name { flex: 1; font-weight: 700; font-size: 14px; }
+  .standings-rank { font-family: var(--font-display); font-size: 18px; color: var(--muted); text-align: center; }
+  .standings-name { font-weight: 700; font-size: 14px; }
   .standings-name.you { color: var(--accent2); }
-  .standings-pts { font-family: var(--font-display); font-size: 20px; color: var(--accent); min-width: 50px; text-align: right; }
-  .movement { display: inline-flex; gap: 1px; width: 18px; justify-content: center; }
+  .standings-pts { font-family: var(--font-display); font-size: 20px; color: var(--accent); }
+  .movement { display: inline-flex; gap: 1px; justify-content: center; }
   .movement-dash { color: var(--muted); font-weight: 700; }
   .movement-arrow.up { color: var(--green); }
   .movement-arrow.down { color: var(--accent2); }
+
+  /* Standings table columns — shared widths so the header row lines up with
+     the data rows exactly. */
+  .standings-col-rank { width: 34px; flex-shrink: 0; text-align: center; }
+  .standings-col-player { flex: 1; min-width: 0; }
+  .standings-col-stat { width: 84px; flex-shrink: 0; text-align: center; }
+  .standings-col-pts { width: 74px; flex-shrink: 0; text-align: right; }
+  .standings-col-move { width: 30px; flex-shrink: 0; display: flex; justify-content: center; }
+  .standings-head { padding-top: 0; padding-bottom: 10px; }
+  .standings-head span { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+  .standings-head:hover { background: none; }
+
+  .tiebreak-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: var(--surface3); color: var(--accent); font-size: 11px; font-style: normal; cursor: help; flex-shrink: 0; }
+  .standings-legend { margin-top: 10px; padding: 12px 16px 4px; font-size: 11px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--border); }
 
   /* MODALS */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 500; padding: 20px; }
