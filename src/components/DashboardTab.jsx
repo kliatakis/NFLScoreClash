@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { calcStandings, getScoringSettings } from "../lib/scoring.js";
 import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
+import { formatKickoff } from "../lib/time.js";
 import StandingsCard from "./StandingsCard.jsx";
 import TeamBadge from "./TeamBadge.jsx";
 
@@ -95,10 +96,18 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
       {upcoming.length === 0 && <div className="glass card" style={{ color: "var(--muted)" }}>No upcoming games loaded.</div>}
       <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
         {upcoming.map(f => (
-          <div key={f.id} className="glass" style={{ minWidth: 200, borderRadius: 14, padding: 14, flexShrink: 0 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <TeamBadge code={f.away} showName />
-              <TeamBadge code={f.home} showName />
+          <div key={f.id} className="fixture-card glass" style={{ minWidth: 200, flexShrink: 0 }}>
+            <div className="fixture-meta">
+              {formatKickoff(f.kickoffUTC, user.timezone)}
+              {f.network ? ` · ${f.network}` : ""}
+              {f.note ? ` · ${f.note}` : ""}
+            </div>
+            <div className="fixture-body" style={{ flexDirection: "column", alignItems: "flex-start" }}>
+              <span className="fixture-teams">
+                <span className="fixture-team-row"><TeamBadge code={f.away} showName /></span>
+                <span className="fixture-vs">@</span>
+                <span className="fixture-team-row"><TeamBadge code={f.home} showName /></span>
+              </span>
             </div>
           </div>
         ))}

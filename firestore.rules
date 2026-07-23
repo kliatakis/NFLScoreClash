@@ -2,38 +2,110 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    // Only checks that a field's value didn't change across the write —
+    // used to lock down which fields a given caller is allowed to touch.
+    function unchanged(field) {
+      return !(field in request.resource.data.diff(resource.data).affectedKeys());
+    }
+
     // ── users/{uid} — one doc per person: profile, avatar, lastSeen markers ──
+    // Everyone can read (needed to resolve uid -> username/avatar across the
+    // app), but you can only ever write your own doc — nothing in the app
+    // legitimately writes to someone else's profile.
     match /users/{uid} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null; // profile writes are self-only in practice (enforced client-side)
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == uid;
     }
 
     // ── leagues/{leagueId} — one doc per league (was a single mega-doc before) ──
-    // Anyone signed in can read (needed to look up a league by its join code).
-    // Writes are gated in the app (super admin / admin checks) rather than here —
-    // same pragmatic stance as the original project: this is a private
-    // friend-group tool, not a public multi-tenant SaaS. Tighten if that changes.
     match /leagues/{leagueId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if isSignedIn();
+
+      // Creating a league: you must be the one and only member, and its
+      // super admin — you can't hand super-admin to someone else or seed
+      // a fake member list on creation.
+      allow create: if isSignedIn()
+        && request.resource.data.superAdminId == request.auth.uid
+        && request.resource.data.members == [request.auth.uid]
+        && request.resource.data.adminIds == [];
+
+      // Deleting a league: super admin only (matches the in-app Danger Zone
+      // gate, now enforced at the database too).
+      allow delete: if isSignedIn() && resource.data.superAdminId == request.auth.uid;
+
+      allow update: if isSignedIn() && (
+        // The super admin can change anything (promote/demote admins, kick,
+        // edit scoring, transfer nothing — superAdminId itself never changes
+        // via the app's UI, but nothing here forbids it for the super admin).
+        resource.data.superAdminId == request.auth.uid ||
+
+        // Any other admin can do everything EXCEPT reassign the super admin
+        // or grow the adminIds list (only the super admin promotes new
+        // admins) — but admins CAN shrink adminIds, since kicking a member
+        // who happens to also be an admin removes them from both lists.
+        (
+          request.auth.uid in resource.data.adminIds &&
+          unchanged('superAdminId') &&
+          request.resource.data.adminIds.toSet().difference(resource.data.adminIds.toSet()).size() == 0
+        ) ||
+
+        // Any member (admin or not) may update just the standings-snapshot
+        // fields — this is a passive side effect that fires whenever anyone
+        // views the standings, not an admin-only action.
+        (
+          request.auth.uid in resource.data.members &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['standingsSnapshot', 'standingsSnapshotVersion'])
+        ) ||
+
+        // A non-member may join: adds ONLY themselves to `members`, nothing
+        // else about the league changes.
+        (
+          !(request.auth.uid in resource.data.members) &&
+          request.resource.data.members == resource.data.members.concat([request.auth.uid]) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+        ) ||
+
+        // A member (not the super admin, who uses Danger Zone -> Delete
+        // League instead) may voluntarily leave: removes ONLY themselves
+        // from members and adminIds, nothing else about the league changes.
+        // Powers account-deletion cleanup (and any future "Leave League"
+        // button).
+        (
+          request.auth.uid in resource.data.members &&
+          request.auth.uid != resource.data.superAdminId &&
+          request.resource.data.members.toSet() == resource.data.members.toSet().difference([request.auth.uid].toSet()) &&
+          request.resource.data.adminIds.toSet() == resource.data.adminIds.toSet().difference([request.auth.uid].toSet()) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'adminIds'])
+        )
+      );
     }
 
     // ── predictions/{uid} — one doc per person, SHARED across every league ──
-    // they're in (this is the key scaling fix vs. the old per-league copies).
-    // Admin overrides need to write into another user's doc, so this can't be
-    // locked to request.auth.uid == uid at the rules layer without Firestore
-    // being able to check "is requester an admin of a league this uid is also
-    // in" — which needs a query, not just a get(), and rules can't do that.
-    // So, same as leagues: app-level checks gate who can actually call this.
+    // they're in. Admin overrides (AdminPanel -> "Overrides") write into
+    // ANOTHER user's doc, which needs "is the requester an admin of a league
+    // the target uid is also in" — that's a cross-collection check Firestore
+    // rules can't express (no arbitrary queries, only direct-path get()).
+    // Properly closing that gap means moving overrides through a small
+    // server-side function (the project already has firebase-admin + a
+    // service-account-backed API route for results-fetching that a
+    // predictions-override endpoint could follow the same pattern as) —
+    // flagged as a follow-up rather than shipped half-working here.
     match /predictions/{uid} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
     // ── results/{seasonId} — one small doc for the whole season's scores ──
+    // Same underlying limitation as predictions: "is the requester an admin
+    // of ANY league" isn't a check Firestore rules can do without either a
+    // denormalized flag (drift risk) or a server-side function. Flagged
+    // alongside predictions above as the next security follow-up.
     match /results/{seasonId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
   }
 }

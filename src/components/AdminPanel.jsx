@@ -79,7 +79,7 @@ function ResultsEntry({ timezone }) {
       <select className="form-select" style={{ marginBottom: 14, maxWidth: 160 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
         {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1).map(w => <option key={w} value={w}>Week {w}</option>)}
       </select>
-      {fixtures.length === 0 && <div style={{ color: "var(--muted)", fontSize: 14 }}>No fixtures loaded for this week yet — see the TODO in data/fixtures.js.</div>}
+      {fixtures.length === 0 && <div style={{ color: "var(--muted)", fontSize: 14 }}>No fixtures loaded for this week yet.</div>}
       {fixtures.map(f => (
         <div key={f.id} className="standings-row" style={{ flexWrap: "wrap" }}>
           <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)" }}>{formatKickoff(f.kickoffUTC, timezone)}</span>

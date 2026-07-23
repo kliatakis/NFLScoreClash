@@ -10,10 +10,13 @@ import {
   signInWithEmailAndPassword,
   signOut,
   sendPasswordResetEmail,
+  sendEmailVerification,
   onAuthStateChanged,
   EmailAuthProvider,
   reauthenticateWithCredential,
   deleteUser,
+  updatePassword,
+  updateEmail,
 } from "firebase/auth";
 import { SEASON } from "./data/fixtures.js";
 
@@ -73,6 +76,18 @@ export async function fsGetAllUsers() {
   const users = {};
   snap.forEach(d => { users[d.id] = d.data(); });
   return users;
+}
+
+// Used at registration and when someone edits their display name — a
+// same-name collision doesn't break anything technically (avatars still
+// tell people apart) but it's confusing in standings/member lists, so we
+// just block it outright.
+export async function fsIsUsernameTaken(username, excludeUid) {
+  const q = query(collection(db, "users"), where("username", "==", username));
+  const snap = await getDocs(q);
+  let taken = false;
+  snap.forEach(d => { if (d.id !== excludeUid) taken = true; });
+  return taken;
 }
 
 // Record "you were last here at time T" on the account itself. Called once
@@ -253,21 +268,6 @@ export function fsSubscribeSpecialResults(callback) {
   );
 }
 
-// Playoff matchups can't be known at build time (unlike the static regular
-// season schedule) — they depend on real seeding. Any league admin can enter
-// them once known; they're shared season-wide, same as regular results.
-export async function fsSetPlayoffFixture(fixtureId, fixture) {
-  await setDoc(doc(db, "results", RESULTS_DOC_ID), {
-    playoffFixtures: { [fixtureId]: fixture },
-  }, { merge: true });
-}
-
-export function fsSubscribePlayoffFixtures(callback) {
-  return onSnapshot(doc(db, "results", RESULTS_DOC_ID), (snap) =>
-    callback(snap.exists() ? snap.data().playoffFixtures || {} : {})
-  );
-}
-
 // ══════════════════════════════════════════════════════════════════════════
 // AUTH
 // ══════════════════════════════════════════════════════════════════════════
@@ -290,12 +290,84 @@ export async function fbResetPassword(email) {
   await sendPasswordResetEmail(auth, email);
 }
 
-export async function fbDeleteAccount(currentPassword) {
+// Sent right after registration, and available as a "Resend" action from the
+// verification-reminder banner until the account is confirmed. Uses
+// Firebase Auth's own built-in email — no third-party email service needed
+// for this part (that's only required for custom notification emails, e.g.
+// "you were added to a league", which is a separate, not-yet-built feature).
+export async function fbSendVerificationEmail() {
+  if (!auth.currentUser) throw new Error("No user logged in");
+  await sendEmailVerification(auth.currentUser);
+}
+
+// Password/email changes both need a fresh reauth — Firebase rejects these
+// "sensitive" operations on an older session even while still logged in.
+export async function fbChangePassword(currentPassword, newPassword) {
   const user = auth.currentUser;
   if (!user) throw new Error("No user logged in");
   const credential = EmailAuthProvider.credential(user.email, currentPassword);
   await reauthenticateWithCredential(user, credential);
-  await deleteUser(user);
+  await updatePassword(user, newPassword);
+}
+
+// Note: some Firebase projects enforce a stricter policy on updateEmail
+// (requiring the newer verifyBeforeUpdateEmail email-link flow instead,
+// which needs authorized-domain/continue-URL setup). If this throws
+// auth/operation-not-allowed in your project, that's why — flag it and we'll
+// switch to that flow.
+export async function fbChangeEmail(currentPassword, newEmail) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No user logged in");
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+  await updateEmail(user, newEmail);
+  await fsWriteUser(user.uid, { email: newEmail });
+  try { await sendEmailVerification(user); } catch { /* non-fatal, same as registration */ }
+}
+
+// Full account deletion, with cleanup — not just the Auth record. Without
+// this, a deleted account leaves an orphaned uid sitting in every league's
+// members/adminIds list forever, and a dangling predictions/users doc.
+//
+// One case is deliberately blocked rather than guessed at: if you're the
+// super admin of a league that still has OTHER members, we refuse — there's
+// no ownership-transfer feature, so silently deleting that league out from
+// under other people, or leaving it permanently un-manageable (no one left
+// who can hit Danger Zone), are both worse than making you sort it out
+// first. Leagues where you're the sole member are just deleted outright;
+// leagues where you're a plain member just drop your membership.
+export async function fbDeleteAccountCascade(currentPassword) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No user logged in");
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+
+  const uid = user.uid;
+  const q = query(collection(db, "leagues"), where("members", "array-contains", uid));
+  const snap = await getDocs(q);
+  const myLeagues = [];
+  snap.forEach(d => myLeagues.push(d.data()));
+
+  const blocking = myLeagues.filter(l => l.superAdminId === uid && (l.members || []).length > 1);
+  if (blocking.length > 0) {
+    const names = blocking.map(l => l.name).join(", ");
+    throw new Error(
+      `You own ${blocking.length > 1 ? "leagues that still have" : "a league that still has"} other members (${names}). ` +
+      `Delete ${blocking.length > 1 ? "them" : "it"} from that league's Danger Zone first, or remove the other members, before deleting your account.`
+    );
+  }
+
+  for (const league of myLeagues) {
+    if (league.superAdminId === uid) {
+      await deleteDoc(doc(db, "leagues", league.id)); // sole member — safe to remove entirely
+    } else {
+      await updateDoc(doc(db, "leagues", league.id), { members: arrayRemove(uid), adminIds: arrayRemove(uid) });
+    }
+  }
+
+  await deleteDoc(doc(db, "predictions", uid)).catch(() => {});
+  await deleteDoc(doc(db, "users", uid)).catch(() => {});
+  await deleteUser(user); // must be last — invalidates the session everything above relied on
 }
 
 export function fbOnAuthChange(callback) {

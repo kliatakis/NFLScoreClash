@@ -63,11 +63,17 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
       })}
 
       <div className="standings-legend">
-        <b>Exact Score</b> and <b>Outcome</b> never double-count the same game — a perfectly-called score
-        (e.g. predicting 21–7 and it lands 21–7) counts as an Exact Score only, not also an Outcome.
-        <br />
-        Ties on Total Points are broken in order: 1) Super Bowl pick, 2) conference picks, 3) division picks,
-        4) exact scores — look for the <span className="tiebreak-info" style={{ position: "static" }}>ⓘ</span> next to a name for the reason.
+        <div className="standings-legend-title">Notes</div>
+        <ol>
+          <li>
+            <b>Exact Score</b> and <b>Outcome</b> never double-count the same game — a perfectly-called score
+            (e.g. predicting 21–7 and it lands 21–7) counts as an Exact Score only, not also an Outcome.
+          </li>
+          <li>
+            Ties on Total Points are broken in order: 1) Super Bowl pick, 2) conference picks, 3) division picks,
+            4) exact scores — look for the <span className="tiebreak-info" style={{ position: "static" }}>ⓘ</span> next to a name for the reason.
+          </li>
+        </ol>
       </div>
     </div>
   );

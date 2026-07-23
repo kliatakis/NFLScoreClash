@@ -14,8 +14,9 @@
 // Playoff matchups are intentionally NOT pre-filled (unlike the old World
 // Cup app, which hardcoded a full bracket). NFL playoff participants depend
 // on actual regular-season results, so PLAYOFF_ROUNDS below only defines the
-// round structure — the league admin enters each round's real matchups once
-// seeding is determined (see AdminPanel's "Playoff Fixtures" section).
+// round structure — once real seeding is known, update this file directly
+// (same workflow as the regular-season schedule) and redeploy, rather than
+// maintaining a separate in-app admin entry UI for it.
 
 export const SEASON = {
   year: 2026,
@@ -24,10 +25,10 @@ export const SEASON = {
   // conference / Super Bowl winners) 15 minutes before kickoff.
   openerKickoffUTC: "2026-09-10T00:20:00Z", // Wed Sep 9, 8:20pm ET = 00:20 UTC next day
   regularSeasonWeeks: 18,
-  // Per the official release: "Byes will begin in Week 5 and end in Week 14."
-  byeWeeks: {
-    5: [], 6: [], 7: [], 8: ["CAR", "GB"], 9: ["JAX", "BAL"], 10: [], 
-  },
+  // Bye weeks aren't tracked here — nothing in the app reads a per-team bye
+  // schedule (each week's fixture list is already just "whoever's playing
+  // that week," which implicitly handles byes). Add this back only if a
+  // future feature actually needs it.
   playoffs: {
     wildCardStart: "2027-01-16", // Sat, Jan 16, 2027
     superBowl: {

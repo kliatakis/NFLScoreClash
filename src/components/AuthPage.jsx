@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fbRegister, fbLogin, fbResetPassword, fsWriteUser, fsReadUser } from "../firebase.js";
+import { fbRegister, fbLogin, fbResetPassword, fbSendVerificationEmail, fsWriteUser, fsReadUser, fsIsUsernameTaken } from "../firebase.js";
 import { WordmarkLogo } from "./Logo.jsx";
 
 export default function AuthPage({ onLogin }) {
@@ -22,14 +22,16 @@ export default function AuthPage({ onLogin }) {
       }
       if (mode === "register") {
         if (!username.trim()) { setError("Pick a username."); return; }
+        if (await fsIsUsernameTaken(username.trim(), null)) { setError("That username is taken — pick another."); return; }
         const user = await fbRegister(email, password);
         await fsWriteUser(user.uid, { username: username.trim(), email, avatar: null, lastLoginAt: Date.now() });
-        onLogin({ uid: user.uid, username: username.trim(), email });
+        try { await fbSendVerificationEmail(); } catch { /* non-fatal — the in-app banner offers a retry */ }
+        onLogin({ uid: user.uid, username: username.trim(), email, emailVerified: user.emailVerified });
         return;
       }
       const user = await fbLogin(email, password);
       const profile = await fsReadUser(user.uid);
-      onLogin({ uid: user.uid, username: profile?.username || email, email });
+      onLogin({ uid: user.uid, username: profile?.username || email, email, emailVerified: user.emailVerified });
     } catch (err) {
       setError(friendlyAuthError(err));
     } finally {

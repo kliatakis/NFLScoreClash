@@ -5,6 +5,7 @@ import { LogoIntro } from "./components/Logo.jsx";
 import AuthPage from "./components/AuthPage.jsx";
 import ProfileDropdown from "./components/ProfileDropdown.jsx";
 import DashboardTab from "./components/DashboardTab.jsx";
+import VerifyEmailBanner from "./components/VerifyEmailBanner.jsx";
 import LeaguesTab from "./components/LeaguesTab.jsx";
 import PredictionsTab from "./components/PredictionsTab.jsx";
 import NflStandingsTab from "./components/NflStandingsTab.jsx";
@@ -60,6 +61,7 @@ export default function App() {
       setUser({
         uid: fbUser.uid, username: profile?.username || fbUser.email, email: fbUser.email,
         avatar: profile?.avatar, timezone: profile?.timezone || "Europe/Athens",
+        emailVerified: fbUser.emailVerified,
       });
     });
     return () => unsub();
@@ -137,6 +139,7 @@ export default function App() {
         </nav>
 
         <main className="main">
+          {!user.emailVerified && <VerifyEmailBanner email={user.email} />}
           {tab === "dashboard" && (
             <DashboardTab
               user={user} league={selectedLeague} allUsers={allUsers} allPredictions={allPredictions}

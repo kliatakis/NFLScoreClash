@@ -165,7 +165,11 @@ export const css = (dark = true) => `
   .standings-head:hover { background: none; }
 
   .tiebreak-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: var(--surface3); color: var(--accent); font-size: 11px; font-style: normal; cursor: help; flex-shrink: 0; }
-  .standings-legend { margin-top: 10px; padding: 12px 16px 4px; font-size: 11px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--border); }
+  .standings-legend { margin-top: 10px; padding: 14px 16px 4px; font-size: 11px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--border); }
+  .standings-legend-title { font-family: var(--font-display); font-size: 12px; letter-spacing: 1px; color: var(--text); margin-bottom: 6px; text-transform: uppercase; }
+  .standings-legend ol { margin: 0; padding-left: 18px; }
+  .standings-legend li { margin-bottom: 4px; }
+  .standings-legend li:last-child { margin-bottom: 0; }
 
   /* MODALS */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 500; padding: 20px; }
@@ -193,6 +197,11 @@ export const css = (dark = true) => `
   .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); }
   .chip.active { background: rgba(59,130,246,0.15); color: var(--accent); border-color: rgba(59,130,246,0.35); }
   .chip.super { background: rgba(245,158,11,0.15); color: var(--gold); border-color: rgba(245,158,11,0.35); }
+  .league-code-pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; border-radius: 20px; background: var(--surface2); border: 1px solid var(--border); }
+  .league-code-pill-label { font-size: 9px; font-weight: 800; letter-spacing: 1px; color: var(--muted); }
+  .league-code-pill code { font-family: var(--font-display); font-size: 13px; font-weight: 700; letter-spacing: 1.5px; color: var(--text); background: none; padding: 0; }
+  .league-code-copy { border: none; cursor: pointer; padding: 4px 12px; border-radius: 14px; font-size: 10.5px; font-weight: 700; background: var(--accent); color: #fff; }
+  .league-code-copy:hover { filter: brightness(1.1); }
 
   /* ADMIN PANEL — larger, more legible text throughout (bumped up from the
      app's default compact sizing per feedback that it was hard to read). */

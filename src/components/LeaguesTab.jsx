@@ -61,16 +61,21 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
           <div key={league.id} className="glass card" style={{ marginBottom: 14, borderColor: isSelected ? "rgba(59,130,246,0.4)" : undefined }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div style={{ cursor: "pointer", flex: 1, minWidth: 180 }} onClick={() => openLeague(league.id)}>
-                <div style={{ fontWeight: 800, fontSize: 16 }}>{league.name} {isSelected && <span className="chip active">Active</span>}</div>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  {league.members.length} member{league.members.length !== 1 ? "s" : ""} · code <code>{league.id}</code>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{ padding: "2px 10px", fontSize: 11 }}
-                    onClick={(e) => { e.stopPropagation(); copyCode(league.id); }}
-                  >
-                    {copiedId === league.id ? "Copied!" : "Copy Code"}
-                  </button>
+                <div style={{ fontWeight: 800, fontSize: 16, display: "flex", alignItems: "center", gap: 12 }}>
+                  {league.name} {isSelected && <span className="chip active">Active</span>}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  {league.members.length} member{league.members.length !== 1 ? "s" : ""}
+                  <span className="league-code-pill">
+                    <span className="league-code-pill-label">CODE</span>
+                    <code>{league.id}</code>
+                    <button
+                      className="league-code-copy"
+                      onClick={(e) => { e.stopPropagation(); copyCode(league.id); }}
+                    >
+                      {copiedId === league.id ? "Copied!" : "Copy"}
+                    </button>
+                  </span>
                   {isSuperAdmin && <span className="chip super">Super Admin</span>}
                   {!isSuperAdmin && isAdmin && <span className="chip active">Admin</span>}
                 </div>
