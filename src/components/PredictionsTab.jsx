@@ -4,6 +4,7 @@ import { TEAMS, TEAM_CODES, teamsByDivision } from "../data/teams.js";
 import { fsSubscribePredictions, fsSaveGamePrediction, fsSaveSpecialPick, fsSubscribeResults } from "../firebase.js";
 import { useFixtureLock, useSeasonPicksLock, useCountdown, LOCK_MINUTES_BEFORE_KICKOFF } from "../lib/hooks.js";
 import { formatKickoff, lockUrgency, formatDuration } from "../lib/time.js";
+import { classifyPick } from "../lib/scoring.js";
 import TeamBadge from "./TeamBadge.jsx";
 
 // Predictions are shared across every league the user is in — this tab is
@@ -91,17 +92,15 @@ function GameRow({ fixture, pick, result, uid, timezone, league, allUsers, allPr
   // reveal — nothing shown otherwise (no result yet, or no league selected).
   const revealRows = hasResult && league ? league.members.map(mUid => {
     const mPick = (allPredictions[mUid]?.picks || {})[fixture.id];
-    if (!mPick || mPick.homeScore == null || mPick.awayScore == null) {
-      return { uid: mUid, label: "No pick", status: "none" };
-    }
-    const isExact = Number(mPick.homeScore) === Number(result.homeScore) && Number(mPick.awayScore) === Number(result.awayScore);
-    const pickOutcome = mPick.homeScore > mPick.awayScore ? "H" : mPick.awayScore > mPick.homeScore ? "A" : "T";
-    const realOutcome = result.homeScore > result.awayScore ? "H" : result.awayScore > result.homeScore ? "A" : "T";
-    const isCorrect = pickOutcome === realOutcome;
+    // Same classifier the standings and highlights use, so a pick can never
+    // be labelled one way here and counted another way there.
+    const kind = classifyPick(mPick, result);
+    if (!kind) return { uid: mUid, label: "No pick", status: "none" };
+    const icon = kind === "exact" ? "🔥" : kind === "outcome" ? "✅" : "❌";
     return {
       uid: mUid,
-      label: `${mPick.awayScore}–${mPick.homeScore} ${isExact ? "🔥" : isCorrect ? "✅" : "❌"}`,
-      status: isExact ? "exact" : isCorrect ? "correct" : "wrong",
+      label: `${mPick.awayScore}–${mPick.homeScore} ${icon}`,
+      status: kind === "exact" ? "exact" : kind === "outcome" ? "correct" : "wrong",
     };
   }) : null;
 

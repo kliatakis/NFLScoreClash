@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import {
   getFirestore,
-  doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot,
   collection, getDocs, query, where, arrayUnion, arrayRemove,
 } from "firebase/firestore";
 import {
@@ -260,12 +260,18 @@ export async function fsSetResult(fixtureId, homeScore, awayScore) {
   }, { merge: true });
 }
 
+// Removes ONE game's score and nothing else.
+//
+// This previously did a read-modify-write with { merge: false }, which
+// replaces the whole document — silently destroying the `specials` field
+// (every division / conference / Super Bowl winner the admin had entered)
+// every time anyone cleared a single game. deleteField() targets just the
+// one nested key, so everything else in the doc is untouched. Fixture ids
+// ("w1_1") contain no dots, so the dotted field path is unambiguous.
 export async function fsClearResult(fixtureId) {
-  const ref = doc(db, "results", RESULTS_DOC_ID);
-  const snap = await getDoc(ref);
-  const scores = snap.exists() ? snap.data().scores || {} : {};
-  delete scores[fixtureId];
-  await setDoc(ref, { scores }, { merge: false });
+  await updateDoc(doc(db, "results", RESULTS_DOC_ID), {
+    [`scores.${fixtureId}`]: deleteField(),
+  });
 }
 
 export async function fsSetSpecialResult(key, teamCode) {

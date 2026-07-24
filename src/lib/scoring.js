@@ -25,15 +25,35 @@ export function generateCode(len = 6) {
 }
 
 // ─── GAME SCORING ───────────────────────────────────────────────────────────
-export function calcMatchScore(pick, result, scoring = DEFAULT_SCORING) {
-  if (!pick || !result) return 0;
+
+// What actually happened with one pick, independent of any league's point
+// values: "exact" (perfect score), "outcome" (right winner, wrong score),
+// "wrong", or null when there's nothing to score yet (no pick, or no result).
+//
+// This exists as its own function on purpose. Everything used to infer the
+// outcome by comparing the POINTS awarded back to the league's settings —
+// which breaks the moment two settings share a value. Concretely: a league
+// with Correct Winner set to 0 makes a wrong pick (0 points) and a
+// correct-winner pick (also 0 points) indistinguishable, so every wrong pick
+// got counted in the Outcome column and in prediction accuracy. Classifying
+// first and pricing second removes that whole class of bug regardless of what
+// point values an admin picks.
+export function classifyPick(pick, result) {
+  if (!pick || !result) return null;
   const { homeScore: ph, awayScore: pa } = pick;
   const { homeScore: rh, awayScore: ra } = result;
-  if (ph == null || pa == null || rh == null || ra == null) return 0;
-  if (Number(ph) === Number(rh) && Number(pa) === Number(ra)) return scoring.exactPoints;
-  const pickOutcome = ph > pa ? "H" : pa > ph ? "A" : "T";
-  const realOutcome = rh > ra ? "H" : ra > rh ? "A" : "T";
-  return pickOutcome === realOutcome ? scoring.outcomePoints : 0;
+  if (ph == null || pa == null || rh == null || ra == null) return null;
+  if (Number(ph) === Number(rh) && Number(pa) === Number(ra)) return "exact";
+  const pickOutcome = Number(ph) > Number(pa) ? "H" : Number(pa) > Number(ph) ? "A" : "T";
+  const realOutcome = Number(rh) > Number(ra) ? "H" : Number(ra) > Number(rh) ? "A" : "T";
+  return pickOutcome === realOutcome ? "outcome" : "wrong";
+}
+
+export function calcMatchScore(pick, result, scoring = DEFAULT_SCORING) {
+  const kind = classifyPick(pick, result);
+  if (kind === "exact") return scoring.exactPoints;
+  if (kind === "outcome") return scoring.outcomePoints;
+  return 0;
 }
 
 function specialPickPoints(kind, scoring) {
@@ -88,12 +108,14 @@ export function calcStandings(league, allUsers, allPredictions, results, special
       const result = results[fixture.id];
       if (!result) continue;
       const pick = picks[fixture.id];
-      const s = calcMatchScore(pick, result, scoring);
-      points += s;
-      if (pick?.homeScore != null) {
+      points += calcMatchScore(pick, result, scoring);
+      // Counted from what the pick actually WAS, not from what it scored —
+      // see classifyPick above for why that distinction matters.
+      const kind = classifyPick(pick, result);
+      if (kind) {
         gamesScored++;
-        if (s === scoring.exactPoints) exact++;
-        else if (s === scoring.outcomePoints) correct++;
+        if (kind === "exact") exact++;
+        else if (kind === "outcome") correct++;
       }
     }
 
@@ -239,16 +261,20 @@ export function calcStandingsWithMovement(league, allUsers, allPredictions, resu
 // not the whole season, so the card stays a fixed, current-feeling size
 // instead of growing forever. Three categories:
 //   fire   — someone nailed the exact final score (always shown, no threshold)
-//   upsets — the correct winner was called by under 5% of the people who
+//   upsets — the correct winner was called by 10% or fewer of the people who
 //            made a pick on that game (a real long-shot call)
-//   clowns — the correct winner was missed by under 5% of the people who
+//   clowns — the correct winner was missed by 10% or fewer of the people who
 //            made a pick (i.e. it was "obvious" and almost nobody blew it)
 // Both percentage checks are relative to members who actually made a pick on
 // that specific game, not the whole league roster (no-picks don't count
-// either way). Naturally produces nothing for small leagues, since a 50/50
-// split on 2-3 people never crosses a 5% threshold — that's expected, not a
-// bug.
-const UPSET_THRESHOLD = 0.05;
+// either way).
+//
+// Note the practical floor this implies: for a single person to be 10% or
+// less, at least 10 people must have picked that game. Smaller leagues will
+// simply never produce upset/clown callouts (exact-score 🔥 hits have no
+// threshold and still fire at any size) — that's the arithmetic of a
+// percentage rule, not a bug.
+const UPSET_THRESHOLD = 0.10;
 
 export function computeHighlights(league, allUsers, allPredictions, results) {
   const members = league?.members || [];
@@ -262,15 +288,18 @@ export function computeHighlights(league, allUsers, allPredictions, results) {
 
   for (const fixture of weekFixtures) {
     const result = results[fixture.id];
-    const realOutcome = result.homeScore > result.awayScore ? "H" : result.awayScore > result.homeScore ? "A" : "T";
 
     const made = [];
     for (const uid of members) {
       const pick = (allPredictions[uid]?.picks || {})[fixture.id];
-      if (!pick || pick.homeScore == null || pick.awayScore == null) continue;
-      const isExact = Number(pick.homeScore) === Number(result.homeScore) && Number(pick.awayScore) === Number(result.awayScore);
-      const pickOutcome = pick.homeScore > pick.awayScore ? "H" : pick.awayScore > pick.homeScore ? "A" : "T";
-      made.push({ uid, username: allUsers[uid]?.username || "Unknown", isExact, isCorrect: pickOutcome === realOutcome });
+      const kind = classifyPick(pick, result);
+      if (!kind) continue; // no pick made — doesn't count either way
+      made.push({
+        uid,
+        username: allUsers[uid]?.username || "Unknown",
+        isExact: kind === "exact",
+        isCorrect: kind !== "wrong",
+      });
     }
     const total = made.length;
     if (total === 0) continue;
@@ -282,10 +311,10 @@ export function computeHighlights(league, allUsers, allPredictions, results) {
 
     const correct = made.filter(p => p.isCorrect);
     const incorrect = made.filter(p => !p.isCorrect);
-    if (correct.length > 0 && correct.length / total < UPSET_THRESHOLD) {
+    if (correct.length > 0 && correct.length / total <= UPSET_THRESHOLD) {
       upsets.push({ fixture, users: correct.map(p => p.username) });
     }
-    if (incorrect.length > 0 && incorrect.length / total < UPSET_THRESHOLD) {
+    if (incorrect.length > 0 && incorrect.length / total <= UPSET_THRESHOLD) {
       clowns.push({ fixture, users: incorrect.map(p => p.username) });
     }
   }

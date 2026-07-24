@@ -1,20 +1,30 @@
-// ─── GridClash: Automatic Results Fetcher ─────────────────────────────────
-// Uses ESPN's public (unofficial, undocumented, free, no API key) scoreboard
-// endpoint instead of a paid provider — this was the exact mistake made on
-// the original ScoreClash build: API-Football's free tier excludes the
-// current season, so the paid plan was needed. ESPN's endpoint has no such
-// restriction and is the de facto standard hobby fantasy-football projects
-// use for this. Trade-off: it's not officially documented/supported, so it
-// could change or break without notice — the admin's manual "Fetch Latest
-// Results" button (calling this same endpoint with ?manual=true) is the
-// fallback if the daily cron ever silently stops working.
+// ─── ScoreClash: Automatic Results Fetcher ──────────────────────────────────
 //
-// Never overwrites an existing result. Never touches predictions, users, or
-// leagues — only adds new entries to results/{seasonId}.scores.
+// Thin orchestration only. The two interesting halves live in src/lib/ so
+// they're independently readable and testable:
+//   resultsProviders.js — talks to a score source, returns normalized games
+//   resultsMatching.js  — validates those games and decides what to write
+//
+// This file just wires them to Firestore. Swapping ESPN for a paid provider
+// later means writing one new adapter and changing the `provider` line; the
+// validation, matching, and write logic stay exactly as they are.
+//
+// Current source is ESPN's public (unofficial, undocumented, free, no API
+// key) scoreboard endpoint — chosen because the original ScoreClash build hit
+// a wall with API-Football, whose free tier excludes the current season. The
+// trade-off is that it's unsupported and could change without notice, hence
+// the admin's manual "Fetch Latest Results" button as a fallback and the
+// per-game reporting below so a silent breakage is diagnosable.
+//
+// Guarantees: never overwrites an existing score; only ever adds keys under
+// results/{seasonId}.scores — never predictions, users, leagues, or the
+// `specials` field in that same document.
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { REGULAR_SEASON_FIXTURES, SEASON } from "../src/data/fixtures.js";
+import { SEASON } from "../src/data/fixtures.js";
+import { espnProvider } from "../src/lib/resultsProviders.js";
+import { planResultWrites } from "../src/lib/resultsMatching.js";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
@@ -23,15 +33,8 @@ if (!getApps().length) {
 const db = getFirestore();
 const RESULTS_DOC_ID = `results_${SEASON.year}`;
 
-// ESPN's team abbreviations differ from ours in a couple of spots.
-const ESPN_ABBR_MAP = {
-  WSH: "WAS",
-  JAC: "JAX",
-  LA: "LAR",
-};
-function normalize(abbr) {
-  return ESPN_ABBR_MAP[abbr] || abbr;
-}
+// Swap this one line to change provider.
+const provider = espnProvider;
 
 export default async function handler(req, res) {
   const authHeader = req.headers["authorization"];
@@ -43,57 +46,42 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ESPN's scoreboard endpoint defaults to "today" if no ?dates= param is
-    // given, in whatever the server's local date is — pass explicit dates
-    // to be safe across the whole current week instead of just today, since
-    // NFL games span Thu/Sun/Mon (and occasional Wed/Sat/Fri specials).
-    const today = new Date();
-    const dateParam = [-1, 0, 1, 2, 3].map(offset => {
-      const d = new Date(today.getTime() + offset * 86400000);
-      return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
-    }).join(",");
-
-    const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${dateParam}`;
-    const response = await fetch(url);
-    const data = await response.json();
-    const events = Array.isArray(data.events) ? data.events : [];
+    const { games, fetchedCount } = await provider.fetchRecentGames();
 
     const resultsDocRef = db.collection("results").doc(RESULTS_DOC_ID);
     const snap = await resultsDocRef.get();
     const currentScores = snap.exists ? (snap.data().scores || {}) : {};
 
-    let updatedCount = 0;
-    const details = [];
-
-    for (const event of events) {
-      const comp = event.competitions?.[0];
-      const completed = comp?.status?.type?.completed;
-      if (!completed) continue;
-
-      const home = comp.competitors.find(c => c.homeAway === "home");
-      const away = comp.competitors.find(c => c.homeAway === "away");
-      if (!home || !away) continue;
-
-      const homeAbbr = normalize(home.team.abbreviation);
-      const awayAbbr = normalize(away.team.abbreviation);
-      const homeScore = Number(home.score);
-      const awayScore = Number(away.score);
-
-      const match = REGULAR_SEASON_FIXTURES.find(f => f.home === homeAbbr && f.away === awayAbbr);
-      if (!match) { details.push({ status: "no_match", homeAbbr, awayAbbr }); continue; }
-      if (currentScores[match.id]) { details.push({ status: "already_exists", fixtureId: match.id }); continue; }
-
-      currentScores[match.id] = { homeScore, awayScore, enteredAt: Date.now() };
-      updatedCount++;
-      details.push({ status: "added", fixtureId: match.id, score: `${awayScore}-${homeScore}` });
-    }
+    const { writes, details, skipped, updatedCount } = planResultWrites({
+      games,
+      currentScores,
+      seasonYear: SEASON.year,
+    });
 
     if (updatedCount > 0) {
-      await resultsDocRef.set({ scores: currentScores }, { merge: true });
+      if (snap.exists) {
+        // Field-path update: touches only these specific score keys, leaving
+        // `specials` and everything else in the document alone.
+        await resultsDocRef.update(writes);
+      } else {
+        // Document doesn't exist yet — update() would throw, so seed it.
+        const seed = {};
+        for (const [path, value] of Object.entries(writes)) {
+          seed[path.replace(/^scores\./, "")] = value;
+        }
+        await resultsDocRef.set({ scores: seed }, { merge: true });
+      }
     }
 
-    return res.status(200).json({ success: true, checked: events.length, updated: updatedCount, details });
+    return res.status(200).json({
+      success: true,
+      provider: provider.name,
+      checked: fetchedCount,
+      updated: updatedCount,
+      skipped,
+      details,
+    });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, provider: provider.name, error: error.message });
   }
 }

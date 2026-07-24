@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON } from "../data/fixtures.js";
 import { TEAMS, TEAM_CODES, teamsByDivision } from "../data/teams.js";
 import {
   fsSetResult, fsClearResult, fsSetSpecialResult, fsUpdateLeague, fsDeleteLeague,
   fsAdminOverrideGamePrediction, fsGetPredictions, fsGetAllUsers,
+  fsSubscribeResults, fsSubscribeSpecialResults,
 } from "../firebase.js";
 import { DEFAULT_SCORING, getScoringSettings } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
@@ -64,35 +65,83 @@ export default function AdminPanel({ league, user, isSuperAdmin, refresh, onLeag
 
 function ResultsEntry({ timezone }) {
   const [week, setWeek] = useState(1);
-  const [inputs, setInputs] = useState({});
-  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+  // Live results, so the admin can SEE what's already entered (by hand or by
+  // the auto-fetch cron) instead of typing blind into empty boxes.
+  const [results, setResults] = useState({});
+  useEffect(() => fsSubscribeResults(setResults), []);
 
-  const save = async (fid) => {
-    const inp = inputs[fid];
-    if (!inp || inp.home === "" || inp.away === "") return;
-    await fsSetResult(fid, inp.home, inp.away);
-  };
-  const clear = async (fid) => { await fsClearResult(fid); };
+  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+  const enteredCount = fixtures.filter(f => results[f.id]).length;
 
   return (
     <div>
-      <select className="form-select" style={{ marginBottom: 14, maxWidth: 160 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
-        {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1).map(w => <option key={w} value={w}>Week {w}</option>)}
-      </select>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+        <select className="form-select" style={{ maxWidth: 160 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
+          {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1).map(w => <option key={w} value={w}>Week {w}</option>)}
+        </select>
+        {fixtures.length > 0 && (
+          <span style={{ fontSize: 13.5, color: "var(--muted)" }}>
+            {enteredCount} of {fixtures.length} results entered
+          </span>
+        )}
+      </div>
       {fixtures.length === 0 && <div style={{ color: "var(--muted)", fontSize: 14 }}>No fixtures loaded for this week yet.</div>}
       {fixtures.map(f => (
-        <div key={f.id} className="standings-row" style={{ flexWrap: "wrap" }}>
-          <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)" }}>{formatKickoff(f.kickoffUTC, timezone)}</span>
-          <span style={{ flex: 1, fontSize: 15 }}><TeamBadge code={f.away} /> @ <TeamBadge code={f.home} /></span>
-          <input className="score-input" placeholder="A" defaultValue=""
-            onChange={e => setInputs(s => ({ ...s, [f.id]: { ...s[f.id], away: e.target.value } }))} />
-          <span className="score-sep">–</span>
-          <input className="score-input" placeholder="H" defaultValue=""
-            onChange={e => setInputs(s => ({ ...s, [f.id]: { ...s[f.id], home: e.target.value } }))} />
-          <button className="btn btn-primary btn-sm" onClick={() => save(f.id)}>Save</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => clear(f.id)}>Clear</button>
-        </div>
+        <ResultRow key={f.id} fixture={f} result={results[f.id]} timezone={timezone} />
       ))}
+    </div>
+  );
+}
+
+// One row per game, with its own local input state seeded from the stored
+// result — so existing scores are visible and editable, and "Clear" only
+// appears when there's actually something to clear.
+function ResultRow({ fixture, result, timezone }) {
+  const [away, setAway] = useState(result?.awayScore ?? "");
+  const [home, setHome] = useState(result?.homeScore ?? "");
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Re-sync whenever the stored result changes underneath us (another admin
+  // saving, or the daily fetch landing while this panel is open).
+  useEffect(() => {
+    setAway(result?.awayScore ?? "");
+    setHome(result?.homeScore ?? "");
+    setDirty(false);
+  }, [result?.awayScore, result?.homeScore]);
+
+  const hasResult = !!result;
+
+  const save = async () => {
+    if (away === "" || home === "") return;
+    setBusy(true);
+    await fsSetResult(fixture.id, home, away);
+    setBusy(false);
+    setDirty(false);
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    await fsClearResult(fixture.id);
+    setBusy(false);
+  };
+
+  return (
+    <div className="standings-row" style={{ flexWrap: "wrap" }}>
+      <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}>
+        {formatKickoff(fixture.kickoffUTC, timezone)}
+        {hasResult && <span className="chip active">Entered</span>}
+      </span>
+      <span style={{ flex: 1, fontSize: 15 }}><TeamBadge code={fixture.away} /> @ <TeamBadge code={fixture.home} /></span>
+      <input className="score-input" placeholder="A" value={away}
+        onChange={e => { setAway(e.target.value); setDirty(true); }} />
+      <span className="score-sep">–</span>
+      <input className="score-input" placeholder="H" value={home}
+        onChange={e => { setHome(e.target.value); setDirty(true); }} />
+      <button className="btn btn-primary btn-sm" disabled={!dirty || busy} onClick={save}>
+        {hasResult ? "Update" : "Save"}
+      </button>
+      {hasResult && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={clear}>Clear</button>}
     </div>
   );
 }
@@ -147,20 +196,33 @@ function OverridesEntry({ league, adminUid, refresh }) {
 
 function SpecialResultsEntry() {
   const [saved, setSaved] = useState({});
+  // Live, and CONTROLLED — these dropdowns used to be uncontrolled with a
+  // hardcoded empty default, so they always read "Not decided yet" even for
+  // winners that had already been set. The admin had no way to see or verify
+  // existing entries.
+  const [specials, setSpecials] = useState({});
+  useEffect(() => fsSubscribeSpecialResults(setSpecials), []);
+
   const set = async (typeId, team) => {
     await fsSetSpecialResult(typeId, team);
     setSaved(s => ({ ...s, [typeId]: true }));
     setTimeout(() => setSaved(s => ({ ...s, [typeId]: false })), 2000);
   };
+
+  const decidedCount = SPECIAL_PICK_TYPES.filter(t => specials[t.id]).length;
+
   return (
     <div>
-      <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>Set the actual winner once known — these score everyone's preseason picks across every league.</p>
+      <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>
+        Set the actual winner once known — these score everyone's preseason picks across every league.
+        {" "}<b>{decidedCount} of {SPECIAL_PICK_TYPES.length}</b> decided so far.
+      </p>
       {SPECIAL_PICK_TYPES.map(type => {
         const options = type.kind === "division" ? teamsByDivision(type.division) : TEAM_CODES;
         return (
           <div key={type.id} className="standings-row">
             <span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{type.label}</span>
-            <select className="form-select" style={{ maxWidth: 200 }} defaultValue="" onChange={e => set(type.id, e.target.value)}>
+            <select className="form-select" style={{ maxWidth: 200 }} value={specials[type.id] || ""} onChange={e => set(type.id, e.target.value)}>
               <option value="">Not decided yet</option>
               {options.map(code => <option key={code} value={code}>{TEAMS[code].city} {TEAMS[code].name}</option>)}
             </select>
@@ -172,6 +234,13 @@ function SpecialResultsEntry() {
   );
 }
 
+// 1–20 rather than a free-text number box: it keeps the values sane and,
+// more importantly, makes 0 unselectable. Zero-point categories used to
+// break the Exact/Outcome columns, since a wrong pick and a 0-point correct
+// pick were indistinguishable by score alone (see classifyPick in
+// lib/scoring.js, which now also defends against this independently).
+const POINT_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1);
+
 function ScoringSettings({ league, refresh }) {
   const current = getScoringSettings(league);
   const [draft, setDraft] = useState({ ...current });
@@ -181,6 +250,10 @@ function ScoringSettings({ league, refresh }) {
   const save = async () => {
     setError("");
     const { outcomePoints, exactPoints, divisionPoints, conferencePoints, superbowlPoints } = draft;
+    const all = [outcomePoints, exactPoints, divisionPoints, conferencePoints, superbowlPoints];
+    if (all.some(v => !Number.isFinite(Number(v)) || Number(v) < 1 || Number(v) > 20)) {
+      return setError("Every category must be worth between 1 and 20 points.");
+    }
     if (Number(exactPoints) <= Number(outcomePoints)) return setError("Exact score points must be greater than correct-winner points.");
     if (Number(conferencePoints) <= Number(divisionPoints)) return setError("Conference champion points should be greater than division winner points.");
     if (Number(superbowlPoints) <= Number(conferencePoints)) return setError("Super Bowl points should be greater than conference champion points.");
@@ -195,12 +268,29 @@ function ScoringSettings({ league, refresh }) {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const field = (key, label) => (
-    <div className="form-group">
-      <label className="form-label">{label}</label>
-      <input className="form-input" type="number" value={draft[key]} onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))} />
-    </div>
-  );
+  const field = (key, label) => {
+    const current = Number(draft[key]);
+    // A league configured before this was a dropdown could hold a value
+    // outside 1–20 — including the 0 that used to make wrong picks count as
+    // correct ones in the stats columns. Surface that value as an extra
+    // option rather than rendering a blank select, so the admin can see what
+    // it actually is and pick a valid replacement.
+    const options = POINT_OPTIONS.includes(current) ? POINT_OPTIONS : [current, ...POINT_OPTIONS];
+    return (
+      <div className="form-group">
+        <label className="form-label">{label}</label>
+        <select
+          className="form-select"
+          value={current}
+          onChange={e => setDraft(d => ({ ...d, [key]: Number(e.target.value) }))}
+        >
+          {options.map(n => (
+            <option key={n} value={n}>{n} {n === 1 ? "point" : "points"}{POINT_OPTIONS.includes(n) ? "" : " (invalid)"}</option>
+          ))}
+        </select>
+      </div>
+    );
+  };
 
   return (
     <div style={{ maxWidth: 320 }}>
