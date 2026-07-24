@@ -3,6 +3,7 @@ import { css } from "./theme.js";
 import { HexIcon } from "./components/Logo.jsx";
 import { LogoIntro } from "./components/Logo.jsx";
 import AuthPage from "./components/AuthPage.jsx";
+import Footer from "./components/Footer.jsx";
 import ProfileDropdown from "./components/ProfileDropdown.jsx";
 import DashboardTab from "./components/DashboardTab.jsx";
 import VerifyEmailBanner from "./components/VerifyEmailBanner.jsx";
@@ -159,6 +160,8 @@ export default function App() {
           )}
           {tab === "nflstandings" && <NflStandingsTab />}
         </main>
+
+        <Footer />
       </div>
     </>
   );

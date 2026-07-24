@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fbRegister, fbLogin, fbResetPassword, fbSendVerificationEmail, fsWriteUser, fsReadUser, fsIsUsernameTaken } from "../firebase.js";
 import { WordmarkLogo } from "./Logo.jsx";
+import Footer from "./Footer.jsx";
 
 export default function AuthPage({ onLogin }) {
   const [mode, setMode] = useState("login"); // login | register | reset
@@ -40,47 +41,50 @@ export default function AuthPage({ onLogin }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 32, padding: 20 }}>
-      <WordmarkLogo width={340} />
-      <form onSubmit={submit} className="glass card" style={{ width: "100%", maxWidth: 380 }}>
-        <div className="modal-title" style={{ marginBottom: 18 }}>
-          {mode === "login" ? "Sign In" : mode === "register" ? "Create Account" : "Reset Password"}
-        </div>
-        {error && <div className="error-msg">{error}</div>}
-        {info && <div className="success-msg">{info}</div>}
-
-        {mode === "register" && (
-          <div className="form-group">
-            <label className="form-label">Username</label>
-            <input className="form-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="How friends will see you" />
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <div style={{ margin: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 32, padding: 20, width: "100%" }}>
+        <WordmarkLogo width={340} />
+        <form onSubmit={submit} className="glass card" style={{ width: "100%", maxWidth: 380 }}>
+          <div className="modal-title" style={{ marginBottom: 18 }}>
+            {mode === "login" ? "Sign In" : mode === "register" ? "Create Account" : "Reset Password"}
           </div>
-        )}
-        <div className="form-group">
-          <label className="form-label">Email</label>
-          <input className="form-input" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
-        </div>
-        {mode !== "reset" && (
-          <div className="form-group">
-            <label className="form-label">Password</label>
-            <input className="form-input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
-          </div>
-        )}
+          {error && <div className="error-msg">{error}</div>}
+          {info && <div className="success-msg">{info}</div>}
 
-        <button className="btn btn-primary btn-full" disabled={busy} type="submit">
-          {busy ? "Please wait…" : mode === "login" ? "Sign In" : mode === "register" ? "Create Account" : "Send Reset Email"}
-        </button>
-
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, fontSize: 12, color: "var(--muted)" }}>
-          {mode === "login" ? (
-            <>
-              <span style={{ cursor: "pointer" }} onClick={() => setMode("register")}>Create an account</span>
-              <span style={{ cursor: "pointer" }} onClick={() => setMode("reset")}>Forgot password?</span>
-            </>
-          ) : (
-            <span style={{ cursor: "pointer" }} onClick={() => setMode("login")}>← Back to sign in</span>
+          {mode === "register" && (
+            <div className="form-group">
+              <label className="form-label">Username</label>
+              <input className="form-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="How friends will see you" />
+            </div>
           )}
-        </div>
-      </form>
+          <div className="form-group">
+            <label className="form-label">Email</label>
+            <input className="form-input" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+          </div>
+          {mode !== "reset" && (
+            <div className="form-group">
+              <label className="form-label">Password</label>
+              <input className="form-input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+            </div>
+          )}
+
+          <button className="btn btn-primary btn-full" disabled={busy} type="submit">
+            {busy ? "Please wait…" : mode === "login" ? "Sign In" : mode === "register" ? "Create Account" : "Send Reset Email"}
+          </button>
+
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, fontSize: 12, color: "var(--muted)" }}>
+            {mode === "login" ? (
+              <>
+                <span style={{ cursor: "pointer" }} onClick={() => setMode("register")}>Create an account</span>
+                <span style={{ cursor: "pointer" }} onClick={() => setMode("reset")}>Forgot password?</span>
+              </>
+            ) : (
+              <span style={{ cursor: "pointer" }} onClick={() => setMode("login")}>← Back to sign in</span>
+            )}
+          </div>
+        </form>
+      </div>
+      <Footer />
     </div>
   );
 }

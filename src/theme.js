@@ -38,6 +38,12 @@ export const css = (dark = true) => `
 
   .app { min-height: 100vh; display: flex; flex-direction: column; }
 
+  /* Footer — scrolls with the page, not fixed/sticky (no floating bars
+     eating into phone screen space). */
+  .app-footer { padding: 28px 24px 20px; text-align: center; margin-top: auto; }
+  .app-footer-creator { font-size: 11px; font-weight: 800; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 6px; }
+  .app-footer-legal { font-size: 9.5px; line-height: 1.5; color: var(--muted); opacity: 0.55; max-width: 640px; margin: 0 auto; }
+
   .glass {
     background: var(--surface);
     backdrop-filter: blur(var(--blur));
