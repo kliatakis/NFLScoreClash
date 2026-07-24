@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, Fragment } from "react";
 import { calcStandingsWithMovement, getScoringSettings, explainTiebreak } from "../lib/scoring.js";
 import { fsSaveLeagueStandingsSnapshot } from "../firebase.js";
 import Avatar from "./Avatar.jsx";
@@ -42,40 +42,48 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
         // explains which of the 4 tiebreakers separated them.
         const next = standings[i + 1];
         const tieInfo = next && next.points === entry.points ? explainTiebreak(entry, next) : null;
+        // A divider after the podium, and one before the last spot — skipped
+        // together if they'd land on the same row (e.g. a 4-person league,
+        // where "4th" and "last" are the same person).
+        const showPodiumDivider = i === 3 && !isLast;
         return (
-          <div key={entry.uid} className="standings-row">
-            <span className="standings-rank standings-col-rank" title={`#${rank}`}>
-              {medal || (isLast ? "🚽" : rank)}
-            </span>
-            <span className="standings-col-player" style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-              <Avatar user={allUsers[entry.uid]} size={30} />
-              <span className={`standings-name ${entry.uid === user.uid ? "you" : ""}`}>{entry.username}</span>
-              {tieInfo && (
-                <span className="tiebreak-info" title={tieInfo}>ⓘ</span>
-              )}
-            </span>
-            <span className="standings-col-stat">{entry.exact}</span>
-            <span className="standings-col-stat">{entry.correct}</span>
-            <span className="standings-pts standings-col-pts">{entry.points}</span>
-            <span className="standings-col-move"><MovementArrows movement={movementByUid[entry.uid]} /></span>
-          </div>
+          <Fragment key={entry.uid}>
+            {showPodiumDivider && <div className="standings-divider standings-divider-podium" />}
+            {isLast && <div className="standings-divider standings-divider-caution" />}
+            <div className="standings-row">
+              <span className="standings-rank standings-col-rank" title={`#${rank}`}>
+                {medal || (isLast ? "🚽" : rank)}
+              </span>
+              <span className="standings-col-player" style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                <Avatar user={allUsers[entry.uid]} size={30} />
+                <span className={`standings-name ${entry.uid === user.uid ? "you" : ""}`}>{entry.username}</span>
+                {tieInfo && (
+                  <span className="tiebreak-info" title={tieInfo}>ⓘ</span>
+                )}
+              </span>
+              <span className="standings-col-stat">{entry.exact}</span>
+              <span className="standings-col-stat">{entry.correct}</span>
+              <span className="standings-pts standings-col-pts">{entry.points}</span>
+              <span className="standings-col-move"><MovementArrows movement={movementByUid[entry.uid]} /></span>
+            </div>
+          </Fragment>
         );
       })}
 
       <div className="standings-legend">
         <div className="standings-legend-title">Scoring</div>
         <div className="scoring-summary">
-          <span>Correct Winner: <b>{scoring.outcomePoints}</b> pt{scoring.outcomePoints === 1 ? "" : "s"}</span>
-          <span>Exact Score: <b>{scoring.exactPoints}</b> pt{scoring.exactPoints === 1 ? "" : "s"}</span>
-          <span>Division Winner: <b>{scoring.divisionPoints}</b> pt{scoring.divisionPoints === 1 ? "" : "s"}</span>
-          <span>Conference Champion: <b>{scoring.conferencePoints}</b> pt{scoring.conferencePoints === 1 ? "" : "s"}</span>
-          <span>Super Bowl Champion: <b>{scoring.superbowlPoints}</b> pt{scoring.superbowlPoints === 1 ? "" : "s"}</span>
+          <div className="scoring-row"><span>Correct Winner</span><span className="scoring-pts">{scoring.outcomePoints} pt{scoring.outcomePoints === 1 ? "" : "s"}</span></div>
+          <div className="scoring-row"><span>Exact Score</span><span className="scoring-pts">{scoring.exactPoints} pt{scoring.exactPoints === 1 ? "" : "s"}</span></div>
+          <div className="scoring-row"><span>Division Winner</span><span className="scoring-pts">{scoring.divisionPoints} pt{scoring.divisionPoints === 1 ? "" : "s"}</span></div>
+          <div className="scoring-row"><span>Conference Champion</span><span className="scoring-pts">{scoring.conferencePoints} pt{scoring.conferencePoints === 1 ? "" : "s"}</span></div>
+          <div className="scoring-row"><span>Super Bowl Champion</span><span className="scoring-pts">{scoring.superbowlPoints} pt{scoring.superbowlPoints === 1 ? "" : "s"}</span></div>
         </div>
       </div>
 
       <div className="standings-legend">
         <div className="standings-legend-title">Notes</div>
-        <ol>
+        <ol className="note-list">
           <li>
             <b>Exact Score</b> and <b>Outcome</b> never double-count the same game — a perfectly-called score
             (e.g. predicting 21–7 and it lands 21–7) counts as an Exact Score only, not also an Outcome.
@@ -83,12 +91,12 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
           <li>
             Ties on Total Points are broken in this order — look for the <span className="tiebreak-info" style={{ position: "static" }}>ⓘ</span> next
             to a name for the exact reason:
-            <ol>
-              <li>Super Bowl winner pick</li>
-              <li>Conference (AFC/NFC) winner picks</li>
-              <li>Division winner picks</li>
-              <li>Exact scores</li>
-            </ol>
+            <div className="tiebreak-steps">
+              <span className="tiebreak-step"><span className="tiebreak-step-num">1</span>Super Bowl pick</span>
+              <span className="tiebreak-step"><span className="tiebreak-step-num">2</span>Conference picks</span>
+              <span className="tiebreak-step"><span className="tiebreak-step-num">3</span>Division picks</span>
+              <span className="tiebreak-step"><span className="tiebreak-step-num">4</span>Exact scores</span>
+            </div>
           </li>
         </ol>
       </div>

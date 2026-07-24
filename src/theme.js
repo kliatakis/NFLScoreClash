@@ -155,9 +155,26 @@ export const css = (dark = true) => `
   /* Dashboard highlights ("announcement board") */
   .highlight-row { font-size: 13px; line-height: 1.5; padding: 10px 14px; border-radius: 10px; background: var(--surface2); }
 
-  /* Scoring settings summary, shown above the standings Notes section */
-  .scoring-summary { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 11.5px; color: var(--muted); }
-  .scoring-summary b { color: var(--text); }
+  /* Scoring settings summary, shown above the standings Notes section — a
+     vertical list of rows, each ending in a colored pill rather than plain
+     bold text (bold-on-dark-background didn't read as a "value" clearly). */
+  .scoring-summary { display: flex; flex-direction: column; gap: 4px; }
+  .scoring-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 2px; font-size: 12.5px; color: var(--muted); }
+  .scoring-pts { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 3px 12px; border-radius: 20px; background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); color: var(--accent); font-weight: 700; font-size: 11.5px; }
+
+  /* Notes — card-style rows with a numbered badge instead of a plain "1."
+     list marker, and the 4-step tiebreaker order shown as a chip chain
+     instead of a nested lettered list. */
+  .note-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; counter-reset: note; }
+  .note-list > li { counter-increment: note; position: relative; padding: 10px 14px 10px 38px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; font-size: 12px; line-height: 1.55; }
+  .note-list > li::before {
+    content: counter(note); position: absolute; left: 12px; top: 11px;
+    width: 18px; height: 18px; border-radius: 50%; background: var(--accent);
+    color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+  }
+  .tiebreak-steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tiebreak-step { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 20px; background: var(--surface3); font-size: 11px; color: var(--text); }
+  .tiebreak-step-num { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--gold); color: #1a1200; font-size: 9.5px; font-weight: 800; flex-shrink: 0; }
 
   .overridden-flag { color: var(--gold); font-size: 12px; font-weight: 800; cursor: help; margin-left: 4px; }
 
@@ -172,6 +189,12 @@ export const css = (dark = true) => `
   .movement-dash { color: var(--muted); font-weight: 700; }
   .movement-arrow.up { color: var(--green); }
   .movement-arrow.down { color: var(--accent2); }
+
+  /* Divider lines marking off the podium (top 3) and the bottom spot,
+     rather than just relying on the medal/toilet emoji alone. */
+  .standings-divider { height: 2px; margin: 2px 0 8px; border-radius: 2px; }
+  .standings-divider-podium { background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+  .standings-divider-caution { background: linear-gradient(90deg, transparent, var(--accent2), transparent); margin: 8px 0 2px; }
 
   /* Standings table columns — shared widths so the header row lines up with
      the data rows exactly. */
