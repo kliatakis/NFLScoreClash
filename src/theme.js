@@ -158,9 +158,9 @@ export const css = (dark = true) => `
   /* Scoring settings summary, shown above the standings Notes section — a
      vertical list of rows, each ending in a colored pill rather than plain
      bold text (bold-on-dark-background didn't read as a "value" clearly). */
-  .scoring-summary { display: flex; flex-direction: column; gap: 4px; }
-  .scoring-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 2px; font-size: 12.5px; color: var(--muted); }
-  .scoring-pts { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 3px 12px; border-radius: 20px; background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); color: var(--accent); font-weight: 700; font-size: 11.5px; }
+  .scoring-summary { display: flex; flex-direction: column; gap: 2px; }
+  .scoring-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; font-size: 11px; color: var(--muted); }
+  .scoring-pts { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; padding: 2px 10px; border-radius: 20px; background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); color: var(--accent); font-weight: 700; font-size: 10px; }
 
   /* Notes — card-style rows with a numbered badge instead of a plain "1."
      list marker, and the 4-step tiebreaker order shown as a chip chain
@@ -208,7 +208,7 @@ export const css = (dark = true) => `
   .standings-head:hover { background: none; }
 
   .tiebreak-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: var(--surface3); color: var(--accent); font-size: 11px; font-style: normal; cursor: help; flex-shrink: 0; }
-  .standings-legend { margin-top: 10px; padding: 14px 16px 4px; font-size: 11px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--border); }
+  .standings-legend { margin-top: 14px; padding: 18px 16px 4px; font-size: 11px; line-height: 1.6; color: var(--muted); border-top: 2px solid var(--border2); }
   .standings-legend-title { font-family: var(--font-body); font-size: 12px; font-weight: 800; letter-spacing: 1.5px; color: var(--text); margin-bottom: 6px; text-transform: uppercase; }
   .standings-legend ol { margin: 0; padding-left: 18px; }
   .standings-legend li { margin-bottom: 4px; }
