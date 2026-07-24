@@ -154,7 +154,9 @@ export default function App() {
               refresh={() => {}}
             />
           )}
-          {tab === "predictions" && <PredictionsTab user={user} />}
+          {tab === "predictions" && (
+            <PredictionsTab user={user} league={selectedLeague} allUsers={allUsers} allPredictions={allPredictions} specialResults={specialResults} />
+          )}
           {tab === "nflstandings" && <NflStandingsTab />}
         </main>
       </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { SEASON } from "../data/fixtures.js";
 
-const LOCK_MINUTES_BEFORE_KICKOFF = 15;
+export const LOCK_MINUTES_BEFORE_KICKOFF = 15;
 
 export function useCountdown(targetISO) {
   const [countdown, setCountdown] = useState(null);
@@ -34,7 +34,7 @@ export function useFixtureLock(kickoffISO) {
       const lockAt = new Date(kickoff.getTime() - LOCK_MINUTES_BEFORE_KICKOFF * 60000);
       const msLeft = lockAt - new Date();
       if (msLeft <= 0) setStatus({ locked: true });
-      else setStatus({ locked: false, minsLeft: Math.floor(msLeft / 60000) });
+      else setStatus({ locked: false, minsLeft: Math.floor(msLeft / 60000), msLeft });
     };
     update();
     const id = setInterval(update, 15000);

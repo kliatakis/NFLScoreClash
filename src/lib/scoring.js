@@ -188,3 +188,62 @@ export function calcStandingsWithMovement(league, allUsers, allPredictions, resu
     newVersion: currentVersion,
   };
 }
+
+// ─── DASHBOARD HIGHLIGHTS ───────────────────────────────────────────────────
+// Fun "announcement board" callouts for the most recently completed week —
+// not the whole season, so the card stays a fixed, current-feeling size
+// instead of growing forever. Three categories:
+//   fire   — someone nailed the exact final score (always shown, no threshold)
+//   upsets — the correct winner was called by under 5% of the people who
+//            made a pick on that game (a real long-shot call)
+//   clowns — the correct winner was missed by under 5% of the people who
+//            made a pick (i.e. it was "obvious" and almost nobody blew it)
+// Both percentage checks are relative to members who actually made a pick on
+// that specific game, not the whole league roster (no-picks don't count
+// either way). Naturally produces nothing for small leagues, since a 50/50
+// split on 2-3 people never crosses a 5% threshold — that's expected, not a
+// bug.
+const UPSET_THRESHOLD = 0.05;
+
+export function computeHighlights(league, allUsers, allPredictions, results) {
+  const members = league?.members || [];
+  const completedWeeks = REGULAR_SEASON_FIXTURES.filter(f => results[f.id]).map(f => f.week);
+  if (completedWeeks.length === 0) return { week: null, fire: [], upsets: [], clowns: [] };
+
+  const week = Math.max(...completedWeeks);
+  const weekFixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week && results[f.id]);
+
+  const fire = [], upsets = [], clowns = [];
+
+  for (const fixture of weekFixtures) {
+    const result = results[fixture.id];
+    const realOutcome = result.homeScore > result.awayScore ? "H" : result.awayScore > result.homeScore ? "A" : "T";
+
+    const made = [];
+    for (const uid of members) {
+      const pick = (allPredictions[uid]?.picks || {})[fixture.id];
+      if (!pick || pick.homeScore == null || pick.awayScore == null) continue;
+      const isExact = Number(pick.homeScore) === Number(result.homeScore) && Number(pick.awayScore) === Number(result.awayScore);
+      const pickOutcome = pick.homeScore > pick.awayScore ? "H" : pick.awayScore > pick.homeScore ? "A" : "T";
+      made.push({ uid, username: allUsers[uid]?.username || "Unknown", isExact, isCorrect: pickOutcome === realOutcome });
+    }
+    const total = made.length;
+    if (total === 0) continue;
+
+    const exactHitters = made.filter(p => p.isExact).map(p => p.username);
+    if (exactHitters.length > 0) {
+      fire.push({ fixture, users: exactHitters, score: `${result.awayScore}-${result.homeScore}` });
+    }
+
+    const correct = made.filter(p => p.isCorrect);
+    const incorrect = made.filter(p => !p.isCorrect);
+    if (correct.length > 0 && correct.length / total < UPSET_THRESHOLD) {
+      upsets.push({ fixture, users: correct.map(p => p.username) });
+    }
+    if (incorrect.length > 0 && incorrect.length / total < UPSET_THRESHOLD) {
+      clowns.push({ fixture, users: incorrect.map(p => p.username) });
+    }
+  }
+
+  return { week, fire, upsets, clowns };
+}

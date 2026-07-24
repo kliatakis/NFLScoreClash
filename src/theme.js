@@ -139,6 +139,25 @@ export const css = (dark = true) => `
   .lock-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
   .lock-badge.locked { color: var(--accent2); background: rgba(244,63,94,0.1); }
   .lock-badge.open { color: var(--green); background: rgba(34,197,94,0.1); }
+  .lock-badge.warn { color: var(--gold); background: rgba(245,158,11,0.1); }
+  .lock-badge.urgent { color: var(--accent2); background: rgba(244,63,94,0.1); }
+
+  /* Reveal-everyone's-picks (Predictions tab, once a game/pick is decided) */
+  .fixture-reveal { padding: 0 18px 12px; }
+  .reveal-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .reveal-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .reveal-row:last-child { border-bottom: none; }
+  .reveal-exact { color: var(--gold); font-weight: 700; }
+  .reveal-correct { color: var(--green); font-weight: 600; }
+  .reveal-wrong { color: var(--muted); }
+  .reveal-none { color: var(--muted); font-style: italic; }
+
+  /* Dashboard highlights ("announcement board") */
+  .highlight-row { font-size: 13px; line-height: 1.5; padding: 10px 14px; border-radius: 10px; background: var(--surface2); }
+
+  /* Scoring settings summary, shown above the standings Notes section */
+  .scoring-summary { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 11.5px; color: var(--muted); }
+  .scoring-summary b { color: var(--text); }
 
   .overridden-flag { color: var(--gold); font-size: 12px; font-weight: 800; cursor: help; margin-left: 4px; }
 

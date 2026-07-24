@@ -63,6 +63,17 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
       })}
 
       <div className="standings-legend">
+        <div className="standings-legend-title">Scoring</div>
+        <div className="scoring-summary">
+          <span>Correct Winner: <b>{scoring.outcomePoints}</b> pt{scoring.outcomePoints === 1 ? "" : "s"}</span>
+          <span>Exact Score: <b>{scoring.exactPoints}</b> pt{scoring.exactPoints === 1 ? "" : "s"}</span>
+          <span>Division Winner: <b>{scoring.divisionPoints}</b> pt{scoring.divisionPoints === 1 ? "" : "s"}</span>
+          <span>Conference Champion: <b>{scoring.conferencePoints}</b> pt{scoring.conferencePoints === 1 ? "" : "s"}</span>
+          <span>Super Bowl Champion: <b>{scoring.superbowlPoints}</b> pt{scoring.superbowlPoints === 1 ? "" : "s"}</span>
+        </div>
+      </div>
+
+      <div className="standings-legend">
         <div className="standings-legend-title">Notes</div>
         <ol>
           <li>

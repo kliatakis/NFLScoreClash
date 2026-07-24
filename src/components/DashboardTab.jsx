@@ -3,6 +3,7 @@ import { calcStandings, getScoringSettings } from "../lib/scoring.js";
 import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
 import { formatKickoff } from "../lib/time.js";
 import StandingsCard from "./StandingsCard.jsx";
+import HighlightsCard from "./HighlightsCard.jsx";
 import TeamBadge from "./TeamBadge.jsx";
 
 export default function DashboardTab({ user, league, allUsers, allPredictions, results, specialResults, lastLoginPrev, setTab }) {
@@ -61,6 +62,8 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
           🏈 {newResultsCount} new result{newResultsCount > 1 ? "s" : ""} since you last logged in.
         </div>
       )}
+
+      <HighlightsCard league={league} allUsers={allUsers} allPredictions={allPredictions} results={results} />
 
       <div className="grid-4" style={{ marginBottom: 24 }}>
         <div className="glass stat-card">

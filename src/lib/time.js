@@ -59,3 +59,27 @@ export function formatKickoffTime(kickoffUTC, timezone = DEFAULT_TIMEZONE) {
     return new Date(kickoffUTC).toUTCString();
   }
 }
+
+// ─── LOCK COUNTDOWN URGENCY ──────────────────────────────────────────────────
+// Shared by per-game locks (Predictions tab) and the season-picks lock
+// (Division/Conference/Super Bowl) so both use identical thresholds/colors:
+// green with a full day+ to go, orange inside a day, red inside the last
+// six hours. Maps to the .lock-badge.open / .warn / .urgent CSS classes.
+export function lockUrgency(msLeft) {
+  if (msLeft == null) return "open";
+  const hours = msLeft / 3600000;
+  if (hours >= 24) return "open";
+  if (hours >= 6) return "warn";
+  return "urgent";
+}
+
+// "2d 4h", "5h 12m", "38m" — compact enough for a badge.
+export function formatDuration(ms) {
+  if (ms == null || ms <= 0) return "0m";
+  const days = Math.floor(ms / 86400000);
+  const hours = Math.floor((ms % 86400000) / 3600000);
+  const mins = Math.floor((ms % 3600000) / 60000);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
