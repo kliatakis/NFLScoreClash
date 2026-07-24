@@ -150,6 +150,19 @@ export async function fsRemoveLeagueMember(leagueId, uid) {
   });
 }
 
+// Same write as fsRemoveLeagueMember, but called by a member on themselves
+// (voluntarily leaving) rather than by an admin kicking someone else. Kept
+// as a separate function for clarity at call sites even though the
+// underlying write is identical — the Firestore rule that permits this is
+// also its own dedicated branch (only the super admin can't use it; they
+// use Danger Zone -> Delete League instead).
+export async function fsLeaveLeague(leagueId, uid) {
+  await updateDoc(doc(db, "leagues", leagueId), {
+    members: arrayRemove(uid),
+    adminIds: arrayRemove(uid),
+  });
+}
+
 export async function fsSetLeagueAdmins(leagueId, adminIds) {
   await updateDoc(doc(db, "leagues", leagueId), { adminIds });
 }

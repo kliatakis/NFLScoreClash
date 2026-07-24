@@ -31,17 +31,17 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {fire.map((h, i) => (
           <div key={`fire-${i}`} className="highlight-row">
-            🔥 <b>{joinNames(h.users)}</b> predicted the correct score of {gameLabel(h.fixture)} ({h.score})!!
+            <b>{league.name}</b>: 🔥 <b>{joinNames(h.users)}</b> predicted the correct score of {gameLabel(h.fixture)} ({h.score})!!
           </div>
         ))}
         {upsets.map((h, i) => (
           <div key={`upset-${i}`} className="highlight-row">
-            🎯 <b>{joinNames(h.users)}</b> called the upset in {gameLabel(h.fixture)}!!
+            <b>{league.name}</b>: 🎯 <b>{joinNames(h.users)}</b> called the upset in {gameLabel(h.fixture)}!!
           </div>
         ))}
         {clowns.map((h, i) => (
           <div key={`clown-${i}`} className="highlight-row">
-            🤡 <b>{joinNames(h.users)}</b> {h.users.length === 1 ? "was the only one" : "were the only ones"} who didn't predict {gameLabel(h.fixture)} correctly. Did you flip a coin or just close your eyes?
+            <b>{league.name}</b>: 🤡 <b>{joinNames(h.users)}</b> {h.users.length === 1 ? "was the only one" : "were the only ones"} who didn't predict {gameLabel(h.fixture)} correctly. Did you flip a coin or just close your eyes?
           </div>
         ))}
       </div>

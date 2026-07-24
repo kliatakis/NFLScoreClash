@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   fsCreateLeague, fsGetLeague, fsAddLeagueMember, fsRemoveLeagueMember,
-  fsSetLeagueAdmins, fsDeleteLeague, fsGetAllUsers,
+  fsSetLeagueAdmins, fsDeleteLeague, fsGetAllUsers, fsLeaveLeague,
 } from "../firebase.js";
 import { generateCode, DEFAULT_SCORING } from "../lib/scoring.js";
 import Avatar from "./Avatar.jsx";
@@ -100,6 +100,7 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
                   <MembersList
                     league={league} user={user} allUsers={allUsers} isSuperAdmin={isSuperAdmin} isAdmin={isAdmin}
                     refresh={refresh}
+                    onLeft={() => { setExpandedId(null); onSetLeague(null); }}
                   />
                 )}
                 {expandedPanel === "admin" && isAdmin && (
@@ -118,8 +119,10 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
   );
 }
 
-function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, refresh }) {
+function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, refresh, onLeft }) {
   const [confirmKick, setConfirmKick] = useState(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   const toggleAdmin = async (uid) => {
     const current = league.adminIds || [];
@@ -134,8 +137,36 @@ function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, refresh })
     refresh();
   };
 
+  const leave = async () => {
+    setLeaving(true);
+    await fsLeaveLeague(league.id, user.uid);
+    setLeaving(false);
+    setConfirmLeave(false);
+    onLeft?.();
+  };
+
   return (
     <div>
+      {/* Super admins can't leave their own league — Danger Zone -> Delete
+          League is the equivalent action for them (see AdminPanel), since
+          leaving would either abandon a league with other people still in
+          it, or is pointless if they're the only member. */}
+      {!isSuperAdmin && (
+        <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
+          {!confirmLeave ? (
+            <button className="btn btn-ghost btn-sm" onClick={() => setConfirmLeave(true)}>Leave League</button>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="error-msg">Leave "{league.name}"? You'll need the code to rejoin later.</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-danger btn-sm" disabled={leaving} onClick={leave}>{leaving ? "Leaving…" : "Yes, Leave"}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setConfirmLeave(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {league.members.map(uid => {
         const u = allUsers[uid] || {};
         const isSuper = league.superAdminId === uid;
