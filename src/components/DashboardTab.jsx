@@ -1,10 +1,30 @@
 import { useMemo } from "react";
 import { calcStandings, getScoringSettings } from "../lib/scoring.js";
 import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
+import { teamTint } from "../data/teams.js";
 import { formatKickoff } from "../lib/time.js";
+import { useCountUp } from "../lib/hooks.js";
 import StandingsCard from "./StandingsCard.jsx";
 import HighlightsCard from "./HighlightsCard.jsx";
 import TeamBadge from "./TeamBadge.jsx";
+
+// Stat card whose number animates up on load, and whose top accent bar
+// matches the colour of its own value (they were all blue before, regardless
+// of what the number underneath was).
+function StatCard({ value, label, color, accent, suffix = "", sub = null }) {
+  const shown = useCountUp(value);
+  return (
+    <div className="glass stat-card" style={accent ? { "--card-accent": accent } : undefined}>
+      <div className="stat-card-val" style={color ? { color } : undefined}>
+        {value == null ? "–" : `${shown}${suffix}`}
+      </div>
+      <div className="stat-card-label">
+        {label}
+        {sub}
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardTab({ user, league, allUsers, allPredictions, results, specialResults, lastLoginPrev, setTab }) {
   if (!league) {
@@ -66,29 +86,27 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
       <HighlightsCard league={league} allUsers={allUsers} allPredictions={allPredictions} results={results} />
 
       <div className="grid-4" style={{ marginBottom: 24 }}>
-        <div className="glass stat-card">
-          <div className="stat-card-val" style={{ color: "var(--accent)" }}>{myRank ?? "–"}</div>
-          <div className="stat-card-label">Your Rank</div>
-        </div>
-        <div className="glass stat-card">
-          <div className="stat-card-val">{me?.points ?? 0}</div>
-          <div className="stat-card-label">Your Points</div>
-        </div>
-        <div className="glass stat-card">
-          <div className="stat-card-val" style={{ color: "var(--gold)" }}>{me?.exact ?? 0}</div>
-          <div className="stat-card-label">Exact Scores</div>
-        </div>
-        <div className="glass stat-card">
-          <div className="stat-card-val" style={{ color: "var(--green)" }}>{accuracyPct != null ? `${accuracyPct}%` : "–"}</div>
-          <div className="stat-card-label">
-            Prediction Accuracy
-            {me && me.gamesScored > 0 && (
-              <span style={{ display: "block", textTransform: "none", fontWeight: 500, marginTop: 2, opacity: 0.8 }}>
-                {me.correct + me.exact}/{me.gamesScored} winners called
-              </span>
-            )}
-          </div>
-        </div>
+        <StatCard
+          value={myRank} label="Your Rank"
+          color="var(--accent)" accent="linear-gradient(90deg, var(--accent), #06d6f7)"
+        />
+        <StatCard
+          value={me?.points ?? 0} label="Your Points"
+          accent="linear-gradient(90deg, #8b5cf6, var(--accent))"
+        />
+        <StatCard
+          value={me?.exact ?? 0} label="Exact Scores"
+          color="var(--gold)" accent="linear-gradient(90deg, var(--gold), #fbbf24)"
+        />
+        <StatCard
+          value={accuracyPct} label="Prediction Accuracy" suffix="%"
+          color="var(--green)" accent="linear-gradient(90deg, var(--green), #4ade80)"
+          sub={me && me.gamesScored > 0 ? (
+            <span style={{ display: "block", textTransform: "none", fontWeight: 500, marginTop: 2, opacity: 0.8 }}>
+              {me.correct + me.exact}/{me.gamesScored} winners called
+            </span>
+          ) : null}
+        />
       </div>
 
       <div style={{ marginBottom: 24 }}>
@@ -99,7 +117,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
       {upcoming.length === 0 && <div className="glass card" style={{ color: "var(--muted)" }}>No upcoming games loaded.</div>}
       <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
         {upcoming.map(f => (
-          <div key={f.id} className="fixture-card glass" style={{ minWidth: 200, flexShrink: 0 }}>
+          <div key={f.id} className="fixture-card glass team-tinted" style={{ minWidth: 200, flexShrink: 0, ...teamTint(f) }}>
             <div className="fixture-meta">
               {formatKickoff(f.kickoffUTC, user.timezone)}
               {f.network ? ` · ${f.network}` : ""}

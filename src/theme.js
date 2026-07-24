@@ -40,6 +40,18 @@ export const css = (dark = true) => `
 
   /* Footer — scrolls with the page, not fixed/sticky (no floating bars
      eating into phone screen space). */
+  /* HOW IT WORKS explainer */
+  .howto-section { margin-bottom: 18px; }
+  .howto-heading { font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+  .howto-section p { font-size: 13px; line-height: 1.6; color: var(--muted); }
+  .help-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
+    font-size: 14px; font-weight: 800; transition: all 0.18s; flex-shrink: 0;
+  }
+  .help-btn:hover { color: var(--accent); border-color: var(--accent); }
+
   .app-footer { padding: 28px 24px 20px; text-align: center; margin-top: auto; }
   .app-footer-creator { font-size: 11px; font-weight: 800; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 6px; }
   .app-footer-legal { font-size: 9.5px; line-height: 1.5; color: var(--muted); opacity: 0.55; max-width: 640px; margin: 0 auto; }
@@ -103,7 +115,11 @@ export const css = (dark = true) => `
     transition: border-color 0.18s;
   }
   .form-input:focus, .form-select:focus { border-color: var(--accent); }
-  .form-select option { background: #14141d; }
+  /* Native dropdown options can't inherit the app's surface colours, so they
+     need explicit values — and they must follow the theme. This was hardcoded
+     dark, which made every dropdown unreadable in light mode (dark option
+     background under dark option text). */
+  .form-select option { background: ${dark ? "#14141d" : "#ffffff"}; color: var(--text); }
 
   .page-title { font-family: var(--font-display); font-size: 32px; letter-spacing: 1px; margin-bottom: 4px; }
   .page-sub { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
@@ -128,8 +144,33 @@ export const css = (dark = true) => `
   .team-badge-abbr { font-size: 10px; letter-spacing: 0.5px; }
 
   /* FIXTURE / PREDICTION ROWS */
-  .fixture-card { border-radius: var(--r2); margin-bottom: 10px; overflow: hidden; transition: border-color 0.2s, box-shadow 0.2s; }
+  .fixture-card { border-radius: var(--r2); margin-bottom: 10px; overflow: hidden; transition: border-color 0.2s, box-shadow 0.2s; position: relative; }
   .fixture-card:hover { border-color: var(--border2); }
+
+  /* Team-coloured cards. The two teams' real primary colours bleed in from
+     their own side of the card at low opacity, so a matchup is recognisable
+     at a glance instead of every game looking identical. Kept as a separate
+     painted layer beneath the content — it never sits behind text at a
+     strength that could affect contrast, which matters because several teams'
+     primaries are near-black. */
+  .team-tinted::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background:
+      linear-gradient(100deg, var(--away-color, transparent) 0%, transparent 38%),
+      linear-gradient(260deg, var(--home-color, transparent) 0%, transparent 38%);
+    opacity: ${dark ? 0.22 : 0.13};
+  }
+  .team-tinted > * { position: relative; z-index: 1; }
+  .team-tinted:hover::before { opacity: ${dark ? 0.3 : 0.18}; }
+
+  /* An exact score is the rarest thing in the game — give it a moment. */
+  .fixture-card.exact-hit { border-color: rgba(245,158,11,0.55); box-shadow: 0 0 0 1px rgba(245,158,11,0.25), 0 0 28px rgba(245,158,11,0.18); }
+  .exact-hit-badge {
+    display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;
+    padding: 2px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 800;
+    background: rgba(245,158,11,0.16); color: var(--gold); border: 1px solid rgba(245,158,11,0.4);
+    animation: exact-pulse 2.4s ease-in-out infinite;
+  }
   .fixture-card.locked .fixture-body { opacity: 0.55; }
   .fixture-card.predicted { border-color: rgba(59,130,246,0.35); }
   .fixture-meta { padding: 10px 18px 0; font-size: 11px; color: var(--text); opacity: 0.7; letter-spacing: 0.2px; }
@@ -278,6 +319,49 @@ export const css = (dark = true) => `
   @keyframes slide-in-right { to { opacity: 1; transform: translateX(0); } }
   @keyframes fade-up { to { opacity: 1; } }
   @keyframes pulse-bar { 0%, 100% { width: 20%; margin-left: 0%; } 50% { width: 60%; margin-left: 40%; } }
+  @keyframes exact-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.62; } }
+  @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+  @keyframes tab-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes podium-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  /* PODIUM — the top three get a real visual moment above the table rather
+     than just a medal emoji in an ordinary row. Order is 2nd, 1st, 3rd so
+     first place stands centre and tallest. */
+  .podium { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 10px; align-items: end; margin-bottom: 22px; }
+  .podium-slot { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; animation: podium-rise 0.45s ease both; }
+  .podium-slot:nth-child(1) { animation-delay: 0.06s; }
+  .podium-slot:nth-child(2) { animation-delay: 0s; }
+  .podium-slot:nth-child(3) { animation-delay: 0.12s; }
+  .podium-medal { font-size: 22px; line-height: 1; }
+  .podium-name { font-size: 12px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .podium-name.you { color: var(--accent2); }
+  .podium-pts { font-family: var(--font-display); font-size: 20px; letter-spacing: 0.5px; }
+  .podium-block {
+    width: 100%; border-radius: 12px 12px 0 0; border: 1px solid var(--border); border-bottom: none;
+    display: flex; align-items: flex-start; justify-content: center; padding-top: 8px;
+    font-size: 10px; font-weight: 800; letter-spacing: 1px; color: var(--muted);
+  }
+  .podium-block.gold   { height: 56px; background: linear-gradient(180deg, rgba(245,158,11,0.30), rgba(245,158,11,0.05)); border-color: rgba(245,158,11,0.4); }
+  .podium-block.silver { height: 40px; background: linear-gradient(180deg, rgba(190,199,214,0.26), rgba(190,199,214,0.04)); }
+  .podium-block.bronze { height: 30px; background: linear-gradient(180deg, rgba(205,127,50,0.26), rgba(205,127,50,0.04)); }
+
+  /* SKELETONS — a shaped placeholder while data loads, instead of a blank
+     panel that snaps into content. */
+  .skeleton { border-radius: 8px; background: linear-gradient(90deg, var(--surface2) 25%, var(--surface3) 50%, var(--surface2) 75%); background-size: 800px 100%; animation: shimmer 1.4s linear infinite; }
+  .skeleton-row { height: 44px; margin-bottom: 8px; border-radius: 12px; }
+
+  /* Fade each tab's content in, so switching views feels intentional. */
+  .tab-view { animation: tab-in 0.28s ease both; }
+
+  /* Anyone who's asked their OS for less motion gets none of the above. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 
   /* MOBILE — the app had zero responsive breakpoints until real phone
      testing surfaced actual overlap bugs (not just "could look nicer"):

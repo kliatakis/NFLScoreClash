@@ -10,6 +10,7 @@ import VerifyEmailBanner from "./components/VerifyEmailBanner.jsx";
 import LeaguesTab from "./components/LeaguesTab.jsx";
 import PredictionsTab from "./components/PredictionsTab.jsx";
 import NflStandingsTab from "./components/NflStandingsTab.jsx";
+import HowItWorks from "./components/HowItWorks.jsx";
 import {
   fbOnAuthChange, fbLogout, fsReadUser, fsRecordLoginAndGetPrevious,
   fsSubscribeAllUsers, fsSubscribeMyLeagues, fsSubscribeAllPredictions,
@@ -22,11 +23,18 @@ const INTRO_MS = 2600;
 export default function App() {
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [showIntro, setShowIntro] = useState(true);
+  // The full logo animation is a nice first impression, but a 2.6s wait on
+  // every single open gets old fast — especially on a phone. Play it in full
+  // once per browser session, then skip straight in on subsequent loads.
+  const [showIntro, setShowIntro] = useState(() => {
+    try { return sessionStorage.getItem("sc_introSeen") !== "true"; }
+    catch { return true; } // private mode / storage blocked — just play it
+  });
   const [tab, setTab] = useState("dashboard");
   const [selectedLeagueId, setSelectedLeagueId] = useState(null);
   const [darkMode, setDarkMode] = useState(true);
   const [lastLoginPrev, setLastLoginPrev] = useState(null);
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
 
   const [allUsers, setAllUsers] = useState({});
   const [myLeagues, setMyLeagues] = useState([]);
@@ -34,12 +42,14 @@ export default function App() {
   const [results, setResults] = useState({});
   const [specialResults, setSpecialResults] = useState({});
 
-  // Intro plays once per app load, then dismisses (or holds if auth is
-  // still resolving — see the loading gate below).
   useEffect(() => {
-    const id = setTimeout(() => setShowIntro(false), INTRO_MS);
+    if (!showIntro) return;
+    const id = setTimeout(() => {
+      setShowIntro(false);
+      try { sessionStorage.setItem("sc_introSeen", "true"); } catch { /* nothing to do */ }
+    }, INTRO_MS);
     return () => clearTimeout(id);
-  }, []);
+  }, [showIntro]);
 
   useEffect(() => {
     const saved = localStorage.getItem("gc_darkMode"); // display preference only — not app data, fine on-device
@@ -92,7 +102,7 @@ export default function App() {
   const handleLogout = async () => { await fbLogout(); };
   const handleProfileUpdate = (updated) => setUser(updated);
 
-  const stillBooting = !authChecked || (user && myLeagues === null);
+  const stillBooting = !authChecked;
 
   if (showIntro || stillBooting) {
     return (
@@ -130,7 +140,10 @@ export default function App() {
             <HexIcon size={34} />
             <div className="brand-word">{APP_NAME.slice(0, Math.ceil(APP_NAME.length / 2))}<span>{APP_NAME.slice(Math.ceil(APP_NAME.length / 2))}</span></div>
           </div>
-          <ProfileDropdown user={user} onLogout={handleLogout} onUpdate={handleProfileUpdate} darkMode={darkMode} onToggleDark={toggleDark} />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button className="help-btn" title="How ScoreClash works" onClick={() => setShowHowItWorks(true)}>?</button>
+            <ProfileDropdown user={user} onLogout={handleLogout} onUpdate={handleProfileUpdate} darkMode={darkMode} onToggleDark={toggleDark} />
+          </div>
         </header>
 
         <nav className="nav">
@@ -139,7 +152,8 @@ export default function App() {
           ))}
         </nav>
 
-        <main className="main">
+        {/* keyed on tab so React remounts it and the fade-in replays on switch */}
+        <main className="main tab-view" key={tab}>
           {!user.emailVerified && <VerifyEmailBanner email={user.email} />}
           {tab === "dashboard" && (
             <DashboardTab
@@ -152,7 +166,7 @@ export default function App() {
               user={user} myLeagues={myLeagues} allUsers={allUsers}
               allPredictions={allPredictions} results={results} specialResults={specialResults}
               selectedLeague={selectedLeagueId} onSetLeague={setSelectedLeagueId}
-              refresh={() => {}}
+
             />
           )}
           {tab === "predictions" && (
@@ -163,6 +177,8 @@ export default function App() {
 
         <Footer />
       </div>
+
+      {showHowItWorks && <HowItWorks onClose={() => setShowHowItWorks(false)} />}
     </>
   );
 }

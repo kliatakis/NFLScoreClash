@@ -15,7 +15,7 @@ import TeamBadge from "./TeamBadge.jsx";
 // and redeploy, rather than maintaining a separate admin-entry UI for it.
 const SECTIONS = ["Results", "Overrides", "Special Picks", "Scoring Settings", "Danger Zone"];
 
-export default function AdminPanel({ league, user, isSuperAdmin, refresh, onLeagueDeleted }) {
+export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted }) {
   const [section, setSection] = useState("Results");
   const [fetchMsg, setFetchMsg] = useState("");
   const [fetching, setFetching] = useState(false);
@@ -26,7 +26,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, refresh, onLeag
       const res = await fetch("/api/fetch-results?manual=true");
       const data = await res.json();
       setFetchMsg(data.success ? `✅ ${data.updated || 0} new result(s) added.` : `⚠️ ${data.error || "Something went wrong."}`);
-      if (data.success) refresh();
+
     } catch {
       setFetchMsg("⚠️ Could not reach the results service.");
     } finally {
@@ -55,9 +55,9 @@ export default function AdminPanel({ league, user, isSuperAdmin, refresh, onLeag
         </div>
       )}
 
-      {section === "Overrides" && <OverridesEntry league={league} adminUid={user.uid} refresh={refresh} />}
+      {section === "Overrides" && <OverridesEntry league={league} adminUid={user.uid} />}
       {section === "Special Picks" && <SpecialResultsEntry />}
-      {section === "Scoring Settings" && <ScoringSettings league={league} refresh={refresh} />}
+      {section === "Scoring Settings" && <ScoringSettings league={league} />}
       {section === "Danger Zone" && isSuperAdmin && <DangerZone league={league} onLeagueDeleted={onLeagueDeleted} />}
     </div>
   );
@@ -146,7 +146,7 @@ function ResultRow({ fixture, result, timezone }) {
   );
 }
 
-function OverridesEntry({ league, adminUid, refresh }) {
+function OverridesEntry({ league, adminUid }) {
   const [targetUid, setTargetUid] = useState("");
   const [fixtureId, setFixtureId] = useState("");
   const [home, setHome] = useState("");
@@ -154,15 +154,23 @@ function OverridesEntry({ league, adminUid, refresh }) {
   const [users, setUsers] = useState(null);
   const [msg, setMsg] = useState("");
 
-  if (users === null) { fsGetAllUsers().then(setUsers); return <div style={{ color: "var(--muted)" }}>Loading…</div>; }
+  // Loaded in an effect, not during render — kicking off a fetch from the
+  // render path re-fires on every render until it resolves and misbehaves
+  // under React's double-invoked development renders.
+  useEffect(() => {
+    let alive = true;
+    fsGetAllUsers().then(u => { if (alive) setUsers(u); });
+    return () => { alive = false; };
+  }, []);
 
   const save = async () => {
     if (!targetUid || !fixtureId || home === "" || away === "") return;
     await fsAdminOverrideGamePrediction(targetUid, fixtureId, home, away, adminUid);
     setMsg("Prediction overridden — the user will see a note that it was corrected.");
-    refresh();
     setTimeout(() => setMsg(""), 4000);
   };
+
+  if (users === null) return <div style={{ color: "var(--muted)" }}>Loading…</div>;
 
   return (
     <div>
@@ -241,7 +249,7 @@ function SpecialResultsEntry() {
 // lib/scoring.js, which now also defends against this independently).
 const POINT_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1);
 
-function ScoringSettings({ league, refresh }) {
+function ScoringSettings({ league }) {
   const current = getScoringSettings(league);
   const [draft, setDraft] = useState({ ...current });
   const [error, setError] = useState("");
@@ -264,7 +272,7 @@ function ScoringSettings({ league, refresh }) {
         superbowlPoints: Number(superbowlPoints),
       },
     });
-    setSaved(true); refresh();
+    setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 

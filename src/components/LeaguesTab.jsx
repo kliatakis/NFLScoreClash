@@ -8,7 +8,7 @@ import Avatar from "./Avatar.jsx";
 import AdminPanel from "./AdminPanel.jsx";
 import StandingsCard from "./StandingsCard.jsx";
 
-export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, results, specialResults, selectedLeague, onSetLeague, refresh }) {
+export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, results, specialResults, selectedLeague, onSetLeague }) {
   const [modal, setModal] = useState(null); // "create" | "join"
   const [expandedId, setExpandedId] = useState(null);
   const [expandedPanel, setExpandedPanel] = useState("standings"); // standings | members | admin
@@ -99,12 +99,12 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
                 {expandedPanel === "members" && (
                   <MembersList
                     league={league} user={user} allUsers={allUsers} isSuperAdmin={isSuperAdmin} isAdmin={isAdmin}
-                    refresh={refresh}
+
                     onLeft={() => { setExpandedId(null); onSetLeague(null); }}
                   />
                 )}
                 {expandedPanel === "admin" && isAdmin && (
-                  <AdminPanel league={league} user={user} isSuperAdmin={isSuperAdmin} refresh={refresh}
+                  <AdminPanel league={league} user={user} isSuperAdmin={isSuperAdmin}
                     onLeagueDeleted={() => { setExpandedId(null); onSetLeague(null); }} />
                 )}
               </div>
@@ -113,28 +113,28 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
         );
       })}
 
-      {modal === "create" && <CreateLeagueModal user={user} onClose={() => setModal(null)} onDone={(id) => { onSetLeague(id); setModal(null); refresh(); }} />}
-      {modal === "join" && <JoinLeagueModal user={user} onClose={() => setModal(null)} onDone={(id) => { onSetLeague(id); setModal(null); refresh(); }} />}
+      {modal === "create" && <CreateLeagueModal user={user} onClose={() => setModal(null)} onDone={(id) => { onSetLeague(id); setModal(null); }} />}
+      {modal === "join" && <JoinLeagueModal user={user} onClose={() => setModal(null)} onDone={(id) => { onSetLeague(id); setModal(null); }} />}
     </div>
   );
 }
 
-function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, refresh, onLeft }) {
+function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, onLeft }) {
   const [confirmKick, setConfirmKick] = useState(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
+  // No manual refresh needed anywhere in here — every league doc is live via
+  // fsSubscribeMyLeagues, so these writes flow back on their own.
   const toggleAdmin = async (uid) => {
     const current = league.adminIds || [];
     const next = current.includes(uid) ? current.filter(a => a !== uid) : [...current, uid];
     await fsSetLeagueAdmins(league.id, next);
-    refresh();
   };
 
   const kick = async (uid) => {
     await fsRemoveLeagueMember(league.id, uid);
     setConfirmKick(null);
-    refresh();
   };
 
   const leave = async () => {

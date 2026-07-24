@@ -76,6 +76,20 @@ function stableHash(str) {
 // admin override of a scored prediction happens — the three things that can
 // actually move a league's standings. Used to know when to recompute the
 // movement-arrow baseline (shared for every viewer, not per-login).
+// Serializes an object with its keys in sorted order.
+//
+// Plain JSON.stringify follows insertion order, which for Firestore data can
+// legitimately differ between clients holding identical data — two people
+// would then compute different "versions" of the same standings, each
+// thinking something had changed, and the movement arrows would rotate for
+// no reason. Sorting makes the hash depend only on content.
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const keys = Object.keys(value).sort();
+  return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+}
+
 export function computeResultsVersion(results, specialResults, allPredictions, leagueMembers) {
   const overrideMarkers = [];
   for (const uid of leagueMembers) {
@@ -85,7 +99,7 @@ export function computeResultsVersion(results, specialResults, allPredictions, l
     }
   }
   overrideMarkers.sort();
-  const payload = JSON.stringify(results) + JSON.stringify(specialResults) + overrideMarkers.join(",");
+  const payload = stableStringify(results) + stableStringify(specialResults) + overrideMarkers.join(",");
   return stableHash(payload);
 }
 
@@ -276,12 +290,21 @@ export function calcStandingsWithMovement(league, allUsers, allPredictions, resu
 // percentage rule, not a bug.
 const UPSET_THRESHOLD = 0.10;
 
-export function computeHighlights(league, allUsers, allPredictions, results) {
-  const members = league?.members || [];
-  const completedWeeks = REGULAR_SEASON_FIXTURES.filter(f => results[f.id]).map(f => f.week);
-  if (completedWeeks.length === 0) return { week: null, fire: [], upsets: [], clowns: [] };
+// Every week that has at least one result in, newest first — powers the week
+// picker on the highlights board so past weeks stay reachable instead of
+// being lost the moment a new week starts.
+export function completedWeeks(results) {
+  const weeks = new Set(REGULAR_SEASON_FIXTURES.filter(f => results[f.id]).map(f => f.week));
+  return [...weeks].sort((a, b) => b - a);
+}
 
-  const week = Math.max(...completedWeeks);
+export function computeHighlights(league, allUsers, allPredictions, results, forWeek = null) {
+  const members = league?.members || [];
+  const weeksWithResults = completedWeeks(results);
+  if (weeksWithResults.length === 0) return { week: null, weeks: [], fire: [], upsets: [], clowns: [] };
+
+  // Default to the most recent week, but honour an explicit choice.
+  const week = forWeek != null && weeksWithResults.includes(forWeek) ? forWeek : weeksWithResults[0];
   const weekFixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week && results[f.id]);
 
   const fire = [], upsets = [], clowns = [];
@@ -319,5 +342,5 @@ export function computeHighlights(league, allUsers, allPredictions, results) {
     }
   }
 
-  return { week, fire, upsets, clowns };
+  return { week, weeks: weeksWithResults, fire, upsets, clowns };
 }

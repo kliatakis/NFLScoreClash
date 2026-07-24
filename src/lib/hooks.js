@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { SEASON } from "../data/fixtures.js";
 
 export const LOCK_MINUTES_BEFORE_KICKOFF = 15;
@@ -41,6 +41,41 @@ export function useFixtureLock(kickoffISO) {
     return () => clearInterval(id);
   }, [kickoffISO]);
   return status;
+}
+
+// Animates a number up from 0 (or from its previous value) so stat cards
+// land with a bit of life instead of snapping into place. Honours the OS-level
+// "reduce motion" preference by jumping straight to the final value.
+export function useCountUp(target, duration = 900) {
+  const numeric = Number.isFinite(Number(target)) ? Number(target) : 0;
+  const [display, setDisplay] = useState(numeric);
+  const fromRef = useRef(numeric);
+
+  useEffect(() => {
+    const reduce = typeof window !== "undefined"
+      && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const from = fromRef.current;
+    const to = numeric;
+    if (reduce || from === to || duration <= 0) {
+      fromRef.current = to;
+      setDisplay(to);
+      return;
+    }
+    const start = performance.now();
+    let raf;
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      // easeOutCubic — quick to start, gentle to settle
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplay(Math.round(from + (to - from) * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+      else fromRef.current = to;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [numeric, duration]);
+
+  return display;
 }
 
 // Preseason picks (division / conference / Super Bowl winners) lock 15

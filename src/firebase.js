@@ -82,11 +82,21 @@ export async function fsGetAllUsers() {
 // same-name collision doesn't break anything technically (avatars still
 // tell people apart) but it's confusing in standings/member lists, so we
 // just block it outright.
+//
+// Compared case-insensitively, which a Firestore equality query can't do —
+// hence reading the collection and filtering here rather than querying on
+// `username`. That's fine at this app's scale (one small doc per person) and
+// avoids denormalising a lowercase copy of every name purely for this check.
 export async function fsIsUsernameTaken(username, excludeUid) {
-  const q = query(collection(db, "users"), where("username", "==", username));
-  const snap = await getDocs(q);
+  const target = String(username || "").trim().toLowerCase();
+  if (!target) return false;
+  const snap = await getDocs(collection(db, "users"));
   let taken = false;
-  snap.forEach(d => { if (d.id !== excludeUid) taken = true; });
+  snap.forEach(d => {
+    if (d.id === excludeUid) return;
+    const existing = String(d.data()?.username || "").trim().toLowerCase();
+    if (existing === target) taken = true;
+  });
   return taken;
 }
 

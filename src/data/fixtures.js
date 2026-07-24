@@ -25,6 +25,10 @@ export const SEASON = {
   // conference / Super Bowl winners) 15 minutes before kickoff.
   openerKickoffUTC: "2026-09-10T00:20:00Z", // Wed Sep 9, 8:20pm ET = 00:20 UTC next day
   regularSeasonWeeks: 18,
+  // Sunday of Week 1. Used ONLY to derive an approximate lock time for
+  // fixtures the NFL hasn't scheduled yet (see effectiveKickoffUTC below) —
+  // never for display, which always tells the truth ("Date/time TBD").
+  week1SundayUTC: "2026-09-13T17:00:00Z",
   // Bye weeks aren't tracked here — nothing in the app reads a per-team bye
   // schedule (each week's fixture list is already just "whoever's playing
   // that week," which implicitly handles byes). Add this back only if a
@@ -344,4 +348,31 @@ export const SPECIAL_PICK_TYPES = [
 
 export function fixturesForWeek(week) {
   return REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+}
+
+// The time a fixture should be treated as starting FOR LOCKING PURPOSES.
+//
+// Most fixtures have a real kickoff. The ones that don't — every Week 18 game
+// plus a handful of flexed Week 16/17 games — previously never locked at all,
+// because "no kickoff time" was treated as "not started yet", forever. That
+// left those picks editable after the games had actually been played.
+//
+// For those, we fall back to the SATURDAY of that week, derived from the
+// Week 1 Sunday anchor. Saturday is the earliest slot the NFL uses, so this
+// errs toward locking slightly early rather than ever allowing a pick after
+// kickoff — the safe direction for a prediction game. It's only a fallback:
+// the moment real times are added to the data above, they take over.
+export function effectiveKickoffUTC(fixture) {
+  if (!fixture) return null;
+  if (fixture.kickoffUTC) return fixture.kickoffUTC;
+  const anchor = new Date(SEASON.week1SundayUTC).getTime();
+  if (!Number.isFinite(anchor) || !Number.isFinite(fixture.week)) return null;
+  const weekSunday = anchor + (fixture.week - 1) * 7 * 86400000;
+  return new Date(weekSunday - 86400000).toISOString(); // the Saturday before
+}
+
+// True when a fixture's start time is a derived estimate rather than a real
+// announced kickoff — lets the UI be honest about it.
+export function hasEstimatedKickoff(fixture) {
+  return !!fixture && !fixture.kickoffUTC;
 }

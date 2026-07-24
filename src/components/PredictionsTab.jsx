@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON } from "../data/fixtures.js";
-import { TEAMS, TEAM_CODES, teamsByDivision } from "../data/teams.js";
+import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, hasEstimatedKickoff } from "../data/fixtures.js";
+import { TEAMS, TEAM_CODES, teamsByDivision, teamTint } from "../data/teams.js";
 import { fsSubscribePredictions, fsSaveGamePrediction, fsSaveSpecialPick, fsSubscribeResults } from "../firebase.js";
 import { useFixtureLock, useSeasonPicksLock, useCountdown, LOCK_MINUTES_BEFORE_KICKOFF } from "../lib/hooks.js";
 import { formatKickoff, lockUrgency, formatDuration } from "../lib/time.js";
@@ -73,7 +73,11 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
 }
 
 function GameRow({ fixture, pick, result, uid, timezone, league, allUsers, allPredictions }) {
-  const lock = useFixtureLock(fixture.kickoffUTC);
+  // Locks against the effective kickoff, which falls back to a derived time
+  // for fixtures the NFL hasn't scheduled yet (all of Week 18) — those used
+  // to stay editable forever. See data/fixtures.js.
+  const lock = useFixtureLock(effectiveKickoffUTC(fixture));
+  const estimated = hasEstimatedKickoff(fixture);
   const [home, setHome] = useState(pick?.homeScore ?? "");
   const [away, setAway] = useState(pick?.awayScore ?? "");
   const [dirty, setDirty] = useState(false);
@@ -104,15 +108,23 @@ function GameRow({ fixture, pick, result, uid, timezone, league, allUsers, allPr
     };
   }) : null;
 
+  const myKind = classifyPick(pick, result);
+
   return (
-    <div className={`fixture-card glass ${pick ? "predicted" : ""} ${locked ? "locked" : ""}`}>
+    <div
+      className={`fixture-card glass team-tinted ${pick ? "predicted" : ""} ${locked ? "locked" : ""} ${myKind === "exact" ? "exact-hit" : ""}`}
+      style={teamTint(fixture)}
+    >
       <div className="fixture-meta">
         {formatKickoff(fixture.kickoffUTC, timezone)}
         {fixture.network ? ` · ${fixture.network}` : ""}
         {fixture.note ? ` · ${fixture.note}` : ""}
         {!hasResult && !locked && lock?.msLeft != null && (
-          <span className={`lock-badge ${lockUrgency(lock.msLeft)}`} style={{ marginLeft: 8 }}>⏱ Locks in {formatDuration(lock.msLeft)}</span>
+          <span className={`lock-badge ${lockUrgency(lock.msLeft)}`} style={{ marginLeft: 8 }} title={estimated ? "Exact kickoff not announced yet — picks lock at the earliest possible slot for this week" : undefined}>
+            ⏱ Locks in {estimated ? "~" : ""}{formatDuration(lock.msLeft)}
+          </span>
         )}
+        {myKind === "exact" && <span className="exact-hit-badge">🔥 Exact score!</span>}
       </div>
       <div className="fixture-body">
         <span className="fixture-teams">
@@ -207,7 +219,7 @@ function SpecialPicks({ kind, preds, uid, league, allUsers, allPredictions, spec
           <div key={type.id} style={{ marginBottom: 4 }}>
             <div className="standings-row">
               <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{type.label}</span>
-              <select className="form-select" style={{ maxWidth: 220 }} disabled={seasonLocked} defaultValue={current}
+              <select className="form-select" style={{ maxWidth: 220 }} disabled={seasonLocked} value={current}
                 onChange={e => save(type.id, e.target.value)}>
                 <option value="">Pick a team…</option>
                 {options.map(code => <option key={code} value={code}>{TEAMS[code].city} {TEAMS[code].name}</option>)}

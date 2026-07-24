@@ -3,6 +3,7 @@ import { calcStandingsWithMovement, getScoringSettings, explainTiebreak } from "
 import { fsSaveLeagueStandingsSnapshot } from "../firebase.js";
 import Avatar from "./Avatar.jsx";
 import MovementArrows from "./MovementArrows.jsx";
+import Podium from "./Podium.jsx";
 
 // Shared between DashboardTab (the selected league) and LeaguesTab (any
 // league you expand) so the standings + movement-snapshot-persist logic
@@ -24,6 +25,8 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
   return (
     <div className="glass card">
       <div className="card-title">Standings</div>
+
+      <Podium standings={standings} allUsers={allUsers} user={user} />
 
       <div className="standings-row standings-head">
         <span className="standings-col-rank">Rank</span>

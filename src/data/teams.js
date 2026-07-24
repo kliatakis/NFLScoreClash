@@ -84,3 +84,15 @@ export function teamsByDivision(div) {
 export function teamsByConference(conf) {
   return TEAM_CODES.filter(c => TEAMS[c].conf === conf);
 }
+
+// Inline CSS custom properties carrying both teams' real colours, so a
+// fixture card can tint itself with the actual matchup instead of being one
+// more identical grey rectangle. Consumed by `.team-tinted` in theme.js —
+// the colours drive a very low-opacity gradient layer, never text, so
+// contrast is unaffected regardless of how dark a given team's colour is.
+export function teamTint(fixture) {
+  const away = TEAMS[fixture?.away];
+  const home = TEAMS[fixture?.home];
+  if (!away || !home) return undefined;
+  return { "--away-color": away.primary, "--home-color": home.primary };
+}
