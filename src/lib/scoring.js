@@ -290,6 +290,26 @@ export function calcStandingsWithMovement(league, allUsers, allPredictions, resu
 // percentage rule, not a bug.
 const UPSET_THRESHOLD = 0.10;
 
+// True once at least one week of the season has been played out in full —
+// i.e. every fixture in some week has a result.
+//
+// Gates the standings podium. Before that point everyone is on zero and the
+// "top three" is just whatever order the member list happens to be in, so a
+// podium would be actively misleading rather than celebratory. Phrased as
+// "any complete week" rather than "week 1 specifically" so it still behaves
+// sensibly for a league that starts partway through the season.
+export function hasCompletedWeek(results) {
+  const byWeek = new Map();
+  for (const f of REGULAR_SEASON_FIXTURES) {
+    if (!byWeek.has(f.week)) byWeek.set(f.week, []);
+    byWeek.get(f.week).push(f);
+  }
+  for (const fixtures of byWeek.values()) {
+    if (fixtures.length > 0 && fixtures.every(f => results[f.id])) return true;
+  }
+  return false;
+}
+
 // Every week that has at least one result in, newest first — powers the week
 // picker on the highlights board so past weeks stay reachable instead of
 // being lost the moment a new week starts.

@@ -4,9 +4,12 @@ import Avatar from "./Avatar.jsx";
 // Laid out 2nd — 1st — 3rd so first place sits centre and tallest, the way a
 // real podium reads.
 //
-// Hidden entirely for leagues with fewer than three players, where a podium
-// would be more confusing than celebratory.
-export default function Podium({ standings, allUsers, user }) {
+// Hidden in two cases, both because a podium would mislead rather than
+// celebrate: leagues with fewer than three players, and any point before a
+// full week of the season has been played (`ready`) — until then everyone is
+// on zero and the "ranking" is just member-list order.
+export default function Podium({ standings, allUsers, user, ready }) {
+  if (!ready) return null;
   if (!standings || standings.length < 3) return null;
 
   const [first, second, third] = standings;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, Fragment } from "react";
-import { calcStandingsWithMovement, getScoringSettings, explainTiebreak } from "../lib/scoring.js";
+import { calcStandingsWithMovement, getScoringSettings, explainTiebreak, hasCompletedWeek } from "../lib/scoring.js";
 import { fsSaveLeagueStandingsSnapshot } from "../firebase.js";
 import Avatar from "./Avatar.jsx";
 import MovementArrows from "./MovementArrows.jsx";
@@ -22,11 +22,15 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
   // is big enough that "last" isn't also one of the medal spots.
   const showToilet = standings.length > 3;
 
+  // The podium waits for a full week of the season to be in the books —
+  // 272 fixtures to scan, so memoized against the results it depends on.
+  const podiumReady = useMemo(() => hasCompletedWeek(results), [results]);
+
   return (
     <div className="glass card">
       <div className="card-title">Standings</div>
 
-      <Podium standings={standings} allUsers={allUsers} user={user} />
+      <Podium standings={standings} allUsers={allUsers} user={user} ready={podiumReady} />
 
       <div className="standings-row standings-head">
         <span className="standings-col-rank">Rank</span>
