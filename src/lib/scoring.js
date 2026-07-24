@@ -150,27 +150,70 @@ export function explainTiebreak(a, b) {
 }
 
 // Attaches movement info (dash / 1 arrow / 2 arrows, up or down) based on the
-// league's persisted, shared standingsSnapshot — NOT per-viewer. Returns
-// { standings, movementByUid, shouldPersist, newSnapshot, newVersion }.
-// The caller persists the new snapshot only when `shouldPersist` is true
-// (i.e. the version actually changed) — safe even if multiple viewers do it
-// at once, since they'd all compute the same result.
+// league's persisted, shared standings snapshots — NOT per-viewer, NOT
+// per-login. Returns { standings, movementByUid, shouldPersist, newSnapshot,
+// newVersion, newTrackedSnapshot, newTrackedVersion }.
+//
+// This tracks TWO generations of standings, not one — that's the whole fix
+// for arrows that are supposed to persist until the next result comes in:
+//   - standingsSnapshot / standingsSnapshotVersion — the STABLE baseline
+//     shown to everyone. Only ever moves forward when a genuinely NEW
+//     results version shows up.
+//   - standingsTrackedSnapshot / standingsTrackedVersion — internal
+//     bookkeeping: "the live state as of the last time anyone looked."
+//
+// A single-snapshot version of this (an earlier build had one) saves
+// current-ranks-as-the-new-baseline the instant it detects a change — which
+// means the very next render (after that write round-trips, often under a
+// second) finds baseline === current and the arrows collapse back to a flat
+// dash for everyone, including the person who just saw them. Tracking two
+// generations means the baseline only rotates to "ranks as of the PREVIOUS
+// result" — so it stays put, correctly, until the NEXT new result (whether
+// entered by an admin or pulled in by the auto-fetch cron) actually arrives.
 export function calcStandingsWithMovement(league, allUsers, allPredictions, results, specialResults, scoring) {
   const standings = calcStandings(league, allUsers, allPredictions, results, specialResults, scoring);
   const currentVersion = computeResultsVersion(results, specialResults, allPredictions, league.members || []);
-  const prevSnapshot = league.standingsSnapshot || null;
-  const prevVersion = league.standingsSnapshotVersion || null;
 
   const currentRanks = {};
   standings.forEach((entry, i) => { currentRanks[entry.uid] = i + 1; });
 
-  const movementByUid = {};
-  const versionChanged = currentVersion !== prevVersion;
+  let baselineSnapshot = league.standingsSnapshot || null;
+  let baselineVersion = league.standingsSnapshotVersion || null;
+  const trackedSnapshot = league.standingsTrackedSnapshot || null;
+  const trackedVersion = league.standingsTrackedVersion || null;
 
+  let shouldPersist = false;
+  let newTrackedSnapshot = trackedSnapshot;
+  let newTrackedVersion = trackedVersion;
+
+  if (trackedVersion == null) {
+    // Very first computation ever for this league — nothing exists to
+    // compare against, so baseline = tracked = current (arrows show "same",
+    // correctly, since there's no history yet).
+    baselineSnapshot = currentRanks;
+    baselineVersion = currentVersion;
+    newTrackedSnapshot = currentRanks;
+    newTrackedVersion = currentVersion;
+    shouldPersist = true;
+  } else if (currentVersion !== trackedVersion) {
+    // Something changed since we last tracked a live state — rotate.
+    // Whatever WAS "tracked" (the live state as of the last view) becomes
+    // the new stable display baseline; the brand-new state becomes what
+    // we're tracking for the *next* rotation.
+    baselineSnapshot = trackedSnapshot;
+    baselineVersion = trackedVersion;
+    newTrackedSnapshot = currentRanks;
+    newTrackedVersion = currentVersion;
+    shouldPersist = true;
+  }
+  // else: currentVersion === trackedVersion — nothing new since last time
+  // anyone looked, so baseline stays exactly as already stored. No write.
+
+  const movementByUid = {};
   standings.forEach((entry, i) => {
     const rank = i + 1;
-    const prevRank = prevSnapshot ? prevSnapshot[entry.uid] : null;
-    if (!prevSnapshot || prevRank == null || !versionChanged) {
+    const prevRank = baselineSnapshot ? baselineSnapshot[entry.uid] : null;
+    if (!baselineSnapshot || prevRank == null) {
       movementByUid[entry.uid] = { dir: "same", arrows: 0 };
       return;
     }
@@ -183,9 +226,11 @@ export function calcStandingsWithMovement(league, allUsers, allPredictions, resu
   return {
     standings,
     movementByUid,
-    shouldPersist: versionChanged,
-    newSnapshot: currentRanks,
-    newVersion: currentVersion,
+    shouldPersist,
+    newSnapshot: baselineSnapshot,
+    newVersion: baselineVersion,
+    newTrackedSnapshot,
+    newTrackedVersion,
   };
 }
 

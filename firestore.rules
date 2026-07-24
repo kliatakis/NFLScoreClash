@@ -54,10 +54,16 @@ service cloud.firestore {
 
         // Any member (admin or not) may update just the standings-snapshot
         // fields — this is a passive side effect that fires whenever anyone
-        // views the standings, not an admin-only action.
+        // views the standings, not an admin-only action. Two snapshot
+        // generations are tracked (see lib/scoring.js) so the movement
+        // arrows stay stable until the next real result instead of
+        // collapsing back to "same" the instant they're first computed.
         (
           request.auth.uid in resource.data.members &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['standingsSnapshot', 'standingsSnapshotVersion'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'standingsSnapshot', 'standingsSnapshotVersion',
+            'standingsTrackedSnapshot', 'standingsTrackedVersion'
+          ])
         ) ||
 
         // A non-member may join: adds ONLY themselves to `members`, nothing

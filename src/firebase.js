@@ -167,12 +167,18 @@ export async function fsSetLeagueAdmins(leagueId, adminIds) {
   await updateDoc(doc(db, "leagues", leagueId), { adminIds });
 }
 
-// Persisted "standings as of the last time results changed" snapshot, used
-// for the rise/fall arrows. Shared — every viewer sees the same arrows.
-export async function fsSaveLeagueStandingsSnapshot(leagueId, snapshot, resultsVersion) {
+// Persisted standings snapshots used for the rise/fall arrows — shared, so
+// every viewer sees the same arrows regardless of device or login. Two
+// generations are stored (see calcStandingsWithMovement in lib/scoring.js
+// for why): `standingsSnapshot` is the stable baseline actually used for
+// display, `standingsTrackedSnapshot` is internal bookkeeping for detecting
+// the *next* change.
+export async function fsSaveLeagueStandingsSnapshot(leagueId, snapshot, version, trackedSnapshot, trackedVersion) {
   await updateDoc(doc(db, "leagues", leagueId), {
     standingsSnapshot: snapshot,
-    standingsSnapshotVersion: resultsVersion,
+    standingsSnapshotVersion: version,
+    standingsTrackedSnapshot: trackedSnapshot,
+    standingsTrackedVersion: trackedVersion,
   });
 }
 

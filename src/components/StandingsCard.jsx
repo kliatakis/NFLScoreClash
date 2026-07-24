@@ -9,13 +9,13 @@ import MovementArrows from "./MovementArrows.jsx";
 // only lives in one place.
 export default function StandingsCard({ league, user, allUsers, allPredictions, results, specialResults }) {
   const scoring = getScoringSettings(league);
-  const { standings, movementByUid, shouldPersist, newSnapshot, newVersion } =
+  const { standings, movementByUid, shouldPersist, newSnapshot, newVersion, newTrackedSnapshot, newTrackedVersion } =
     useMemo(() => calcStandingsWithMovement(league, allUsers, allPredictions, results, specialResults, scoring),
       [league, allUsers, allPredictions, results, specialResults]);
 
   useEffect(() => {
-    if (shouldPersist) fsSaveLeagueStandingsSnapshot(league.id, newSnapshot, newVersion);
-  }, [shouldPersist, newVersion]);
+    if (shouldPersist) fsSaveLeagueStandingsSnapshot(league.id, newSnapshot, newVersion, newTrackedSnapshot, newTrackedVersion);
+  }, [shouldPersist, newVersion, newTrackedVersion]);
 
   // Medals for the top 3; a toilet for dead last — but only once the league
   // is big enough that "last" isn't also one of the medal spots.
