@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fsWriteUser, fsIsUsernameTaken, fbChangePassword, fbChangeEmail, fbDeleteAccountCascade } from "../firebase.js";
+import { fsWriteUser, fsIsUsernameTaken, fsClaimUsername, fbChangePassword, fbChangeEmail, fbDeleteAccountCascade } from "../firebase.js";
 import Avatar, { PRESET_AVATARS } from "./Avatar.jsx";
 import { COMMON_TIMEZONES, DEFAULT_TIMEZONE } from "../lib/time.js";
 
@@ -23,6 +23,14 @@ export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, on
     if (!trimmed) return;
     if (trimmed === user.username) return;
     if (await fsIsUsernameTaken(trimmed, user.uid)) { setUsernameErr("That username is taken."); return; }
+    try {
+      // Claim first: if this fails the rename doesn't happen, so the profile
+      // and the claim can't disagree about who owns the name.
+      await fsClaimUsername(user.uid, trimmed, user.username);
+    } catch (err) {
+      setUsernameErr(err?.message || "Couldn't take that username.");
+      return;
+    }
     await fsWriteUser(user.uid, { username: trimmed });
     onUpdate({ ...user, username: trimmed });
   };

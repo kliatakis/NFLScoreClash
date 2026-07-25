@@ -14,7 +14,7 @@ import HowItWorks from "./components/HowItWorks.jsx";
 import {
   fbOnAuthChange, fbLogout, fsReadUser, fsRecordLoginAndGetPrevious,
   fsSubscribeAllUsers, fsSubscribeMyLeagues, fsSubscribeAllPredictions,
-  fsSubscribeResults, fsSubscribeSpecialResults,
+  fsSubscribeResults, fsSubscribeSpecialResults, fsClaimUsername,
 } from "./firebase.js";
 
 const APP_NAME = "SCORECLASH";
@@ -69,6 +69,12 @@ export default function App() {
         fsRecordLoginAndGetPrevious(fbUser.uid), // account-wide, not per-device
       ]);
       setLastLoginPrev(prevLogin);
+      // Back-fill the username claim for accounts created before the
+      // `usernames` collection existed, so their names can't be taken by
+      // someone new. No-ops once claimed; never blocks login.
+      if (profile?.username) {
+        fsClaimUsername(fbUser.uid, profile.username).catch(() => {});
+      }
       setUser({
         uid: fbUser.uid, username: profile?.username || fbUser.email, email: fbUser.email,
         avatar: profile?.avatar, timezone: profile?.timezone || "Europe/Athens",

@@ -78,26 +78,60 @@ export async function fsGetAllUsers() {
   return users;
 }
 
-// Used at registration and when someone edits their display name — a
-// same-name collision doesn't break anything technically (avatars still
-// tell people apart) but it's confusing in standings/member lists, so we
-// just block it outright.
+// ══════════════════════════════════════════════════════════════════════════
+// USERNAME CLAIMS — usernames/{lowercased name} -> { uid }
 //
-// Compared case-insensitively, which a Firestore equality query can't do —
-// hence reading the collection and filtering here rather than querying on
-// `username`. That's fine at this app's scale (one small doc per person) and
-// avoids denormalising a lowercase copy of every name purely for this check.
+// A tiny separate collection purely so display names can be kept unique.
+//
+// It exists because of an ordering problem that broke registration outright:
+// the sign-up form has to answer "is this name free?" BEFORE the account is
+// created, so at that moment there is no signed-in user — and the `users`
+// collection is (correctly) readable only by signed-in users. Checking
+// uniqueness by scanning `users` therefore always failed with "Missing or
+// insufficient permissions" and no one could register at all.
+//
+// This collection is deliberately world-readable, which is safe because it
+// holds nothing but a name -> uid mapping: no emails, no profile data, no
+// predictions. Writes stay locked down — see firestore.rules, where only
+// `create` and owner-`delete` are permitted and `update` never is, so an
+// existing claim can't be hijacked.
+// ══════════════════════════════════════════════════════════════════════════
+
+const usernameKey = (name) => String(name || "").trim().toLowerCase();
+
 export async function fsIsUsernameTaken(username, excludeUid) {
-  const target = String(username || "").trim().toLowerCase();
-  if (!target) return false;
-  const snap = await getDocs(collection(db, "users"));
-  let taken = false;
-  snap.forEach(d => {
-    if (d.id === excludeUid) return;
-    const existing = String(d.data()?.username || "").trim().toLowerCase();
-    if (existing === target) taken = true;
-  });
-  return taken;
+  const key = usernameKey(username);
+  if (!key) return false;
+  const snap = await getDoc(doc(db, "usernames", key));
+  if (!snap.exists()) return false;
+  return snap.data()?.uid !== excludeUid; // your own name isn't "taken"
+}
+
+// Claims a name for a uid, releasing the previous one if given. Throws if
+// somebody else already holds it. Safe to call repeatedly with a name you
+// already own — it just no-ops, which is what lets existing accounts
+// back-fill their claim on next login.
+export async function fsClaimUsername(uid, username, previousUsername = null) {
+  const key = usernameKey(username);
+  if (!key) return;
+  const ref = doc(db, "usernames", key);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    if (snap.data()?.uid === uid) return;
+    throw new Error("That username is taken — pick another.");
+  }
+  await setDoc(ref, { uid });
+
+  const prevKey = usernameKey(previousUsername);
+  if (prevKey && prevKey !== key) {
+    await deleteDoc(doc(db, "usernames", prevKey)).catch(() => {});
+  }
+}
+
+export async function fsReleaseUsername(username) {
+  const key = usernameKey(username);
+  if (!key) return;
+  await deleteDoc(doc(db, "usernames", key)).catch(() => {});
 }
 
 // Record "you were last here at time T" on the account itself. Called once
@@ -399,6 +433,10 @@ export async function fbDeleteAccountCascade(currentPassword) {
       await updateDoc(doc(db, "leagues", league.id), { members: arrayRemove(uid), adminIds: arrayRemove(uid) });
     }
   }
+
+  // Free the display name so someone else can use it.
+  const profile = await fsReadUser(uid).catch(() => null);
+  if (profile?.username) await fsReleaseUsername(profile.username);
 
   await deleteDoc(doc(db, "predictions", uid)).catch(() => {});
   await deleteDoc(doc(db, "users", uid)).catch(() => {});

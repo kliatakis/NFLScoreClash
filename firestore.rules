@@ -20,6 +20,25 @@ service cloud.firestore {
       allow write: if isSignedIn() && request.auth.uid == uid;
     }
 
+    // ── usernames/{lowercased name} -> { uid } — display-name uniqueness ──
+    //
+    // Deliberately world-readable, including to visitors who aren't signed in
+    // yet: the sign-up form must be able to check whether a name is free
+    // BEFORE the account exists. Doing that against `users` is impossible
+    // (that collection requires auth, which the visitor doesn't have yet) and
+    // was the cause of registration failing with "Missing or insufficient
+    // permissions". The trade-off is deemed safe because these documents hold
+    // only a name -> uid mapping — no email, no profile, nothing sensitive.
+    //
+    // Writes stay tight: you may CREATE a claim that doesn't exist yet and
+    // only point it at yourself, and DELETE one you own. `update` is never
+    // allowed, so an existing claim cannot be overwritten by anyone else.
+    match /usernames/{name} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
     // ── leagues/{leagueId} — one doc per league (was a single mega-doc before) ──
     match /leagues/{leagueId} {
       allow read: if isSignedIn();

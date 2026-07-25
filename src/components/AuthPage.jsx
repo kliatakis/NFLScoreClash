@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fbRegister, fbLogin, fbResetPassword, fbSendVerificationEmail, fsWriteUser, fsReadUser, fsIsUsernameTaken } from "../firebase.js";
+import { fbRegister, fbLogin, fbResetPassword, fbSendVerificationEmail, fsWriteUser, fsReadUser, fsIsUsernameTaken, fsClaimUsername } from "../firebase.js";
 import { WordmarkLogo } from "./Logo.jsx";
 import Footer from "./Footer.jsx";
 
@@ -23,8 +23,15 @@ export default function AuthPage({ onLogin }) {
       }
       if (mode === "register") {
         if (!username.trim()) { setError("Pick a username."); return; }
+        // Checked against the public `usernames` collection, NOT `users` —
+        // there's no signed-in user at this point, so reading `users` here is
+        // (correctly) forbidden and used to fail the whole sign-up.
         if (await fsIsUsernameTaken(username.trim(), null)) { setError("That username is taken — pick another."); return; }
         const user = await fbRegister(email, password);
+        // Now authenticated, so the claim can actually be written. Non-fatal:
+        // losing a race for the name shouldn't strand someone with an auth
+        // account and no profile.
+        try { await fsClaimUsername(user.uid, username.trim()); } catch { /* keep going */ }
         await fsWriteUser(user.uid, { username: username.trim(), email, avatar: null, lastLoginAt: Date.now() });
         try { await fbSendVerificationEmail(); } catch { /* non-fatal — the in-app banner offers a retry */ }
         onLogin({ uid: user.uid, username: username.trim(), email, emailVerified: user.emailVerified });
