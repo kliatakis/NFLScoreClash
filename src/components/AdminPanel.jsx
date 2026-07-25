@@ -274,8 +274,13 @@ function PlayoffRow({ fixture, matchup, result, timezone }) {
       <input className="form-input" type="datetime-local" style={{ maxWidth: 210 }}
         value={when} onChange={e => setWhen(e.target.value)} />
 
+      {/* A kickoff time is required, not optional: without one the game has
+          nothing to lock against and would stay editable forever — including
+          after it had been played. */}
       <button className={`btn btn-primary btn-sm ${saved ? "btn-saved" : ""}`}
-        disabled={busy || !away || !home || away === home} onClick={save}>
+        disabled={busy || !away || !home || away === home || !when}
+        title={!when ? "Set a kickoff time — picks lock 15 minutes before it" : undefined}
+        onClick={save}>
         {busy ? "Saving…" : saved ? "Saved ✓" : isSet ? "Update" : "Set"}
       </button>
       {isSet && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={clear}>Clear</button>}
@@ -368,7 +373,7 @@ function SpecialResultsEntry() {
   return (
     <div>
       <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>
-        Set the actual winner once known — these score everyone's preseason picks across every league.
+        Set the actual winner once known — these score everyone's season picks across every league.
         {" "}<b>{decidedCount} of {SPECIAL_PICK_TYPES.length}</b> decided so far.
       </p>
       {SPECIAL_PICK_TYPES.map(type => {

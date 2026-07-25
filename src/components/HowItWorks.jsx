@@ -48,7 +48,7 @@ export default function HowItWorks({ onClose }) {
         </div>
 
         <div className="howto-section">
-          <div className="howto-heading">4 · Preseason picks are worth the most</div>
+          <div className="howto-heading">4 · Season picks are worth the most</div>
           <p>
             Before the season starts you also pick all eight division winners, both conference
             champions, and the Super Bowl winner. These lock when the first game of the season

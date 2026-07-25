@@ -50,8 +50,9 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
         {table.map((row, i) => {
           // Everyone level on the top score shares the win.
           const isWinner = row.points > 0 && row.points === topPoints;
+          const isMe = row.uid === user.uid;
           return (
-            <div key={row.uid} className={`standings-row ${isWinner ? "week-winner" : ""}`}>
+            <div key={row.uid} className={`standings-row ${isWinner ? "week-winner" : ""} ${isMe ? "is-me" : ""}`}>
               <span className="standings-rank standings-col-rank">{isWinner ? "👑" : i + 1}</span>
               <span className="standings-col-player" style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                 <Avatar user={allUsers[row.uid]} size={30} />
@@ -85,7 +86,7 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
             .map(uid => ({ uid, wins: tally.byUid[uid] || 0, username: allUsers[uid]?.username || "Unknown" }))
             .sort((a, b) => b.wins - a.wins || a.username.localeCompare(b.username))
             .map(row => (
-              <div key={row.uid} className="standings-row">
+              <div key={row.uid} className={`standings-row ${row.uid === user.uid ? "is-me" : ""}`}>
                 <span className="standings-col-player" style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                   <Avatar user={allUsers[row.uid]} size={26} />
                   <span className={`standings-name ${row.uid === user.uid ? "you" : ""}`}>{row.username}</span>

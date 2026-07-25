@@ -335,7 +335,9 @@ export function headToHead(uidA, uidB, allUsers, allPredictions, results, scorin
   let pointsA = 0, pointsB = 0, exactA = 0, exactB = 0, winsA = 0, winsB = 0;
   const differences = [];
 
-  for (const f of REGULAR_SEASON_FIXTURES) {
+  // SCORABLE_FIXTURES so playoff games count here too — otherwise a head to
+  // head could disagree with the season table it's supposed to explain.
+  for (const f of SCORABLE_FIXTURES) {
     const result = results[f.id];
     if (!result) continue;
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, Fragment } from "react";
 import { calcStandingsWithMovement, getScoringSettings, explainTiebreak, hasCompletedWeek } from "../lib/scoring.js";
+import { useFlipRows } from "../lib/hooks.js";
 import { fsSaveLeagueStandingsSnapshot } from "../firebase.js";
 import Avatar from "./Avatar.jsx";
 import MovementArrows from "./MovementArrows.jsx";
@@ -25,6 +26,9 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
   // The podium waits for a full week of the season to be in the books —
   // 272 fixtures to scan, so memoized against the results it depends on.
   const podiumReady = useMemo(() => hasCompletedWeek(results), [results]);
+
+  // Slide rows into place when the order changes, rather than teleporting.
+  const rowsRef = useFlipRows(standings.map(s => s.uid).join(","));
 
   // Profiles arrive from their own subscription, a beat after the league
   // does. Without this the table renders every player as "Unknown" for a
@@ -57,10 +61,12 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
         <span className="standings-col-move" />
       </div>
 
+      <div ref={rowsRef}>
       {standings.map((entry, i) => {
         const rank = i + 1;
         const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
         const isLast = showToilet && i === standings.length - 1;
+        const isMe = entry.uid === user.uid;
         // Only relevant when tied on points with whoever's directly below —
         // explains which of the 4 tiebreakers separated them.
         const next = standings[i + 1];
@@ -73,13 +79,13 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
           <Fragment key={entry.uid}>
             {showPodiumDivider && <div className="standings-divider standings-divider-podium" />}
             {isLast && <div className="standings-divider standings-divider-caution" />}
-            <div className="standings-row">
+            <div className={`standings-row ${isMe ? "is-me" : ""}`} data-flip-key={entry.uid}>
               <span className="standings-rank standings-col-rank" title={`#${rank}`}>
                 {medal || (isLast ? "🚽" : rank)}
               </span>
               <span className="standings-col-player" style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                 <Avatar user={allUsers[entry.uid]} size={30} />
-                <span className={`standings-name ${entry.uid === user.uid ? "you" : ""}`}>{entry.username}</span>
+                <span className={`standings-name ${isMe ? "you" : ""}`}>{entry.username}</span>
                 {tieInfo && (
                   <span className="tiebreak-info" title={tieInfo}>ⓘ</span>
                 )}
@@ -92,6 +98,7 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
           </Fragment>
         );
       })}
+      </div>
 
       <div className="standings-legend">
         <div className="standings-legend-title">Scoring</div>

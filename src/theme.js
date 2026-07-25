@@ -404,6 +404,17 @@ export const css = (dark = true) => `
   .standings-rank { font-family: var(--font-display); font-size: 18px; color: var(--muted); text-align: center; }
   .standings-name { font-weight: 700; font-size: 14px; }
   .standings-name.you { color: var(--accent2); }
+
+  /* Your own row, highlighted as a whole. A red name alone was easy to miss
+     in a long table — this makes "where am I" answerable at a glance. The
+     left bar does the work; the tint stays subtle so it never competes with
+     the medal/podium colours or the week-winner highlight. */
+  .standings-row.is-me {
+    background: rgba(244,63,94,0.09);
+    box-shadow: inset 3px 0 0 var(--accent2);
+  }
+  .standings-row.is-me:hover { background: rgba(244,63,94,0.14); }
+  .standings-row.week-winner.is-me { background: rgba(245,158,11,0.12); }
   .standings-pts { font-family: var(--font-display); font-size: 20px; color: var(--accent); }
   .movement { display: inline-flex; gap: 1px; justify-content: center; }
   .movement-dash { color: var(--muted); font-weight: 700; }

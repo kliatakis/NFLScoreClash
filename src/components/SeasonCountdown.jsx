@@ -50,8 +50,8 @@ export default function SeasonCountdown({ user, allPredictions, timezone }) {
       <div className={`countdown-picks ${allMade ? "done" : ""}`}>
         <span>
           {allMade
-            ? `All ${totalSpecials} preseason picks in — you're set.`
-            : `${madeCount} of ${totalSpecials} preseason picks made`}
+            ? `All ${totalSpecials} season picks in — you're set.`
+            : `${madeCount} of ${totalSpecials} season picks made`}
         </span>
         <span className="countdown-bar">
           <span className="countdown-bar-fill" style={{ width: `${(madeCount / totalSpecials) * 100}%` }} />

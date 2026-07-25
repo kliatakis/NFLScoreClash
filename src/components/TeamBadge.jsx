@@ -13,7 +13,19 @@ export default function TeamBadge({ code, size = 26, showName = false }) {
   // the label always uses the app's own high-contrast text color.
   return (
     <span className="team-badge" style={{ background: `${t.primary}22`, border: `1px solid ${t.primary}55`, color: "var(--text)" }}>
-      <span className="team-badge-icon" style={{ width: size, height: size, background: t.primary }}>
+      {/* A gradient from the team's primary into its secondary, with a soft
+          inner highlight — a flat disc read as generated, this reads as made.
+          Falls back to the primary alone if a team has no secondary. */}
+      <span
+        className="team-badge-icon"
+        style={{
+          width: size, height: size,
+          background: t.secondary
+            ? `linear-gradient(145deg, ${t.primary}, ${t.secondary})`
+            : t.primary,
+          boxShadow: `inset 0 1px 1px rgba(255,255,255,0.25), inset 0 -2px 4px ${t.primary}`,
+        }}
+      >
         {t.emoji || <span className="team-badge-abbr" style={{ color: "#fff" }}>{t.abbr}</span>}
       </span>
       {showName ? `${t.city} ${t.name}` : t.abbr}

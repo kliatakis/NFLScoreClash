@@ -9,7 +9,13 @@ const scoreText = (pick) => (pick ? `${pick.awayScore}–${pick.homeScore}` : "N
 export default function HeadToHeadCard({ league, user, allUsers, allPredictions, results }) {
   const scoring = getScoringSettings(league);
   const opponents = (league.members || []).filter(uid => uid !== user.uid);
-  const [opponentId, setOpponentId] = useState(opponents[0] || null);
+  const [chosenId, setChosenId] = useState(null);
+
+  // Derived rather than stored, so the selection can't go stale: if the chosen
+  // opponent leaves the league it falls back to someone who's still here, and
+  // if you were the only member when this mounted it picks up the first person
+  // to join instead of staying permanently empty.
+  const opponentId = opponents.includes(chosenId) ? chosenId : (opponents[0] || null);
 
   const h2h = useMemo(
     () => (opponentId ? headToHead(user.uid, opponentId, allUsers, allPredictions, results, scoring) : null),
@@ -38,7 +44,7 @@ export default function HeadToHeadCard({ league, user, allUsers, allPredictions,
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
           <div className="card-title" style={{ marginBottom: 0 }}>Head to Head</div>
           <select className="form-select" style={{ maxWidth: 200, fontSize: 12.5, padding: "6px 10px" }}
-            value={opponentId} onChange={e => setOpponentId(e.target.value)}>
+            value={opponentId} onChange={e => setChosenId(e.target.value)}>
             {opponents.map(uid => (
               <option key={uid} value={uid}>vs {allUsers[uid]?.username || "Unknown"}</option>
             ))}

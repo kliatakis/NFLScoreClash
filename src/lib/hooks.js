@@ -82,6 +82,52 @@ export function useCountUp(target, duration = 900) {
   return display;
 }
 
+// Slides rows to their new positions when a list reorders, instead of having
+// them teleport. Standard FLIP: remember where every row was, let React paint
+// the new order, then instantly transform each row back to its old position
+// and release it — the browser animates the release.
+//
+// Returns a ref to attach to the container. Rows are matched by a
+// `data-flip-key` attribute, so identity survives reordering. Honours the
+// OS-level reduce-motion setting by doing nothing at all.
+export function useFlipRows(dependency) {
+  const containerRef = useRef(null);
+  const positionsRef = useRef(new Map());
+
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+
+    const reduce = typeof window !== "undefined"
+      && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+    const rows = Array.from(root.querySelectorAll("[data-flip-key]"));
+    const next = new Map();
+
+    for (const row of rows) {
+      const key = row.getAttribute("data-flip-key");
+      const top = row.offsetTop;
+      next.set(key, top);
+
+      if (reduce) continue;
+      const prev = positionsRef.current.get(key);
+      if (prev == null || prev === top) continue;
+
+      const delta = prev - top;
+      row.style.transition = "none";
+      row.style.transform = `translateY(${delta}px)`;
+      // Force the browser to accept that start position before animating.
+      void row.offsetHeight;
+      row.style.transition = "transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1)";
+      row.style.transform = "";
+    }
+
+    positionsRef.current = next;
+  }, [dependency]);
+
+  return containerRef;
+}
+
 // Preseason picks (division / conference / Super Bowl winners) lock 15
 // minutes before the FIRST game of the season, not per-game.
 export function useSeasonPicksLock() {
