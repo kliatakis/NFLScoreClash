@@ -30,7 +30,20 @@ export const css = (dark = true) => `
     --blur: 18px;
   }
 
-  body { background: var(--bg); background-image: var(--bg-grad); background-attachment: fixed; color: var(--text); font-family: var(--font-body); min-height: 100vh; }
+  body {
+    background: var(--bg); background-image: var(--bg-grad); background-attachment: fixed;
+    color: var(--text); font-family: var(--font-body); min-height: 100vh;
+    /* Stops iOS auto-inflating text in landscape, and kills the grey flash
+       box Android draws over every tapped element. */
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Keyboard users could previously not see where they were at all — the
+     inputs swapped border colour but buttons, tabs and chips showed nothing.
+     :focus-visible means mouse clicks stay clean; only keyboard focus rings. */
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  .btn:focus-visible, .nav-tab:focus-visible, .chip:focus-visible { outline-offset: 3px; }
 
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -52,7 +65,10 @@ export const css = (dark = true) => `
   }
   .help-btn:hover { color: var(--accent); border-color: var(--accent); }
 
-  .app-footer { padding: 28px 24px 20px; text-align: center; margin-top: auto; }
+  .app-footer {
+    padding: 28px 24px 20px; text-align: center; margin-top: auto;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  }
   .app-footer-creator { font-size: 11px; font-weight: 800; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 6px; }
   .app-footer-legal { font-size: 9.5px; line-height: 1.5; color: var(--muted); opacity: 0.55; max-width: 640px; margin: 0 auto; }
 
@@ -64,18 +80,37 @@ export const css = (dark = true) => `
   }
 
   /* HEADER */
+  /* Header + nav travel together as one sticky unit. */
+  .topbar {
+    position: sticky; top: 0; z-index: 100;
+    background: ${dark ? "rgba(10,10,16,0.92)" : "rgba(255,255,255,0.92)"};
+    backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur));
+  }
   .header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 28px; position: sticky; top: 0; z-index: 100;
+    /* env(safe-area-inset-*) keeps the header clear of the notch and the
+       rounded corners once the app is installed to the home screen. */
+    padding: 14px 28px; padding-top: calc(14px + env(safe-area-inset-top, 0px));
+    padding-left: calc(28px + env(safe-area-inset-left, 0px));
+    padding-right: calc(28px + env(safe-area-inset-right, 0px));
     border-bottom: 1px solid var(--border);
-    background: var(--surface); backdrop-filter: blur(var(--blur));
   }
   .brand { display: flex; align-items: center; gap: 10px; cursor: pointer; }
   .brand-word { font-family: var(--font-display); font-size: 22px; letter-spacing: 1px; color: var(--accent); }
   .brand-word span { color: var(--accent2); }
 
-  /* NAV */
-  .nav { display: flex; align-items: center; padding: 8px 24px; gap: 6px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); }
+  /* NAV — the header and nav are stuck to the top together as one unit (see
+     .topbar) rather than the nav guessing the header's height with a magic
+     pixel offset, which would drift the moment the header grew (a notch, a
+     font change). */
+  .nav {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 24px;
+    padding-left: calc(24px + env(safe-area-inset-left, 0px));
+    padding-right: calc(24px + env(safe-area-inset-right, 0px));
+    overflow-x: auto; scrollbar-width: none;
+    border-bottom: 1px solid var(--border);
+  }
   .nav::-webkit-scrollbar { display: none; }
   .nav-tab {
     background: transparent; border: 1px solid transparent; color: var(--muted);
@@ -90,7 +125,19 @@ export const css = (dark = true) => `
     box-shadow: 0 0 16px rgba(59,130,246,0.2);
   }
 
-  .main { flex: 1; padding: 24px 28px; max-width: 1080px; margin: 0 auto; width: 100%; }
+  .main {
+    flex: 1; max-width: 1080px; margin: 0 auto; width: 100%;
+    padding: 24px 28px;
+    padding-left: calc(28px + env(safe-area-inset-left, 0px));
+    padding-right: calc(28px + env(safe-area-inset-right, 0px));
+  }
+
+  /* Empty states — a centred, quieter block rather than a bare sentence
+     sitting flush-left in a card. */
+  .empty-state { text-align: center; padding: 28px 20px; color: var(--muted); }
+  .empty-state-icon { font-size: 30px; line-height: 1; margin-bottom: 10px; opacity: 0.8; }
+  .empty-state-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .empty-state-sub { font-size: 12.5px; line-height: 1.55; max-width: 380px; margin: 0 auto; }
 
   /* BUTTONS */
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 22px; border-radius: 10px; font-family: var(--font-body); font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.18s; border: none; }

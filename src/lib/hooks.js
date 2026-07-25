@@ -48,8 +48,12 @@ export function useFixtureLock(kickoffISO) {
 // "reduce motion" preference by jumping straight to the final value.
 export function useCountUp(target, duration = 900) {
   const numeric = Number.isFinite(Number(target)) ? Number(target) : 0;
-  const [display, setDisplay] = useState(numeric);
-  const fromRef = useRef(numeric);
+  // Both start at 0, NOT at the target. Seeding them with the target meant
+  // from === to on the very first effect run, so the number snapped into
+  // place and the animation only ever ran on later changes — i.e. it never
+  // played on load, which is the one moment it exists for.
+  const [display, setDisplay] = useState(0);
+  const fromRef = useRef(0);
 
   useEffect(() => {
     const reduce = typeof window !== "undefined"

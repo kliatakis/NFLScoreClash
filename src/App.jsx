@@ -135,6 +135,7 @@ export default function App() {
     <>
       <style>{css(darkMode)}</style>
       <div className="app">
+        <div className="topbar">
         <header className="header">
           <div className="brand" onClick={() => setTab("dashboard")}>
             <HexIcon size={34} />
@@ -151,6 +152,7 @@ export default function App() {
             <button key={t.key} className={`nav-tab ${tab === t.key ? "active" : ""}`} onClick={() => setTab(t.key)}>{t.label}</button>
           ))}
         </nav>
+        </div>
 
         {/* keyed on tab so React remounts it and the fade-in replays on switch */}
         <main className="main tab-view" key={tab}>

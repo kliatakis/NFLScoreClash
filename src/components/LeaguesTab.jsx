@@ -46,8 +46,15 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
       </div>
 
       {myLeagues.length === 0 && (
-        <div className="glass card" style={{ textAlign: "center", color: "var(--muted)" }}>
-          You're not in any leagues yet.
+        <div className="glass card">
+          <div className="empty-state">
+            <div className="empty-state-icon">🏆</div>
+            <div className="empty-state-title">You're not in any leagues yet</div>
+            <div className="empty-state-sub">
+              Create a league to get a 6-character code you can share, or use Join with Code
+              if a friend has already sent you theirs.
+            </div>
+          </div>
         </div>
       )}
 

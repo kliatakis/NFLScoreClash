@@ -29,9 +29,15 @@ function StatCard({ value, label, color, accent, suffix = "", sub = null }) {
 export default function DashboardTab({ user, league, allUsers, allPredictions, results, specialResults, lastLoginPrev, setTab }) {
   if (!league) {
     return (
-      <div className="glass card" style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 15, marginBottom: 12 }}>Pick or create a league to see your standings.</div>
-        <button className="btn btn-primary" onClick={() => setTab("leagues")}>Go to My Leagues</button>
+      <div className="glass card">
+        <div className="empty-state">
+          <div className="empty-state-icon">🏈</div>
+          <div className="empty-state-title">No league yet</div>
+          <div className="empty-state-sub" style={{ marginBottom: 16 }}>
+            Create one and share the code with friends, or join a league someone's already sent you a code for.
+          </div>
+          <button className="btn btn-primary" onClick={() => setTab("leagues")}>Go to My Leagues</button>
+        </div>
       </div>
     );
   }
