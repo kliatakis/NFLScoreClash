@@ -6,17 +6,18 @@ import { formatKickoff } from "../lib/time.js";
 import { useCountUp } from "../lib/hooks.js";
 import StandingsCard from "./StandingsCard.jsx";
 import HighlightsCard from "./HighlightsCard.jsx";
+import SeasonCountdown from "./SeasonCountdown.jsx";
 import TeamBadge from "./TeamBadge.jsx";
 
 // Stat card whose number animates up on load, and whose top accent bar
 // matches the colour of its own value (they were all blue before, regardless
 // of what the number underneath was).
-function StatCard({ value, label, color, accent, suffix = "", sub = null }) {
+function StatCard({ value, label, color, accent, suffix = "", sub = null, emptyLabel = "–", primary = false }) {
   const shown = useCountUp(value);
   return (
-    <div className="glass stat-card" style={accent ? { "--card-accent": accent } : undefined}>
+    <div className={`glass stat-card ${primary ? "primary" : ""}`} style={accent ? { "--card-accent": accent } : undefined}>
       <div className="stat-card-val" style={color ? { color } : undefined}>
-        {value == null ? "–" : `${shown}${suffix}`}
+        {value == null ? emptyLabel : `${shown}${suffix}`}
       </div>
       <div className="stat-card-label">
         {label}
@@ -68,7 +69,22 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
     : [];
 
   const me = standings.find(s => s.uid === user.uid);
-  const myRank = me ? standings.indexOf(me) + 1 : null;
+
+  // A rank is meaningless before anything has been scored — everyone is level
+  // on zero and the order is just however the member list happens to sit. Show
+  // N/A until there's a real result (or a decided preseason pick) behind it.
+  const seasonScoring = Object.keys(results).length > 0 || Object.keys(specialResults).length > 0;
+  const myRank = seasonScoring && me ? standings.indexOf(me) + 1 : null;
+
+  // How far through this week's picks you are — the thing you most need to
+  // know when you open the app mid-week.
+  const myPicks = (allPredictions[user.uid] || {}).picks || {};
+  const pickProgress = useMemo(() => {
+    if (upcomingWeek == null) return null;
+    const weekFixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === upcomingWeek);
+    const made = weekFixtures.filter(f => myPicks[f.id]?.homeScore != null).length;
+    return { made, total: weekFixtures.length };
+  }, [upcomingWeek, allPredictions, user.uid]);
 
   // Accuracy = games where the winner was picked correctly (exact score
   // counts too, it's still a correct-winner pick) out of games with an
@@ -89,12 +105,36 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         </div>
       )}
 
+      <SeasonCountdown user={user} allPredictions={allPredictions} timezone={user.timezone} />
+
+      {pickProgress && pickProgress.made < pickProgress.total && (
+        <div className="glass card pick-progress" onClick={() => setTab("predictions")}>
+          <div className="pick-progress-head">
+            <span>Week {upcomingWeek} picks</span>
+            <b>{pickProgress.made} / {pickProgress.total}</b>
+          </div>
+          <span className="pick-progress-bar">
+            <span className="pick-progress-fill" style={{ width: `${(pickProgress.made / pickProgress.total) * 100}%` }} />
+          </span>
+          <div className="pick-progress-hint">
+            {pickProgress.made === 0
+              ? "You haven't made any picks for this week yet — tap to start."
+              : `${pickProgress.total - pickProgress.made} still to go — tap to finish.`}
+          </div>
+        </div>
+      )}
+
       <HighlightsCard league={league} allUsers={allUsers} allPredictions={allPredictions} results={results} />
 
       <div className="grid-4" style={{ marginBottom: 24 }}>
         <StatCard
-          value={myRank} label="Your Rank"
+          value={myRank} label="Your Rank" emptyLabel="N/A" primary
           color="var(--accent)" accent="linear-gradient(90deg, var(--accent), #06d6f7)"
+          sub={!seasonScoring ? (
+            <span style={{ display: "block", textTransform: "none", fontWeight: 500, marginTop: 2, opacity: 0.8 }}>
+              once results are in
+            </span>
+          ) : null}
         />
         <StatCard
           value={me?.points ?? 0} label="Your Points"

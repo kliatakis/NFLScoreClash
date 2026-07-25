@@ -1,4 +1,4 @@
-import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
+import { REGULAR_SEASON_FIXTURES, SCORABLE_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
 
 // ─── SCORING SETTINGS ───────────────────────────────────────────────────────
 export const DEFAULT_SCORING = {
@@ -118,7 +118,10 @@ export function calcStandings(league, allUsers, allPredictions, results, special
 
     let points = 0, exact = 0, correct = 0, gamesScored = 0;
 
-    for (const fixture of REGULAR_SEASON_FIXTURES) {
+    // SCORABLE_FIXTURES, not just the regular season — playoff picks count
+    // towards the table too. Scoring never needs to know who was playing, so
+    // playoff placeholders work here even before their matchups are known.
+    for (const fixture of SCORABLE_FIXTURES) {
       const result = results[fixture.id];
       if (!result) continue;
       const pick = picks[fixture.id];
@@ -267,6 +270,114 @@ export function calcStandingsWithMovement(league, allUsers, allPredictions, resu
     newVersion: baselineVersion,
     newTrackedSnapshot,
     newTrackedVersion,
+  };
+}
+
+// ─── WEEKLY STANDINGS ───────────────────────────────────────────────────────
+//
+// A per-week race, deliberately separate from the season table. Once someone
+// builds a season lead the cumulative standings stop being a contest for
+// everyone else; a weekly leaderboard gives every week its own winner.
+//
+// Only GAME points count here. The preseason division / conference / Super
+// Bowl picks aren't tied to any week — folding them in would hand their whole
+// value to whichever week they happened to be decided in.
+export function calcWeeklyStandings(league, allUsers, allPredictions, results, scoring, week) {
+  const members = league?.members || [];
+  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week && results[f.id]);
+
+  return members.map(uid => {
+    const picks = (allPredictions[uid] || {}).picks || {};
+    let points = 0, exact = 0, correct = 0, played = 0;
+    for (const f of fixtures) {
+      const result = results[f.id];
+      points += calcMatchScore(picks[f.id], result, scoring);
+      const kind = classifyPick(picks[f.id], result);
+      if (kind) {
+        played++;
+        if (kind === "exact") exact++;
+        else if (kind === "outcome") correct++;
+      }
+    }
+    return { uid, username: allUsers[uid]?.username || "Unknown", points, exact, correct, played, gamesInWeek: fixtures.length };
+  }).sort((a, b) => b.points - a.points || b.exact - a.exact || a.username.localeCompare(b.username));
+}
+
+// How many weeks each member has topped. Ties share the win — in a friends
+// league "we both won that week" is the right answer, not an arbitrary
+// tiebreak on something that's meant to be a bit of fun.
+export function weeklyWinTally(league, allUsers, allPredictions, results, scoring) {
+  const weeks = completedWeeks(results).slice().sort((a, b) => a - b);
+  const byUid = {};
+  const perWeek = [];
+
+  for (const week of weeks) {
+    const table = calcWeeklyStandings(league, allUsers, allPredictions, results, scoring, week);
+    const top = table.length ? table[0].points : 0;
+    // Nobody scoring anything isn't a win worth recording.
+    const winners = top > 0 ? table.filter(r => r.points === top) : [];
+    for (const w of winners) byUid[w.uid] = (byUid[w.uid] || 0) + 1;
+    perWeek.push({ week, top, winners: winners.map(w => ({ uid: w.uid, username: w.username })) });
+  }
+  return { byUid, perWeek: perWeek.reverse(), weeks: weeks.slice().reverse() };
+}
+
+// ─── HEAD TO HEAD ───────────────────────────────────────────────────────────
+//
+// Beating one specific person is the most fun part of a friends league, and
+// nothing in the app spoke to that. Compares two members across the season and
+// — more interestingly — isolates only the games where they actually picked
+// DIFFERENTLY, which is where the bragging rights live.
+export function headToHead(uidA, uidB, allUsers, allPredictions, results, scoring) {
+  const picksA = (allPredictions[uidA] || {}).picks || {};
+  const picksB = (allPredictions[uidB] || {}).picks || {};
+
+  let pointsA = 0, pointsB = 0, exactA = 0, exactB = 0, winsA = 0, winsB = 0;
+  const differences = [];
+
+  for (const f of REGULAR_SEASON_FIXTURES) {
+    const result = results[f.id];
+    if (!result) continue;
+
+    const sA = calcMatchScore(picksA[f.id], result, scoring);
+    const sB = calcMatchScore(picksB[f.id], result, scoring);
+    pointsA += sA; pointsB += sB;
+
+    const kA = classifyPick(picksA[f.id], result);
+    const kB = classifyPick(picksB[f.id], result);
+    if (kA === "exact") exactA++;
+    if (kB === "exact") exactB++;
+
+    const pa = picksA[f.id], pb = picksB[f.id];
+
+    // Neither of you picked this one — that's not a difference of opinion,
+    // it's two people who both sat it out, and listing it would pad the
+    // comparison with games nobody engaged with.
+    if (!pa && !pb) continue;
+
+    const samePick = pa && pb
+      && Number(pa.homeScore) === Number(pb.homeScore)
+      && Number(pa.awayScore) === Number(pb.awayScore);
+    if (samePick) continue; // identical picks tell you nothing about either
+
+    if (sA > sB) winsA++;
+    else if (sB > sA) winsB++;
+
+    differences.push({
+      fixture: f,
+      result,
+      pickA: pa || null, pickB: pb || null,
+      kindA: kA, kindB: kB,
+      pointsA: sA, pointsB: sB,
+      winner: sA > sB ? "a" : sB > sA ? "b" : "tie",
+    });
+  }
+
+  return {
+    usernameA: allUsers[uidA]?.username || "Unknown",
+    usernameB: allUsers[uidB]?.username || "Unknown",
+    pointsA, pointsB, exactA, exactB, winsA, winsB,
+    differences: differences.reverse(), // most recent first
   };
 }
 

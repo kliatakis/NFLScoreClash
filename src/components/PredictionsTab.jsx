@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
-import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, hasEstimatedKickoff } from "../data/fixtures.js";
+import {
+  REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, hasEstimatedKickoff,
+  PLAYOFF_FIXTURES, PLAYOFF_ROUNDS,
+} from "../data/fixtures.js";
 import { TEAMS, TEAM_CODES, teamsByDivision, teamTint } from "../data/teams.js";
-import { fsSubscribePredictions, fsSaveGamePrediction, fsSaveSpecialPick, fsSubscribeResults } from "../firebase.js";
+import { fsSubscribePredictions, fsSaveGamePrediction, fsSaveSpecialPick, fsSubscribeResults, fsSubscribePlayoffFixtures } from "../firebase.js";
 import { useFixtureLock, useSeasonPicksLock, useCountdown, LOCK_MINUTES_BEFORE_KICKOFF } from "../lib/hooks.js";
 import { formatKickoff, lockUrgency, formatDuration } from "../lib/time.js";
 import { classifyPick } from "../lib/scoring.js";
@@ -16,6 +19,7 @@ import TeamBadge from "./TeamBadge.jsx";
 // (same one shown on the Dashboard) and simply doesn't render if none is.
 const PREDICTIONS_TABS = [
   { key: "games", label: "Game Scores" },
+  { key: "playoffs", label: "Playoffs" },
   { key: "division", label: "Division" },
   { key: "conference", label: "Conference" },
   { key: "superbowl", label: "Super Bowl" },
@@ -38,6 +42,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
   }, [user.uid]);
 
   const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+  const madeCount = fixtures.filter(f => preds.picks?.[f.id]?.homeScore != null).length;
 
   return (
     <div>
@@ -52,9 +57,25 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
 
       {view === "games" && (
         <div>
-          <select className="form-select" style={{ marginBottom: 16, maxWidth: 160 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
-            {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1).map(w => <option key={w} value={w}>Week {w}</option>)}
-          </select>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
+            <select className="form-select" style={{ maxWidth: 160 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
+              {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1).map(w => <option key={w} value={w}>Week {w}</option>)}
+            </select>
+            {fixtures.length > 0 && (
+              // Previously you had to scroll the whole week and count to know
+              // whether you'd finished.
+              <div className="week-progress">
+                <span className="week-progress-text">
+                  <b>{madeCount}</b> of {fixtures.length} picked
+                  {madeCount === fixtures.length && <span className="week-progress-done"> · all done ✓</span>}
+                </span>
+                <span className="week-progress-bar">
+                  <span className={`week-progress-fill ${madeCount === fixtures.length ? "done" : ""}`}
+                    style={{ width: `${(madeCount / fixtures.length) * 100}%` }} />
+                </span>
+              </div>
+            )}
+          </div>
           {fixtures.length === 0 && <div className="glass card" style={{ color: "var(--muted)" }}>No games loaded for this week yet.</div>}
           {fixtures.map(f => (
             <GameRow
@@ -63,6 +84,13 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
             />
           ))}
         </div>
+      )}
+
+      {view === "playoffs" && (
+        <PlayoffPicks
+          preds={preds} results={results} uid={user.uid} timezone={user.timezone}
+          league={league} allUsers={allUsers} allPredictions={allPredictions}
+        />
       )}
 
       {(view === "division" || view === "conference" || view === "superbowl") && (
@@ -199,6 +227,60 @@ function RevealPicks({ rows, allUsers }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Playoff games are predictable exactly like regular-season ones — the only
+// difference is that who's playing isn't known until January, so each fixture
+// shows as a locked placeholder until a league admin attaches the teams.
+function PlayoffPicks({ preds, results, uid, timezone, league, allUsers, allPredictions }) {
+  const [matchups, setMatchups] = useState({});
+  useEffect(() => fsSubscribePlayoffFixtures(setMatchups), []);
+
+  const readyCount = PLAYOFF_FIXTURES.filter(f => matchups[f.id]?.home && matchups[f.id]?.away).length;
+
+  return (
+    <div>
+      <div className="glass card" style={{ marginBottom: 18, fontSize: 13, color: "var(--muted)" }}>
+        {readyCount === 0
+          ? "Playoff matchups aren't known until the regular season ends. These games are already here — they'll open for predictions as soon as a league admin sets who's playing."
+          : `${readyCount} of ${PLAYOFF_FIXTURES.length} playoff games confirmed. Picks score the same way as regular-season games.`}
+      </div>
+
+      {PLAYOFF_ROUNDS.map(round => {
+        const fixtures = PLAYOFF_FIXTURES.filter(f => f.round === round.id);
+        if (fixtures.length === 0) return null;
+        return (
+          <div key={round.id} style={{ marginBottom: 20 }}>
+            <div className="card-title" style={{ marginBottom: 10 }}>{round.label}</div>
+            {fixtures.map(f => {
+              const m = matchups[f.id];
+              const ready = !!(m?.home && m?.away);
+              if (!ready) {
+                return (
+                  <div key={f.id} className="fixture-card glass playoff-pending">
+                    <div className="fixture-meta">{f.label}</div>
+                    <div className="fixture-body">
+                      <span style={{ fontSize: 13, color: "var(--muted)" }}>🔒 Teams to be confirmed</span>
+                    </div>
+                  </div>
+                );
+              }
+              // Merge the admin-set teams and kickoff onto the placeholder so
+              // it behaves like any other fixture from here on.
+              const merged = { ...f, home: m.home, away: m.away, kickoffUTC: m.kickoffUTC || null, note: f.label };
+              return (
+                <GameRow
+                  key={f.id} fixture={merged} pick={preds.picks?.[f.id]} result={results[f.id]}
+                  uid={uid} timezone={timezone}
+                  league={league} allUsers={allUsers} allPredictions={allPredictions}
+                />
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }

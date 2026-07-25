@@ -281,6 +281,100 @@ export const css = (dark = true) => `
   /* Dashboard highlights ("announcement board") */
   .highlight-row { font-size: 13px; line-height: 1.5; padding: 10px 14px; border-radius: 10px; background: var(--surface2); }
 
+  /* A playoff game whose teams aren't known yet — present so people can see
+     what's coming, but obviously not pickable. */
+  .fixture-card.playoff-pending { opacity: 0.6; border-style: dashed; }
+
+  /* SEASON COUNTDOWN — the app has no data at all before kickoff, so this
+     carries the whole preseason. */
+  .countdown-card { text-align: center; border-color: rgba(59,130,246,0.28); }
+  .countdown-label { font-size: 10.5px; font-weight: 800; letter-spacing: 1.6px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+  .countdown-clock { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  .countdown-unit {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    min-width: 66px; padding: 12px 6px; border-radius: 14px;
+    background: var(--surface2); border: 1px solid var(--border);
+  }
+  .countdown-unit b { font-family: var(--font-display); font-size: 30px; line-height: 1; letter-spacing: 1px;
+    background: linear-gradient(135deg, var(--accent), #06d6f7); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .countdown-unit i { font-style: normal; font-size: 9.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+  .countdown-opener { border-radius: 14px; padding: 14px; border: 1px solid var(--border); margin-bottom: 16px; position: relative; overflow: hidden; }
+  .countdown-opener-label { font-size: 9.5px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .countdown-opener-teams { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+  .countdown-opener-when { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+  .countdown-picks { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+  .countdown-picks.done { color: var(--green); }
+  .countdown-picks-hint { font-size: 11px; opacity: 0.75; max-width: 420px; line-height: 1.5; }
+  .countdown-bar { width: 100%; max-width: 320px; height: 6px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
+  .countdown-bar-fill { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), #06d6f7); transition: width 0.4s ease; }
+
+  /* Dashboard "you still have picks to make" nudge */
+  .pick-progress { margin-bottom: 24px; cursor: pointer; border-left: 3px solid var(--gold); }
+  .pick-progress:hover { border-color: var(--border2); border-left-color: var(--gold); }
+  .pick-progress-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; margin-bottom: 10px; }
+  .pick-progress-head b { font-family: var(--font-display); font-size: 17px; letter-spacing: 0.5px; color: var(--gold); }
+  .pick-progress-bar { display: block; height: 6px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
+  .pick-progress-fill { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold), #fbbf24); transition: width 0.4s ease; }
+  .pick-progress-hint { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+
+  /* Predictions per-week progress */
+  .week-progress { display: flex; flex-direction: column; gap: 6px; min-width: 190px; flex: 1; max-width: 300px; }
+  .week-progress-text { font-size: 12px; color: var(--muted); }
+  .week-progress-text b { color: var(--text); font-size: 13px; }
+  .week-progress-done { color: var(--green); font-weight: 700; }
+  .week-progress-bar { display: block; height: 5px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
+  .week-progress-fill { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), #06d6f7); transition: width 0.4s ease; }
+  .week-progress-fill.done { background: linear-gradient(90deg, var(--green), #4ade80); }
+
+  /* NFL STANDINGS */
+  .conf-heading { font-family: var(--font-display); font-size: 18px; letter-spacing: 2px; margin-bottom: 12px; padding-left: 2px; }
+  .conf-heading.afc { color: var(--accent2); }
+  .conf-heading.nfc { color: var(--accent); }
+  .nfl-row { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 10px; }
+  .nfl-row:hover { background: var(--surface2); }
+  .nfl-row.leader { background: rgba(245,158,11,0.08); }
+  .nfl-row-team { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
+  .nfl-crown { font-size: 12px; flex-shrink: 0; }
+  .nfl-row-bar { width: 70px; flex-shrink: 0; }
+  .nfl-bar { display: block; height: 5px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
+  .nfl-bar-fill { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), #06d6f7); }
+  .nfl-row.leader .nfl-bar-fill { background: linear-gradient(90deg, var(--gold), #fbbf24); }
+  .nfl-row-rec { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.5px; width: 62px; text-align: right; flex-shrink: 0; }
+
+  /* WEEKLY STANDINGS */
+  .standings-row.week-winner { background: rgba(245,158,11,0.10); }
+  .winbar { display: block; height: 6px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
+  .winbar-fill { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold), #fbbf24); transition: width 0.4s ease; }
+
+  /* HEAD TO HEAD */
+  .h2h-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 18px; }
+  .h2h-side { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  .h2h-name { font-size: 12.5px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .h2h-name.you { color: var(--accent2); }
+  .h2h-score { text-align: center; }
+  .h2h-points { font-family: var(--font-display); font-size: 34px; letter-spacing: 1px; line-height: 1; }
+  .h2h-dash { color: var(--muted); }
+  .h2h-verdict { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .h2h-stats { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .h2h-stat { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; font-size: 11.5px; color: var(--muted); padding: 5px 0; }
+  .h2h-stat b { font-family: var(--font-display); font-size: 16px; color: var(--text); }
+  .h2h-stat b:first-child { text-align: left; }
+  .h2h-stat b:last-child { text-align: right; }
+  .h2h-stat span { text-align: center; }
+  .h2h-row { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+  .h2h-row-game { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; margin-bottom: 8px; }
+  .h2h-final { color: var(--muted); font-size: 11px; margin-left: auto; }
+  .h2h-row-picks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .h2h-pick { font-size: 12.5px; padding: 5px 10px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); text-align: center; }
+  .h2h-pick em { font-style: normal; font-size: 10.5px; opacity: 0.8; margin-left: 4px; }
+  .h2h-pick.won { background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.4); color: var(--green); font-weight: 700; }
+  .h2h-pick.lost { opacity: 0.6; }
+
+  /* The dashboard's headline number gets its own weight — four identical
+     cards gave the eye nowhere to land. */
+  .stat-card.primary { border-color: rgba(59,130,246,0.35); box-shadow: 0 0 24px rgba(59,130,246,0.10); }
+  .stat-card.primary .stat-card-val { font-size: 44px; }
+
   /* Scoring settings summary, shown above the standings Notes section — a
      vertical list of rows, each ending in a colored pill rather than plain
      bold text (bold-on-dark-background didn't read as a "value" clearly). */

@@ -320,15 +320,51 @@ export const REGULAR_SEASON_FIXTURES = [
   { id: "w18_16", week: 18, home: "HOU", away: "TEN", kickoffUTC: null, note: "Week 18 — date/time TBD" },
 ];
 
-// Round structure only — matchups get filled in by the admin once seeding
-// is set (see AdminPanel). `slots` is just a count of games in that round.
 export const PLAYOFF_ROUNDS = [
-  { id: "wildcard",   label: "Wild Card",           slots: 6 },
-  { id: "divisional", label: "Divisional",          slots: 4 },
-  { id: "conf_afc",   label: "AFC Championship",    slots: 1 },
-  { id: "conf_nfc",   label: "NFC Championship",    slots: 1 },
-  { id: "superbowl",  label: "Super Bowl",          slots: 1 },
+  { id: "wildcard",   label: "Wild Card" },
+  { id: "divisional", label: "Divisional" },
+  { id: "conference", label: "Conference Championships" },
+  { id: "superbowl",  label: "Super Bowl" },
 ];
+
+// ─── PLAYOFF FIXTURES ───────────────────────────────────────────────────────
+//
+// Thirteen placeholders with permanent IDs. Who actually plays in them can't
+// be known until the regular season ends, so the teams and kickoff times are
+// attached later by a league admin (Admin Panel → Playoffs) and stored in
+// Firestore — the entries here never change.
+//
+// Stable IDs are what make this work: scoring only ever compares a predicted
+// score against the actual score, and never asks who was playing. So picks and
+// results can hang off these IDs from day one, and the matchups become nothing
+// more than display information filled in when it's known.
+//
+// `kickoffUTC` is deliberately absent — until an admin sets a real time, these
+// count as unscheduled and stay locked (see effectiveKickoffUTC).
+export const PLAYOFF_FIXTURES = [
+  { id: "po_wc_afc_1", round: "wildcard",   conf: "AFC", label: "AFC Wild Card" },
+  { id: "po_wc_afc_2", round: "wildcard",   conf: "AFC", label: "AFC Wild Card" },
+  { id: "po_wc_afc_3", round: "wildcard",   conf: "AFC", label: "AFC Wild Card" },
+  { id: "po_wc_nfc_1", round: "wildcard",   conf: "NFC", label: "NFC Wild Card" },
+  { id: "po_wc_nfc_2", round: "wildcard",   conf: "NFC", label: "NFC Wild Card" },
+  { id: "po_wc_nfc_3", round: "wildcard",   conf: "NFC", label: "NFC Wild Card" },
+
+  { id: "po_dv_afc_1", round: "divisional", conf: "AFC", label: "AFC Divisional" },
+  { id: "po_dv_afc_2", round: "divisional", conf: "AFC", label: "AFC Divisional" },
+  { id: "po_dv_nfc_1", round: "divisional", conf: "NFC", label: "NFC Divisional" },
+  { id: "po_dv_nfc_2", round: "divisional", conf: "NFC", label: "NFC Divisional" },
+
+  { id: "po_cc_afc",   round: "conference", conf: "AFC", label: "AFC Championship" },
+  { id: "po_cc_nfc",   round: "conference", conf: "NFC", label: "NFC Championship" },
+
+  { id: "po_sb",       round: "superbowl",  conf: null,  label: SEASON.playoffs.superBowl.name },
+];
+
+// Everything that can carry a prediction and a result. Scoring walks this,
+// not just the regular season, so playoff picks count towards the table.
+export const SCORABLE_FIXTURES = [...REGULAR_SEASON_FIXTURES, ...PLAYOFF_FIXTURES];
+
+export const isPlayoffFixture = (id) => typeof id === "string" && id.startsWith("po_");
 
 // Special preseason picks, made once per season, locked 15 min before the
 // season opener kickoff (SEASON.openerKickoffUTC).
@@ -365,6 +401,9 @@ export function fixturesForWeek(week) {
 export function effectiveKickoffUTC(fixture) {
   if (!fixture) return null;
   if (fixture.kickoffUTC) return fixture.kickoffUTC;
+  // Playoff fixtures have no week to derive from — until an admin attaches a
+  // real kickoff they simply have no time, and the UI treats them as not yet
+  // open rather than as unlocked forever.
   const anchor = new Date(SEASON.week1SundayUTC).getTime();
   if (!Number.isFinite(anchor) || !Number.isFinite(fixture.week)) return null;
   const weekSunday = anchor + (fixture.week - 1) * 7 * 86400000;

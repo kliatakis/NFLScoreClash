@@ -1,19 +1,17 @@
 import { useState, useEffect } from "react";
-import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON } from "../data/fixtures.js";
-import { TEAMS, TEAM_CODES, teamsByDivision } from "../data/teams.js";
+import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS } from "../data/fixtures.js";
+import { TEAMS, TEAM_CODES, teamsByDivision, teamsByConference } from "../data/teams.js";
 import {
   fsSetResult, fsClearResult, fsSetSpecialResult, fsUpdateLeague, fsDeleteLeague,
   fsAdminOverrideGamePrediction, fsGetPredictions, fsGetAllUsers,
   fsSubscribeResults, fsSubscribeSpecialResults,
+  fsSetPlayoffFixture, fsClearPlayoffFixture, fsSubscribePlayoffFixtures,
 } from "../firebase.js";
 import { DEFAULT_SCORING, getScoringSettings } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
 import TeamBadge from "./TeamBadge.jsx";
 
-// Playoff matchups aren't entered in-app — once real seeding is known, update
-// the schedule data directly (same workflow as the regular-season fixtures)
-// and redeploy, rather than maintaining a separate admin-entry UI for it.
-const SECTIONS = ["Results", "Overrides", "Special Picks", "Scoring Settings", "Danger Zone"];
+const SECTIONS = ["Results", "Playoffs", "Overrides", "Special Picks", "Scoring Settings", "Danger Zone"];
 
 export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted }) {
   const [section, setSection] = useState("Results");
@@ -55,6 +53,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
         </div>
       )}
 
+      {section === "Playoffs" && <PlayoffEntry timezone={user.timezone} />}
       {section === "Overrides" && <OverridesEntry league={league} adminUid={user.uid} />}
       {section === "Special Picks" && <SpecialResultsEntry />}
       {section === "Scoring Settings" && <ScoringSettings league={league} />}
@@ -64,20 +63,42 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
 }
 
 function ResultsEntry({ timezone }) {
-  const [week, setWeek] = useState(1);
-  // Live results, so the admin can SEE what's already entered (by hand or by
-  // the auto-fetch cron) instead of typing blind into empty boxes.
+  // A "period" is either a regular-season week number or a playoff round id,
+  // so playoff scores are entered in the same place as everything else.
+  const [period, setPeriod] = useState("1");
   const [results, setResults] = useState({});
+  const [matchups, setMatchups] = useState({});
+  // Live, so the admin can SEE what's already entered (by hand or by the
+  // auto-fetch cron) instead of typing blind into empty boxes.
   useEffect(() => fsSubscribeResults(setResults), []);
+  useEffect(() => fsSubscribePlayoffFixtures(setMatchups), []);
 
-  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+  const isPlayoffRound = PLAYOFF_ROUNDS.some(r => r.id === period);
+
+  // Playoff placeholders only become enterable once an admin has said who's
+  // playing — there's no sensible way to record a score for an unknown game.
+  const fixtures = isPlayoffRound
+    ? PLAYOFF_FIXTURES
+        .filter(f => f.round === period && matchups[f.id]?.home && matchups[f.id]?.away)
+        .map(f => ({ ...f, ...matchups[f.id] }))
+    : REGULAR_SEASON_FIXTURES.filter(f => f.week === Number(period));
+
   const enteredCount = fixtures.filter(f => results[f.id]).length;
+  const pendingPlayoff = isPlayoffRound
+    ? PLAYOFF_FIXTURES.filter(f => f.round === period).length - fixtures.length
+    : 0;
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-        <select className="form-select" style={{ maxWidth: 160 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
-          {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1).map(w => <option key={w} value={w}>Week {w}</option>)}
+        <select className="form-select" style={{ maxWidth: 220 }} value={period} onChange={e => setPeriod(e.target.value)}>
+          <optgroup label="Regular Season">
+            {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1)
+              .map(w => <option key={w} value={String(w)}>Week {w}</option>)}
+          </optgroup>
+          <optgroup label="Playoffs">
+            {PLAYOFF_ROUNDS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </optgroup>
         </select>
         {fixtures.length > 0 && (
           <span style={{ fontSize: 13.5, color: "var(--muted)" }}>
@@ -85,7 +106,20 @@ function ResultsEntry({ timezone }) {
           </span>
         )}
       </div>
-      {fixtures.length === 0 && <div style={{ color: "var(--muted)", fontSize: 14 }}>No fixtures loaded for this week yet.</div>}
+
+      {fixtures.length === 0 && (
+        <div style={{ color: "var(--muted)", fontSize: 14 }}>
+          {isPlayoffRound
+            ? "No matchups set for this round yet — set them in the Playoffs tab first."
+            : "No fixtures loaded for this week yet."}
+        </div>
+      )}
+      {pendingPlayoff > 0 && fixtures.length > 0 && (
+        <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 10 }}>
+          {pendingPlayoff} more game{pendingPlayoff === 1 ? "" : "s"} in this round still need their teams set.
+        </div>
+      )}
+
       {fixtures.map(f => (
         <ResultRow key={f.id} fixture={f} result={results[f.id]} timezone={timezone} />
       ))}
@@ -146,6 +180,116 @@ function ResultRow({ fixture, result, timezone }) {
       {hasResult && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={clear}>Clear</button>}
     </div>
   );
+}
+
+// Attaches real teams and kickoff times to the placeholder playoff fixtures.
+// Everyone's picks and the scoring already key off those permanent IDs, so
+// filling these in is purely a matter of saying who's playing and when.
+function PlayoffEntry({ timezone }) {
+  const [matchups, setMatchups] = useState({});
+  const [results, setResults] = useState({});
+  useEffect(() => fsSubscribePlayoffFixtures(setMatchups), []);
+  useEffect(() => fsSubscribeResults(setResults), []);
+
+  const setCount = PLAYOFF_FIXTURES.filter(f => matchups[f.id]?.home && matchups[f.id]?.away).length;
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>
+        Set who's playing once seeding is known. Until a game has both teams and a kickoff time it stays
+        closed for predictions — nobody can pick a game whose teams aren't decided.
+        {" "}<b>{setCount} of {PLAYOFF_FIXTURES.length}</b> set. Enter the final scores from the Results tab
+        or here once played.
+      </p>
+
+      {PLAYOFF_ROUNDS.map(round => {
+        const fixtures = PLAYOFF_FIXTURES.filter(f => f.round === round.id);
+        if (fixtures.length === 0) return null;
+        return (
+          <div key={round.id} style={{ marginBottom: 18 }}>
+            <div className="form-label" style={{ marginBottom: 8 }}>{round.label}</div>
+            {fixtures.map(f => (
+              <PlayoffRow key={f.id} fixture={f} matchup={matchups[f.id]} result={results[f.id]} timezone={timezone} />
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PlayoffRow({ fixture, matchup, result, timezone }) {
+  const [away, setAway] = useState(matchup?.away || "");
+  const [home, setHome] = useState(matchup?.home || "");
+  const [when, setWhen] = useState(toLocalInput(matchup?.kickoffUTC));
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setAway(matchup?.away || "");
+    setHome(matchup?.home || "");
+    setWhen(toLocalInput(matchup?.kickoffUTC));
+  }, [matchup?.away, matchup?.home, matchup?.kickoffUTC]);
+
+  // The Super Bowl is cross-conference; every other playoff game is within one.
+  const options = fixture.conf ? teamsByConference(fixture.conf) : TEAM_CODES;
+  const isSet = !!(matchup?.home && matchup?.away);
+
+  const save = async () => {
+    if (!away || !home || away === home) return;
+    setBusy(true);
+    await fsSetPlayoffFixture(fixture.id, {
+      away, home,
+      kickoffUTC: when ? new Date(when).toISOString() : null,
+    });
+    setBusy(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    await fsClearPlayoffFixture(fixture.id);
+    setBusy(false);
+  };
+
+  return (
+    <div className="standings-row" style={{ flexWrap: "wrap", gap: 8 }}>
+      <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {fixture.label}
+        {isSet && <span className="chip active">Set</span>}
+        {result && <span className="chip">Final {result.awayScore}–{result.homeScore}</span>}
+        {isSet && matchup?.kickoffUTC && <span>{formatKickoff(matchup.kickoffUTC, timezone)}</span>}
+      </span>
+
+      <select className="form-select" style={{ maxWidth: 190 }} value={away} onChange={e => setAway(e.target.value)}>
+        <option value="">Away team…</option>
+        {options.map(c => <option key={c} value={c}>{TEAMS[c].city} {TEAMS[c].name}</option>)}
+      </select>
+      <span className="score-sep">@</span>
+      <select className="form-select" style={{ maxWidth: 190 }} value={home} onChange={e => setHome(e.target.value)}>
+        <option value="">Home team…</option>
+        {options.map(c => <option key={c} value={c}>{TEAMS[c].city} {TEAMS[c].name}</option>)}
+      </select>
+      <input className="form-input" type="datetime-local" style={{ maxWidth: 210 }}
+        value={when} onChange={e => setWhen(e.target.value)} />
+
+      <button className={`btn btn-primary btn-sm ${saved ? "btn-saved" : ""}`}
+        disabled={busy || !away || !home || away === home} onClick={save}>
+        {busy ? "Saving…" : saved ? "Saved ✓" : isSet ? "Update" : "Set"}
+      </button>
+      {isSet && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={clear}>Clear</button>}
+    </div>
+  );
+}
+
+// datetime-local wants "YYYY-MM-DDTHH:mm" in LOCAL time; we store UTC.
+function toLocalInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function OverridesEntry({ league, adminUid }) {

@@ -326,6 +326,27 @@ export async function fsSetSpecialResult(key, teamCode) {
   }, { merge: true });
 }
 
+// Playoff matchups — who's actually playing in each placeholder fixture, plus
+// its kickoff. Set by a league admin once seeding is known; the placeholder
+// fixtures themselves live in data/fixtures.js and never change.
+export async function fsSetPlayoffFixture(fixtureId, matchup) {
+  await setDoc(doc(db, "results", RESULTS_DOC_ID), {
+    playoffFixtures: { [fixtureId]: matchup },
+  }, { merge: true });
+}
+
+export async function fsClearPlayoffFixture(fixtureId) {
+  await updateDoc(doc(db, "results", RESULTS_DOC_ID), {
+    [`playoffFixtures.${fixtureId}`]: deleteField(),
+  });
+}
+
+export function fsSubscribePlayoffFixtures(callback) {
+  return onSnapshot(doc(db, "results", RESULTS_DOC_ID), (snap) =>
+    callback(snap.exists() ? snap.data().playoffFixtures || {} : {})
+  );
+}
+
 export async function fsGetSpecialResults() {
   const snap = await getDoc(doc(db, "results", RESULTS_DOC_ID));
   return snap.exists() ? snap.data().specials || {} : {};

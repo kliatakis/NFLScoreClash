@@ -7,6 +7,8 @@ import { generateCode, DEFAULT_SCORING } from "../lib/scoring.js";
 import Avatar from "./Avatar.jsx";
 import AdminPanel from "./AdminPanel.jsx";
 import StandingsCard from "./StandingsCard.jsx";
+import WeeklyStandingsCard from "./WeeklyStandingsCard.jsx";
+import HeadToHeadCard from "./HeadToHeadCard.jsx";
 
 export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, results, specialResults, selectedLeague, onSetLeague }) {
   const [modal, setModal] = useState(null); // "create" | "join"
@@ -96,12 +98,20 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
               <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
                 <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
                   <button className={`nav-tab ${expandedPanel === "standings" ? "active" : ""}`} onClick={() => setExpandedPanel("standings")}>Standings</button>
+                  <button className={`nav-tab ${expandedPanel === "weekly" ? "active" : ""}`} onClick={() => setExpandedPanel("weekly")}>Weekly Standings</button>
+                  <button className={`nav-tab ${expandedPanel === "h2h" ? "active" : ""}`} onClick={() => setExpandedPanel("h2h")}>Head 2 Head</button>
                   <button className={`nav-tab ${expandedPanel === "members" ? "active" : ""}`} onClick={() => setExpandedPanel("members")}>Members</button>
                   {isAdmin && <button className={`nav-tab ${expandedPanel === "admin" ? "active" : ""}`} onClick={() => setExpandedPanel("admin")}>Admin Panel</button>}
                 </div>
 
                 {expandedPanel === "standings" && (
                   <StandingsCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} specialResults={specialResults} />
+                )}
+                {expandedPanel === "weekly" && (
+                  <WeeklyStandingsCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} />
+                )}
+                {expandedPanel === "h2h" && (
+                  <HeadToHeadCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} />
                 )}
                 {expandedPanel === "members" && (
                   <MembersList
