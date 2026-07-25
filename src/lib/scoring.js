@@ -275,20 +275,33 @@ export function calcStandingsWithMovement(league, allUsers, allPredictions, resu
 // not the whole season, so the card stays a fixed, current-feeling size
 // instead of growing forever. Three categories:
 //   fire   — someone nailed the exact final score (always shown, no threshold)
-//   upsets — the correct winner was called by 10% or fewer of the people who
-//            made a pick on that game (a real long-shot call)
-//   clowns — the correct winner was missed by 10% or fewer of the people who
-//            made a pick (i.e. it was "obvious" and almost nobody blew it)
-// Both percentage checks are relative to members who actually made a pick on
-// that specific game, not the whole league roster (no-picks don't count
-// either way).
+//   upsets — only a handful of people called the winner correctly
+//   clowns — only a handful of people got it wrong (it was "obvious")
 //
-// Note the practical floor this implies: for a single person to be 10% or
-// less, at least 10 people must have picked that game. Smaller leagues will
-// simply never produce upset/clown callouts (exact-score 🔥 hits have no
-// threshold and still fire at any size) — that's the arithmetic of a
-// percentage rule, not a bug.
-const UPSET_THRESHOLD = 0.10;
+// "A handful" is a COUNT that scales with league size, not a percentage.
+// A percentage rule (this was 5%, then 10%) is mathematically dead for small
+// leagues: one person can only be ≤10% once ten people have picked, so
+// nothing ever fired for a group of friends. Counts work at every size:
+//
+//   up to 10 pickers  → 1 person
+//   11–19 pickers     → up to 2
+//   20 or more        → up to 3
+//
+// Counted against people who actually picked THAT game, not total league
+// membership — otherwise a big league where only four people bothered would
+// need two of them, which isn't rare at all.
+function calloutLimit(totalPickers) {
+  if (totalPickers <= 10) return 1;
+  if (totalPickers < 20) return 2;
+  return 3;
+}
+
+// Below this many league members the board is switched off entirely.
+// In a two- or three-person league almost every game is either unanimous
+// (nothing to say) or a near-even split, so callouts would be either silent
+// or relentless — and "you were the only one who got it wrong" lands very
+// differently when "everyone else" means one other person.
+const MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS = 5;
 
 // True once at least one week of the season has been played out in full —
 // i.e. every fixture in some week has a result.
@@ -320,8 +333,14 @@ export function completedWeeks(results) {
 
 export function computeHighlights(league, allUsers, allPredictions, results, forWeek = null) {
   const members = league?.members || [];
+  const empty = { week: null, weeks: [], fire: [], upsets: [], clowns: [] };
+
+  // Whole board off for small leagues — keyed on league SIZE, unlike the
+  // callout thresholds above which key on how many people picked a given game.
+  if (members.length < MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS) return empty;
+
   const weeksWithResults = completedWeeks(results);
-  if (weeksWithResults.length === 0) return { week: null, weeks: [], fire: [], upsets: [], clowns: [] };
+  if (weeksWithResults.length === 0) return empty;
 
   // Default to the most recent week, but honour an explicit choice.
   const week = forWeek != null && weeksWithResults.includes(forWeek) ? forWeek : weeksWithResults[0];
@@ -354,10 +373,17 @@ export function computeHighlights(league, allUsers, allPredictions, results, for
 
     const correct = made.filter(p => p.isCorrect);
     const incorrect = made.filter(p => !p.isCorrect);
-    if (correct.length > 0 && correct.length / total <= UPSET_THRESHOLD) {
+    const limit = calloutLimit(total);
+
+    // Beyond being few, the highlighted group must be a genuine MINORITY.
+    // Without that, a two-person league splitting 1–1 on a game would fire
+    // both an upset (one person right) and a clown (one person wrong) for the
+    // same game, every time they disagreed. A 1–1 split isn't an upset — it's
+    // a coin flip, and now produces nothing.
+    if (correct.length > 0 && correct.length <= limit && correct.length < incorrect.length) {
       upsets.push({ fixture, users: correct.map(p => p.username) });
     }
-    if (incorrect.length > 0 && incorrect.length / total <= UPSET_THRESHOLD) {
+    if (incorrect.length > 0 && incorrect.length <= limit && incorrect.length < correct.length) {
       clowns.push({ fixture, users: incorrect.map(p => p.username) });
     }
   }
