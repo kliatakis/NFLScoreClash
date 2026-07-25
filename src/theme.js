@@ -37,6 +37,10 @@ export const css = (dark = true) => `
        box Android draws over every tapped element. */
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
+    /* Dark/light used to swap instantly, which reads as a glitch. Only the
+       page-level colours are transitioned — doing it globally would make
+       every hover in the app feel laggy. */
+    transition: background-color 0.35s ease, color 0.35s ease;
   }
 
   /* Keyboard users could previously not see where they were at all — the
@@ -149,6 +153,34 @@ export const css = (dark = true) => `
   .btn-full { width: 100%; }
   .btn-sm { padding: 7px 14px; font-size: 11px; }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+
+  /* Press feedback. Touch devices have no hover, so without an :active state
+     every tap felt inert — nothing acknowledged the press until the data
+     changed. */
+  .btn:active:not(:disabled) { transform: scale(0.96); }
+  .nav-tab:active, .chip:active, .help-btn:active, .league-code-copy:active { transform: scale(0.96); }
+  .avatar-option:active { transform: scale(0.9); }
+
+  /* Momentary "it saved" state — the button used to just quietly disable
+     itself, which on a flaky phone connection is indistinguishable from
+     nothing having happened. */
+  .btn-saved, .btn-saved:disabled {
+    background: rgba(34,197,94,0.18) !important; color: var(--green) !important;
+    opacity: 1 !important; border: 1px solid rgba(34,197,94,0.45);
+  }
+
+  /* Avatar picker — there was previously no way to tell which one you'd
+     chosen; every tile looked identical. */
+  .avatar-option {
+    aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface2); display: flex; align-items: center; justify-content: center;
+    font-size: 18px; cursor: pointer; transition: transform 0.15s, border-color 0.15s, background 0.15s;
+  }
+  .avatar-option:hover { border-color: var(--border2); background: var(--surface3); transform: translateY(-1px); }
+  .avatar-option.selected {
+    border-color: var(--accent); background: rgba(59,130,246,0.18);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 14px var(--accent-glow);
+  }
 
   .error-msg { background: rgba(244,63,94,0.12); border: 1px solid rgba(244,63,94,0.3); color: var(--accent2); padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
   .success-msg { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); color: var(--green); padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
@@ -311,8 +343,18 @@ export const css = (dark = true) => `
   .standings-legend ol ol li { margin-bottom: 2px; }
 
   /* MODALS */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 500; padding: 20px; }
-  .modal { background: #14141d; border: 1px solid var(--border2); border-radius: var(--r2); padding: 28px; width: 100%; max-width: 420px; box-shadow: 0 24px 70px rgba(0,0,0,0.6); }
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center; z-index: 500; padding: 20px;
+    animation: overlay-in 0.18s ease both;
+  }
+  .modal {
+    background: ${dark ? "#14141d" : "#ffffff"}; border: 1px solid var(--border2);
+    border-radius: var(--r2); padding: 28px; width: 100%; max-width: 420px;
+    box-shadow: 0 24px 70px rgba(0,0,0,${dark ? 0.6 : 0.18});
+    animation: modal-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  }
   .modal-title { font-family: var(--font-display); font-size: 22px; letter-spacing: 1px; margin-bottom: 6px; }
   .modal-sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
@@ -367,6 +409,8 @@ export const css = (dark = true) => `
   @keyframes fade-up { to { opacity: 1; } }
   @keyframes pulse-bar { 0%, 100% { width: 20%; margin-left: 0%; } 50% { width: 60%; margin-left: 40%; } }
   @keyframes exact-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.62; } }
+  @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
   @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
   @keyframes tab-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @keyframes podium-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }

@@ -26,6 +26,22 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
   // 272 fixtures to scan, so memoized against the results it depends on.
   const podiumReady = useMemo(() => hasCompletedWeek(results), [results]);
 
+  // Profiles arrive from their own subscription, a beat after the league
+  // does. Without this the table renders every player as "Unknown" for a
+  // moment before snapping to real names — a skeleton reads as loading
+  // rather than as broken data.
+  const loadingProfiles = Object.keys(allUsers).length === 0 && (league.members || []).length > 0;
+  if (loadingProfiles) {
+    return (
+      <div className="glass card">
+        <div className="card-title">Standings</div>
+        {(league.members || []).map(uid => (
+          <div key={uid} className="skeleton skeleton-row" />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="glass card">
       <div className="card-title">Standings</div>

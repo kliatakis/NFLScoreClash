@@ -81,12 +81,23 @@ function GameRow({ fixture, pick, result, uid, timezone, league, allUsers, allPr
   const [home, setHome] = useState(pick?.homeScore ?? "");
   const [away, setAway] = useState(pick?.awayScore ?? "");
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   useEffect(() => { setHome(pick?.homeScore ?? ""); setAway(pick?.awayScore ?? ""); setDirty(false); }, [pick?.homeScore, pick?.awayScore]);
 
   const save = async () => {
     if (home === "" || away === "") return;
-    await fsSaveGamePrediction(uid, fixture.id, home, away);
-    setDirty(false);
+    setSaving(true);
+    try {
+      await fsSaveGamePrediction(uid, fixture.id, home, away);
+      setDirty(false);
+      // Explicit confirmation. Previously the button just went disabled,
+      // which looks identical to "nothing happened" on a slow connection.
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 1600);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const locked = lock?.locked;
@@ -139,10 +150,24 @@ function GameRow({ fixture, pick, result, uid, timezone, league, allUsers, allPr
             <span className="lock-badge locked">🔒 Locked</span>
           ) : (
             <>
-              <input className="score-input" placeholder="A" value={away} disabled={locked} onChange={e => { setAway(e.target.value); setDirty(true); }} />
+              {/* inputMode/pattern (rather than type="number") gets phones to
+                  open the number pad instead of the full QWERTY keyboard —
+                  this is 32 fields a week — while avoiding type="number"'s
+                  spinner arrows and scroll-wheel-changes-the-value behaviour. */}
+              <input className="score-input" placeholder="A" value={away} disabled={locked}
+                inputMode="numeric" pattern="[0-9]*" autoComplete="off"
+                onChange={e => { setAway(e.target.value.replace(/\D/g, "").slice(0, 2)); setDirty(true); }} />
               <span style={{ color: "var(--muted)" }}>–</span>
-              <input className="score-input" placeholder="H" value={home} disabled={locked} onChange={e => { setHome(e.target.value); setDirty(true); }} />
-              <button className="btn btn-primary btn-sm" disabled={!dirty} onClick={save}>Save</button>
+              <input className="score-input" placeholder="H" value={home} disabled={locked}
+                inputMode="numeric" pattern="[0-9]*" autoComplete="off"
+                onChange={e => { setHome(e.target.value.replace(/\D/g, "").slice(0, 2)); setDirty(true); }} />
+              <button
+                className={`btn btn-primary btn-sm ${justSaved ? "btn-saved" : ""}`}
+                disabled={!dirty || saving}
+                onClick={save}
+              >
+                {saving ? "Saving…" : justSaved ? "Saved ✓" : "Save"}
+              </button>
             </>
           )}
           {pick?.overriddenBy && (

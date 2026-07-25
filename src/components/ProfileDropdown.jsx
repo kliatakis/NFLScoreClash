@@ -63,9 +63,14 @@ export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, on
               <div className="form-label">Avatar</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
                 {PRESET_AVATARS.map(a => (
-                  <div key={a.id} onClick={() => pickAvatar(a.emoji)}
-                    style={{ aspectRatio: "1", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, cursor: "pointer" }}
-                    title={a.label}>
+                  <div
+                    key={a.id}
+                    onClick={() => pickAvatar(a.emoji)}
+                    // Every tile looked identical before, so there was no way
+                    // to tell which avatar you were currently using.
+                    className={`avatar-option ${user.avatar?.value === a.emoji ? "selected" : ""}`}
+                    title={a.label}
+                  >
                     {a.emoji}
                   </div>
                 ))}

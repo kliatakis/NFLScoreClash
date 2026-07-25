@@ -134,10 +134,12 @@ function ResultRow({ fixture, result, timezone }) {
       </span>
       <span style={{ flex: 1, fontSize: 15 }}><TeamBadge code={fixture.away} /> @ <TeamBadge code={fixture.home} /></span>
       <input className="score-input" placeholder="A" value={away}
-        onChange={e => { setAway(e.target.value); setDirty(true); }} />
+        inputMode="numeric" pattern="[0-9]*" autoComplete="off"
+        onChange={e => { setAway(e.target.value.replace(/\D/g, "").slice(0, 2)); setDirty(true); }} />
       <span className="score-sep">–</span>
       <input className="score-input" placeholder="H" value={home}
-        onChange={e => { setHome(e.target.value); setDirty(true); }} />
+        inputMode="numeric" pattern="[0-9]*" autoComplete="off"
+        onChange={e => { setHome(e.target.value.replace(/\D/g, "").slice(0, 2)); setDirty(true); }} />
       <button className="btn btn-primary btn-sm" disabled={!dirty || busy} onClick={save}>
         {hasResult ? "Update" : "Save"}
       </button>
