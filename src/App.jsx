@@ -14,7 +14,7 @@ import HowItWorks from "./components/HowItWorks.jsx";
 import {
   fbOnAuthChange, fbLogout, fsReadUser, fsRecordLoginAndGetPrevious,
   fsSubscribeAllUsers, fsSubscribeMyLeagues, fsSubscribeAllPredictions,
-  fsSubscribeResults, fsSubscribeSpecialResults, fsClaimUsername,
+  fsSubscribeResults, fsSubscribeSpecialResults, fsClaimUsername, fsSubscribeUser,
 } from "./firebase.js";
 
 const APP_NAME = "SCORECLASH";
@@ -97,6 +97,28 @@ export default function App() {
     const u4 = fsSubscribeResults(setResults);
     const u5 = fsSubscribeSpecialResults(setSpecialResults);
     return () => { u1(); u2(); u3(); u4(); u5(); };
+  }, [user?.uid]);
+
+  // Keep the signed-in user's own profile live.
+  //
+  // Registration is a race: creating the account fires the auth listener,
+  // which reads users/{uid} — but AuthPage is still in the middle of WRITING
+  // that document. The read can therefore come back empty and fall back to
+  // showing the email address instead of the username the person just chose,
+  // and it would stay wrong until the next full reload. Subscribing means
+  // whatever lands in the document wins, whenever it lands. It also makes
+  // profile edits from another device show up here without a refresh.
+  useEffect(() => {
+    if (!user?.uid) return;
+    return fsSubscribeUser(user.uid, (profile) => {
+      if (!profile) return;
+      setUser(prev => (prev ? {
+        ...prev,
+        username: profile.username || prev.username,
+        avatar: profile.avatar ?? prev.avatar,
+        timezone: profile.timezone || prev.timezone,
+      } : prev));
+    });
   }, [user?.uid]);
 
   useEffect(() => {

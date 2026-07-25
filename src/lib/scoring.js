@@ -303,6 +303,14 @@ function calloutLimit(totalPickers) {
 // differently when "everyone else" means one other person.
 const MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS = 5;
 
+// Safety valve, not a normal constraint. Simulating thousands of weeks against
+// realistic pick behaviour puts a typical week at roughly 2–4 callouts per
+// category, comfortably under this — but the tail reaches 9 or 10, which would
+// push the standings well down the page. Capping keeps the card a sane size in
+// those rare weeks and does nothing at all the rest of the time. Kept in
+// schedule order, so it's the earliest games of the week that survive.
+const MAX_CALLOUTS_PER_CATEGORY = 8;
+
 // True once at least one week of the season has been played out in full —
 // i.e. every fixture in some week has a result.
 //
@@ -333,7 +341,7 @@ export function completedWeeks(results) {
 
 export function computeHighlights(league, allUsers, allPredictions, results, forWeek = null) {
   const members = league?.members || [];
-  const empty = { week: null, weeks: [], fire: [], upsets: [], clowns: [] };
+  const empty = { week: null, weeks: [], fire: [], upsets: [], clowns: [], hiddenCount: 0 };
 
   // Whole board off for small leagues — keyed on league SIZE, unlike the
   // callout thresholds above which key on how many people picked a given game.
@@ -388,5 +396,19 @@ export function computeHighlights(league, allUsers, allPredictions, results, for
     }
   }
 
-  return { week, weeks: weeksWithResults, fire, upsets, clowns };
+  // Trim to the cap, but report how much was left out rather than silently
+  // swallowing it — a week busy enough to hit this is worth acknowledging.
+  const hiddenCount =
+    Math.max(0, fire.length - MAX_CALLOUTS_PER_CATEGORY) +
+    Math.max(0, upsets.length - MAX_CALLOUTS_PER_CATEGORY) +
+    Math.max(0, clowns.length - MAX_CALLOUTS_PER_CATEGORY);
+
+  return {
+    week,
+    weeks: weeksWithResults,
+    fire: fire.slice(0, MAX_CALLOUTS_PER_CATEGORY),
+    upsets: upsets.slice(0, MAX_CALLOUTS_PER_CATEGORY),
+    clowns: clowns.slice(0, MAX_CALLOUTS_PER_CATEGORY),
+    hiddenCount,
+  };
 }

@@ -22,7 +22,7 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
   // a specific week from the selector.
   const [pickedWeek, setPickedWeek] = useState(null);
 
-  const { week, weeks, fire, upsets, clowns } = useMemo(
+  const { week, weeks, fire, upsets, clowns, hiddenCount } = useMemo(
     () => computeHighlights(league, allUsers, allPredictions, results, pickedWeek),
     [league, allUsers, allPredictions, results, pickedWeek]
   );
@@ -72,6 +72,11 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
           </div>
         ))}
       </div>
+      {hiddenCount > 0 && (
+        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 10, textAlign: "center" }}>
+          + {hiddenCount} more {hiddenCount === 1 ? "highlight" : "highlights"} this week not shown
+        </div>
+      )}
     </div>
   );
 }
