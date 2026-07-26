@@ -28,7 +28,9 @@ export default function TeamBadge({ code, size = 26, showName = false }) {
       >
         {t.emoji || <span className="team-badge-abbr" style={{ color: "#fff" }}>{t.abbr}</span>}
       </span>
-      {showName ? `${t.city} ${t.name}` : t.abbr}
+      {/* In a span so it can truncate — "Jacksonville Jaguars" next to a
+          progress bar and a W-L record overflows a narrow phone otherwise. */}
+      <span className="team-badge-label">{showName ? `${t.city} ${t.name}` : t.abbr}</span>
     </span>
   );
 }

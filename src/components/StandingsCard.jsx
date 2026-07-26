@@ -91,21 +91,31 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
               <span className="standings-rank standings-col-rank" title={`#${rank}`}>
                 {medal || (isLast ? "🚽" : rank)}
               </span>
-              <span className="standings-col-player" style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <span className="standings-col-player">
                 <Avatar user={allUsers[entry.uid]} size={30} />
-                <span className={`standings-name ${isMe ? "you" : ""}`}>{entry.username}</span>
-                {(() => {
-                  const weeks = weeksWonBy(entry.uid);
-                  if (weeks.length === 0) return null;
-                  return (
-                    <span className="week-badge" title={`Top scorer in week${weeks.length === 1 ? "" : "s"} ${weeks.slice().reverse().join(", ")}`}>
-                      🏅{weeks.length > 1 ? `×${weeks.length}` : ""}
-                    </span>
-                  );
-                })()}
-                {tieInfo && (
-                  <span className="tiebreak-info" title={tieInfo}>ⓘ</span>
-                )}
+                <span className="standings-player-info">
+                  <span className="standings-player-line">
+                    <span className={`standings-name ${isMe ? "you" : ""}`}>{entry.username}</span>
+                    {(() => {
+                      const weeks = weeksWonBy(entry.uid);
+                      if (weeks.length === 0) return null;
+                      return (
+                        <span className="week-badge" title={`Top scorer in week${weeks.length === 1 ? "" : "s"} ${weeks.slice().reverse().join(", ")}`}>
+                          🏅{weeks.length > 1 ? `×${weeks.length}` : ""}
+                        </span>
+                      );
+                    })()}
+                    {tieInfo && (
+                      <span className="tiebreak-info" title={tieInfo}>ⓘ</span>
+                    )}
+                  </span>
+                  {/* Phones have no room for two extra numeric columns AND a
+                      readable name, so on mobile the stats drop under the name
+                      and the columns are hidden instead. */}
+                  <span className="standings-substats">
+                    {entry.exact} exact · {entry.correct} outcome
+                  </span>
+                </span>
               </span>
               <span className="standings-col-stat">{entry.exact}</span>
               <span className="standings-col-stat">{entry.correct}</span>

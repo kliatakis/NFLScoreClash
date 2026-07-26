@@ -225,7 +225,8 @@ export const css = (dark = true) => `
   .stat-card-label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
 
   /* TEAM BADGE — colored chip with emoji (or abbr fallback), never a logo image */
-  .team-badge { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px 5px 6px; border-radius: 20px; font-weight: 700; font-size: 13px; }
+  .team-badge { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px 5px 6px; border-radius: 20px; font-weight: 700; font-size: 13px; max-width: 100%; min-width: 0; }
+  .team-badge-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .team-badge-icon { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
   .team-badge-abbr { font-size: 10px; letter-spacing: 0.5px; }
 
@@ -483,7 +484,12 @@ export const css = (dark = true) => `
   /* Standings table columns — shared widths so the header row lines up with
      the data rows exactly. */
   .standings-col-rank { width: 34px; flex-shrink: 0; text-align: center; }
-  .standings-col-player { flex: 1; min-width: 0; }
+  .standings-col-player { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+  .standings-player-info { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .standings-player-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  /* Desktop has dedicated Exact/Outcome columns, so this duplicate is hidden
+     until the mobile breakpoint needs it. */
+  .standings-substats { display: none; font-size: 10.5px; color: var(--muted); }
   .standings-col-stat { width: 84px; flex-shrink: 0; text-align: center; }
   .standings-col-pts { width: 74px; flex-shrink: 0; text-align: right; }
   .standings-col-move { width: 30px; flex-shrink: 0; display: flex; justify-content: center; }
@@ -617,17 +623,51 @@ export const css = (dark = true) => `
      fixed-width standings columns didn't leave room for player names, and
      fixture cards let long team names collide with the score inputs. */
   @media (max-width: 560px) {
-    .standings-row { gap: 4px; padding: 10px 8px; }
-    .standings-col-rank { width: 22px; font-size: 15px; }
-    .standings-col-stat { width: 42px; font-size: 11px; }
-    .standings-col-pts { width: 46px; }
-    .standings-col-move { width: 16px; }
-    .standings-head span { font-size: 8px; letter-spacing: 0.2px; }
-    .standings-name { font-size: 12.5px; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
-    .standings-pts { font-size: 16px; }
+    /* Reclaim the page margins first — 28px of .main padding plus 22px of
+       card padding was eating 100px of a 360px screen before a single column
+       was drawn. */
+    .main { padding: 16px 12px; padding-left: calc(12px + env(safe-area-inset-left, 0px)); padding-right: calc(12px + env(safe-area-inset-right, 0px)); }
+    .card { padding: 16px 14px; }
+    .header { padding-left: calc(16px + env(safe-area-inset-left, 0px)); padding-right: calc(16px + env(safe-area-inset-right, 0px)); }
+    .nav { padding-left: calc(12px + env(safe-area-inset-left, 0px)); padding-right: calc(12px + env(safe-area-inset-right, 0px)); }
+    .page-title { font-size: 26px; }
+
+    /* Two numeric columns AND a readable name don't fit. The columns go; the
+       same numbers reappear under the name via .standings-substats. */
+    .standings-row { gap: 8px; padding: 10px 6px; }
+    .standings-col-rank { width: 20px; font-size: 15px; }
+    .standings-col-stat { display: none; }
+    .standings-substats { display: block; }
+    .standings-col-pts { width: 40px; }
+    .standings-col-move { width: 14px; }
+    .standings-col-player { gap: 8px; }
+    .standings-head span { font-size: 8.5px; letter-spacing: 0.2px; }
+    .standings-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .standings-pts { font-size: 17px; }
 
     .fixture-body { flex-direction: column; align-items: stretch; }
     .fixture-action { width: 100%; }
     .fixture-action .score-input { flex: 1; min-width: 0; }
+
+    /* NFL standings: full team names need room next to a bar and a record. */
+    .nfl-row { gap: 8px; padding: 8px 4px; }
+    .nfl-row-bar { width: 40px; }
+    .nfl-row-rec { width: 52px; font-size: 14px; }
+
+    /* Countdown: four units at 66px wrapped awkwardly on narrow screens. */
+    .countdown-unit { min-width: 0; flex: 1; padding: 10px 2px; }
+    .countdown-unit b { font-size: 24px; }
+    .countdown-clock { gap: 6px; }
+
+    /* Podium and head-to-head both put names in narrow columns. */
+    .podium { gap: 6px; }
+    .podium-name { font-size: 11px; }
+    .podium-pts { font-size: 17px; }
+    .h2h-points { font-size: 26px; }
+    .h2h-name { font-size: 11.5px; }
+    .h2h-row-picks { grid-template-columns: 1fr; }
+
+    .modal { padding: 20px 16px; }
+    .admin-panel { font-size: 14px; }
   }
 `;
