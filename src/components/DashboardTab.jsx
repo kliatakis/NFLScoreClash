@@ -105,7 +105,10 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         </div>
       )}
 
-      <SeasonCountdown user={user} allPredictions={allPredictions} timezone={user.timezone} />
+      <SeasonCountdown
+        user={user} allPredictions={allPredictions} timezone={user.timezone}
+        onGoToPicks={() => setTab("predictions")}
+      />
 
       {pickProgress && pickProgress.made < pickProgress.total && (
         <div className="glass card pick-progress" onClick={() => setTab("predictions")}>

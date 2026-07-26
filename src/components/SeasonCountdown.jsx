@@ -12,7 +12,14 @@ import { teamTint } from "../data/teams.js";
 //
 // Disappears entirely once the opener has kicked off; from then on the real
 // data carries the page.
-export default function SeasonCountdown({ user, allPredictions, timezone }) {
+// Named in the same words the Predictions tabs use, so the two screens agree.
+const PICK_GROUPS = [
+  { kind: "division",   label: "Division winners" },
+  { kind: "conference", label: "Conference champions" },
+  { kind: "superbowl",  label: "Super Bowl winner" },
+];
+
+export default function SeasonCountdown({ user, allPredictions, timezone, onGoToPicks }) {
   const countdown = useCountdown(SEASON.openerKickoffUTC);
   if (!countdown) return null; // season under way (or already done)
 
@@ -47,19 +54,39 @@ export default function SeasonCountdown({ user, allPredictions, timezone }) {
         </div>
       )}
 
-      <div className={`countdown-picks ${allMade ? "done" : ""}`}>
-        <span>
-          {allMade
-            ? `All ${totalSpecials} season picks in — you're set.`
-            : `${madeCount} of ${totalSpecials} season picks made`}
-        </span>
-        <span className="countdown-bar">
-          <span className="countdown-bar-fill" style={{ width: `${(madeCount / totalSpecials) * 100}%` }} />
-        </span>
-        {!allMade && (
-          <span className="countdown-picks-hint">
-            Division, conference and Super Bowl picks lock when the opener starts and can't be changed after.
-          </span>
+      {/* Broken out by category rather than a lumped "x of 11". A bare total
+          told you nothing about WHAT was being asked for or where to do it —
+          this names each thing, shows how far along you are on each, and
+          gives you somewhere to go. */}
+      <div className="countdown-picks">
+        <div className="countdown-picks-title">
+          {allMade ? "Your season picks are all in ✓" : "Your season picks"}
+        </div>
+        <div className="countdown-picks-sub">
+          Made once, before kickoff. They lock when the opener starts and can't be changed after.
+        </div>
+
+        <div className="countdown-picks-list">
+          {PICK_GROUPS.map(g => {
+            const total = SPECIAL_PICK_TYPES.filter(t => t.kind === g.kind).length;
+            const made = SPECIAL_PICK_TYPES.filter(t => t.kind === g.kind && specials[t.id]).length;
+            const done = made === total;
+            return (
+              <div key={g.kind} className={`countdown-pick-row ${done ? "done" : ""}`}>
+                <span className="countdown-pick-name">{done ? "✓" : "○"} {g.label}</span>
+                <span className="countdown-pick-bar">
+                  <span className="countdown-pick-fill" style={{ width: `${(made / total) * 100}%` }} />
+                </span>
+                <span className="countdown-pick-count">{made}/{total}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {!allMade && onGoToPicks && (
+          <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }} onClick={onGoToPicks}>
+            Make your picks →
+          </button>
         )}
       </div>
     </div>

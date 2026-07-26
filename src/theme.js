@@ -302,11 +302,18 @@ export const css = (dark = true) => `
   .countdown-opener-label { font-size: 9.5px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
   .countdown-opener-teams { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
   .countdown-opener-when { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
-  .countdown-picks { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
-  .countdown-picks.done { color: var(--green); }
-  .countdown-picks-hint { font-size: 11px; opacity: 0.75; max-width: 420px; line-height: 1.5; }
-  .countdown-bar { width: 100%; max-width: 320px; height: 6px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
-  .countdown-bar-fill { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), #06d6f7); transition: width 0.4s ease; }
+  .countdown-picks { border-top: 1px solid var(--border); padding-top: 16px; text-align: left; max-width: 420px; margin: 0 auto; }
+  .countdown-picks-title { font-size: 13px; font-weight: 800; color: var(--text); margin-bottom: 4px; }
+  .countdown-picks-sub { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-bottom: 12px; }
+  .countdown-picks-list { display: flex; flex-direction: column; gap: 8px; }
+  .countdown-pick-row { display: grid; grid-template-columns: 1fr 70px 34px; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+  .countdown-pick-row.done { color: var(--green); }
+  .countdown-pick-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .countdown-pick-count { font-family: var(--font-display); font-size: 13px; letter-spacing: 0.5px; text-align: right; color: var(--text); }
+  .countdown-pick-row.done .countdown-pick-count { color: var(--green); }
+  .countdown-pick-bar { display: block; height: 5px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
+  .countdown-pick-fill { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), #06d6f7); transition: width 0.4s ease; }
+  .countdown-pick-row.done .countdown-pick-fill { background: linear-gradient(90deg, var(--green), #4ade80); }
 
   /* Dashboard "you still have picks to make" nudge */
   .pick-progress { margin-bottom: 24px; cursor: pointer; border-left: 3px solid var(--gold); }
