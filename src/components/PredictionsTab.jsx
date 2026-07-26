@@ -89,16 +89,30 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
     return d.away !== "" && d.home !== "";
   };
 
-  const lockedIds = useRef(new Set());
-  const reportLocked = (id, locked) => {
-    if (locked) lockedIds.current.add(id); else lockedIds.current.delete(id);
+  // Lock state is computed HERE from the clock, not reported up by each row.
+  //
+  // It was originally collected from the rows into a ref, which was wrong in a
+  // way that mattered: refs don't trigger a re-render, so the list of savable
+  // fixtures was built during a render that happened BEFORE the rows had
+  // reported anything. On first paint nothing looked locked, so "Save all"
+  // would happily include games that had already kicked off — and because
+  // predictions are writable, that write would have gone through.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, []);
+  const isLocked = (f) => {
+    const kickoff = effectiveKickoffUTC(f);
+    if (!kickoff) return false; // unscheduled — handled per-view
+    return now >= new Date(kickoff).getTime() - LOCK_MINUTES_BEFORE_KICKOFF * 60000;
   };
 
-  // Only unlocked, complete, actually-changed rows get written.
+  // Only unlocked, unplayed, complete, actually-changed rows get written.
   const savableFixtures = fixtures.filter(f =>
-    !lockedIds.current.has(f.id) && !results[f.id] && isComplete(f) && isDirty(f));
+    !isLocked(f) && !results[f.id] && isComplete(f) && isDirty(f));
   const clearableFixtures = fixtures.filter(f =>
-    !lockedIds.current.has(f.id) && !results[f.id] && preds.picks?.[f.id]);
+    !isLocked(f) && !results[f.id] && preds.picks?.[f.id]);
 
   const saveAll = async () => {
     if (savableFixtures.length === 0) return;
@@ -203,7 +217,6 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
               draft={draftFor(f.id)}
               onDraftChange={(patch) => setDraft(f.id, patch)}
               dirty={isDirty(f)}
-              onLockChange={(locked) => reportLocked(f.id, locked)}
             />
           ))}
         </div>
@@ -225,7 +238,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
 
 function GameRow({
   fixture, pick, result, uid, timezone, league, allUsers, allPredictions,
-  draft, onDraftChange, dirty, onLockChange,
+  draft, onDraftChange, dirty,
 }) {
   // Locks against the effective kickoff, which falls back to a derived time
   // for fixtures the NFL hasn't scheduled yet (all of Week 18) — those used
@@ -243,9 +256,6 @@ function GameRow({
 
   const locked = lock?.locked;
   const hasResult = !!result;
-
-  // Let the parent know whether this game is locked, so "Save all" can skip it.
-  useEffect(() => { onLockChange?.(!!locked); }, [locked]);
 
   const save = async () => {
     if (home === "" || away === "") return;

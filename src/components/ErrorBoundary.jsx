@@ -1,4 +1,5 @@
 import { Component } from "react";
+import { css } from "../theme.js";
 
 // Without this, a single thrown error anywhere in the tree unmounts the whole
 // app and leaves a blank white page — no message, no way back. For people who
@@ -26,6 +27,10 @@ export default class ErrorBoundary extends Component {
 
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        {/* Styles live here rather than at the root: a crash can happen before
+            App has rendered the theme, but rendering a second full stylesheet
+            on every normal page load just to cover that was wasteful. */}
+        <style>{css(true)}</style>
         <div className="glass card" style={{ maxWidth: 460, textAlign: "center" }}>
           <div className="empty-state">
             <div className="empty-state-icon">😵</div>

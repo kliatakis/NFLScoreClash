@@ -54,9 +54,19 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
           return (
             <div key={row.uid} className={`standings-row ${isWinner ? "week-winner" : ""} ${isMe ? "is-me" : ""}`}>
               <span className="standings-rank standings-col-rank">{isWinner ? "👑" : i + 1}</span>
-              <span className="standings-col-player" style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <span className="standings-col-player">
                 <Avatar user={allUsers[row.uid]} size={30} />
-                <span className={`standings-name ${row.uid === user.uid ? "you" : ""}`}>{row.username}</span>
+                <span className="standings-player-info">
+                  <span className="standings-player-line">
+                    <span className={`standings-name ${row.uid === user.uid ? "you" : ""}`}>{row.username}</span>
+                  </span>
+                  {/* Mobile hides the Exact/Outcome columns app-wide, so this
+                      table needs the same under-the-name fallback the season
+                      standings has, or those numbers vanish on a phone. */}
+                  <span className="standings-substats">
+                    {row.exact} exact · {row.correct} outcome
+                  </span>
+                </span>
               </span>
               <span className="standings-col-stat">{row.exact}</span>
               <span className="standings-col-stat">{row.correct}</span>
