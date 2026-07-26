@@ -164,6 +164,13 @@ export const css = (dark = true) => `
   /* Momentary "it saved" state — the button used to just quietly disable
      itself, which on a flaky phone connection is indistinguishable from
      nothing having happened. */
+  /* A save that DIDN'T work needs to look wrong, not just "not green". */
+  .btn-failed, .btn-failed:disabled {
+    background: rgba(244,63,94,0.18) !important; color: var(--accent2) !important;
+    opacity: 1 !important; border: 1px solid rgba(244,63,94,0.45);
+  }
+  .save-error { font-size: 11px; color: var(--accent2); font-weight: 600; }
+
   .btn-saved, .btn-saved:disabled {
     background: rgba(34,197,94,0.18) !important; color: var(--green) !important;
     opacity: 1 !important; border: 1px solid rgba(34,197,94,0.45);
@@ -251,7 +258,46 @@ export const css = (dark = true) => `
     animation: exact-pulse 2.4s ease-in-out infinite;
   }
   .fixture-card.locked .fixture-body { opacity: 0.55; }
-  .fixture-card.predicted { border-color: rgba(59,130,246,0.35); }
+  /* A saved pick used to be signalled only by a faint border tint, which was
+     easy to miss when scanning sixteen near-identical cards. Now the card
+     carries a green edge and an explicit badge stating the pick. */
+  .fixture-card.predicted { border-color: rgba(34,197,94,0.35); box-shadow: inset 3px 0 0 var(--green); }
+  .picked-badge {
+    display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;
+    padding: 2px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 800;
+    background: rgba(34,197,94,0.14); color: var(--green); border: 1px solid rgba(34,197,94,0.35);
+  }
+  .unsaved-badge {
+    display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;
+    padding: 2px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 800;
+    background: rgba(245,158,11,0.14); color: var(--gold); border: 1px solid rgba(245,158,11,0.4);
+  }
+
+  /* Week-level bulk actions */
+  .bulk-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .bulk-hint { font-size: 11px; color: var(--muted); }
+
+  /* Weekly-winner badges */
+  .week-badge { font-size: 11px; font-weight: 800; cursor: help; flex-shrink: 0; letter-spacing: -0.3px; }
+  .badge-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge-medal {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 8px 12px; border-radius: 12px; cursor: help;
+    background: linear-gradient(180deg, rgba(245,158,11,0.20), rgba(245,158,11,0.05));
+    border: 1px solid rgba(245,158,11,0.4);
+  }
+  .badge-medal-icon { font-size: 20px; line-height: 1; }
+  .badge-medal-week { font-size: 9px; font-weight: 800; letter-spacing: 1px; color: var(--gold); }
+
+  /* Closest-rival callout */
+  .rival-card { margin-bottom: 24px; cursor: pointer; border-left: 3px solid var(--accent2); }
+  .rival-card:hover { border-color: var(--border2); border-left-color: var(--accent2); }
+  .rival-label { font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .rival-body { display: flex; align-items: center; gap: 12px; }
+  .rival-text { flex: 1; font-size: 13px; line-height: 1.45; min-width: 0; }
+  .rival-gap { font-family: var(--font-display); font-size: 24px; letter-spacing: 0.5px; flex-shrink: 0; }
+  .rival-gap.leading { color: var(--green); }
+  .rival-gap.behind { color: var(--accent2); }
   .fixture-meta { padding: 10px 18px 0; font-size: 11px; color: var(--text); opacity: 0.7; letter-spacing: 0.2px; }
   .fixture-body { display: flex; align-items: center; gap: 14px; padding: 10px 18px 14px; flex-wrap: wrap; }
   .fixture-teams { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, Fragment } from "react";
-import { calcStandingsWithMovement, getScoringSettings, explainTiebreak, hasCompletedWeek } from "../lib/scoring.js";
+import { calcStandingsWithMovement, getScoringSettings, explainTiebreak, hasCompletedWeek, weeklyWinTally } from "../lib/scoring.js";
 import { useFlipRows } from "../lib/hooks.js";
 import { fsSaveLeagueStandingsSnapshot } from "../firebase.js";
 import Avatar from "./Avatar.jsx";
@@ -29,6 +29,14 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
 
   // Slide rows into place when the order changes, rather than teleporting.
   const rowsRef = useFlipRows(standings.map(s => s.uid).join(","));
+
+  // A badge for every week you topped. Shown inline so the table says who's
+  // been consistently sharp, not just who's accumulated the most.
+  const tally = useMemo(
+    () => weeklyWinTally(league, allUsers, allPredictions, results, scoring),
+    [league, allUsers, allPredictions, results]
+  );
+  const weeksWonBy = (uid) => tally.perWeek.filter(w => w.winners.some(x => x.uid === uid)).map(w => w.week);
 
   // Profiles arrive from their own subscription, a beat after the league
   // does. Without this the table renders every player as "Unknown" for a
@@ -86,6 +94,15 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
               <span className="standings-col-player" style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                 <Avatar user={allUsers[entry.uid]} size={30} />
                 <span className={`standings-name ${isMe ? "you" : ""}`}>{entry.username}</span>
+                {(() => {
+                  const weeks = weeksWonBy(entry.uid);
+                  if (weeks.length === 0) return null;
+                  return (
+                    <span className="week-badge" title={`Top scorer in week${weeks.length === 1 ? "" : "s"} ${weeks.slice().reverse().join(", ")}`}>
+                      🏅{weeks.length > 1 ? `×${weeks.length}` : ""}
+                    </span>
+                  );
+                })()}
                 {tieInfo && (
                   <span className="tiebreak-info" title={tieInfo}>ⓘ</span>
                 )}

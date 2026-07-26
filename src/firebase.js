@@ -258,6 +258,31 @@ export async function fsSaveGamePrediction(uid, fixtureId, homeScore, awayScore)
   }, { merge: true });
 }
 
+// Saves a whole batch of game predictions in ONE write.
+//
+// Entering a week one row at a time was both tedious and 16 separate writes;
+// Firestore merges nested maps, so the entire week can go in a single request.
+// `picks` is { fixtureId: { homeScore, awayScore } }.
+export async function fsSaveGamePredictions(uid, picks) {
+  const entries = Object.entries(picks || {});
+  if (entries.length === 0) return;
+  const payload = {};
+  for (const [fixtureId, v] of entries) {
+    payload[fixtureId] = { homeScore: Number(v.homeScore), awayScore: Number(v.awayScore) };
+  }
+  await setDoc(doc(db, "predictions", uid), { picks: payload }, { merge: true });
+}
+
+// Removes specific predictions — one field-path delete per fixture, in a
+// single update, leaving every other pick untouched.
+export async function fsClearGamePredictions(uid, fixtureIds) {
+  const ids = (fixtureIds || []).filter(Boolean);
+  if (ids.length === 0) return;
+  const payload = {};
+  for (const id of ids) payload[`picks.${id}`] = deleteField();
+  await updateDoc(doc(db, "predictions", uid), payload);
+}
+
 export async function fsSaveSpecialPick(uid, pickId, teamCode) {
   await setDoc(doc(db, "predictions", uid), {
     specials: { [pickId]: teamCode },

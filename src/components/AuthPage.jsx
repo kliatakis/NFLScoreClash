@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fbRegister, fbLogin, fbResetPassword, fbSendVerificationEmail, fsWriteUser, fsReadUser, fsIsUsernameTaken, fsClaimUsername } from "../firebase.js";
 import { WordmarkLogo } from "./Logo.jsx";
+import { detectTimezone } from "../lib/time.js";
 import Footer from "./Footer.jsx";
 
 export default function AuthPage({ onLogin }) {
@@ -32,7 +33,11 @@ export default function AuthPage({ onLogin }) {
         // losing a race for the name shouldn't strand someone with an auth
         // account and no profile.
         try { await fsClaimUsername(user.uid, username.trim()); } catch { /* keep going */ }
-        await fsWriteUser(user.uid, { username: username.trim(), email, avatar: null, lastLoginAt: Date.now() });
+        await fsWriteUser(user.uid, {
+          username: username.trim(), email, avatar: null, lastLoginAt: Date.now(),
+          // Seeded from the browser rather than defaulting everyone to Athens.
+          timezone: detectTimezone(),
+        });
         try { await fbSendVerificationEmail(); } catch { /* non-fatal — the in-app banner offers a retry */ }
         onLogin({ uid: user.uid, username: username.trim(), email, emailVerified: user.emailVerified });
         return;

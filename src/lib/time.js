@@ -31,6 +31,20 @@ export const COMMON_TIMEZONES = [
   { id: "UTC", label: "UTC" },
 ];
 
+// Best guess at the browser's own timezone, used to seed a new account.
+//
+// Everyone previously started on Europe/Athens regardless of where they are,
+// so anyone outside Greece saw wrong kickoff times until they happened to find
+// the setting. Only returns a zone that's actually in COMMON_TIMEZONES, since
+// the settings dropdown would render blank for anything it doesn't list.
+export function detectTimezone() {
+  try {
+    const guess = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (guess && COMMON_TIMEZONES.some(tz => tz.id === guess)) return guess;
+  } catch { /* fall through */ }
+  return DEFAULT_TIMEZONE;
+}
+
 // Full: "Sun, Sep 13 · 8:00 PM EEST"
 export function formatKickoff(kickoffUTC, timezone = DEFAULT_TIMEZONE) {
   if (!kickoffUTC) return "Date/time TBD";

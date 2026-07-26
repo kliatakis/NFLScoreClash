@@ -4,6 +4,7 @@ import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
 import { teamTint } from "../data/teams.js";
 import { formatKickoff } from "../lib/time.js";
 import { useCountUp } from "../lib/hooks.js";
+import Avatar from "./Avatar.jsx";
 import StandingsCard from "./StandingsCard.jsx";
 import HighlightsCard from "./HighlightsCard.jsx";
 import SeasonCountdown from "./SeasonCountdown.jsx";
@@ -78,6 +79,19 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
 
   // How far through this week's picks you are — the thing you most need to
   // know when you open the app mid-week.
+  // Whoever is nearest you on points, above or below. A table tells you your
+  // rank; this tells you who you're actually racing.
+  const rival = useMemo(() => {
+    if (!seasonScoring || !me || standings.length < 2) return null;
+    let best = null;
+    for (const entry of standings) {
+      if (entry.uid === user.uid) continue;
+      const gap = Math.abs(entry.points - me.points);
+      if (!best || gap < best.gap) best = { entry, gap, ahead: entry.points > me.points };
+    }
+    return best;
+  }, [standings, me, seasonScoring, user.uid]);
+
   const myPicks = (allPredictions[user.uid] || {}).picks || {};
   const pickProgress = useMemo(() => {
     if (upcomingWeek == null) return null;
@@ -109,6 +123,26 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         user={user} allPredictions={allPredictions} timezone={user.timezone}
         onGoToPicks={() => setTab("predictions")}
       />
+
+      {rival && (
+        <div className="glass card rival-card" onClick={() => setTab("leagues")}>
+          <div className="rival-label">Closest rival</div>
+          <div className="rival-body">
+            <Avatar user={allUsers[rival.entry.uid]} size={40} />
+            <div className="rival-text">
+              <b>{rival.entry.username}</b>
+              {rival.gap === 0
+                ? " is level with you on points."
+                : rival.ahead
+                  ? ` is ${rival.gap} point${rival.gap === 1 ? "" : "s"} ahead of you.`
+                  : ` is ${rival.gap} point${rival.gap === 1 ? "" : "s"} behind you.`}
+            </div>
+            <div className={`rival-gap ${rival.ahead ? "behind" : "leading"}`}>
+              {rival.gap === 0 ? "=" : rival.ahead ? `−${rival.gap}` : `+${rival.gap}`}
+            </div>
+          </div>
+        </div>
+      )}
 
       {pickProgress && pickProgress.made < pickProgress.total && (
         <div className="glass card pick-progress" onClick={() => setTab("predictions")}>

@@ -77,6 +77,35 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
         </div>
       </div>
 
+      {/* Your own badge collection, spelled out — one medal per week you topped. */}
+      {(() => {
+        const mine = tally.perWeek.filter(w => w.winners.some(x => x.uid === user.uid)).map(w => w.week);
+        return (
+          <div className="glass card" style={{ marginBottom: 14 }}>
+            <div className="card-title">Your Badges</div>
+            {mine.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                No badges yet — top the league in any single week to earn one.
+              </div>
+            ) : (
+              <>
+                <div className="badge-strip">
+                  {mine.slice().sort((a, b) => a - b).map(w => (
+                    <span key={w} className="badge-medal" title={`Top scorer in Week ${w}`}>
+                      <span className="badge-medal-icon">🏅</span>
+                      <span className="badge-medal-week">WK {w}</span>
+                    </span>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 10 }}>
+                  {mine.length} week{mine.length === 1 ? "" : "s"} won. Ties share the badge.
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="glass card">
         <div className="card-title">Weeks Won</div>
         {Object.keys(tally.byUid).length === 0 ? (
