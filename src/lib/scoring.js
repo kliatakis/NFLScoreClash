@@ -370,9 +370,15 @@ export function computeWeeklyRecap(league, allUsers, allPredictions, results, sc
 
   const topPoints = table[0].points;
   const winners = topPoints > 0 ? table.filter(r => r.points === topPoints) : [];
-  const totalPoints = table.reduce((sum, r) => sum + r.points, 0);
-  const average = table.length ? Math.round((totalPoints / table.length) * 10) / 10 : 0;
   const exactCount = table.reduce((sum, r) => sum + r.exact, 0);
+
+  // Averaged over people who actually PLAYED that week, not the whole roster.
+  // Counting members who never made a pick drags the figure toward zero — in
+  // a league where a couple of people drift off, "league average 24" when
+  // everyone who played scored 48 is just wrong.
+  const played = table.filter(r => r.played > 0);
+  const totalPoints = played.reduce((sum, r) => sum + r.points, 0);
+  const average = played.length ? Math.round((totalPoints / played.length) * 10) / 10 : 0;
 
   // Movement is measured on cumulative game points, comparing the standings
   // as they were before this week with how they are after it.
@@ -426,6 +432,7 @@ export function computeWeeklyRecap(league, allUsers, allPredictions, results, sc
     easiest: easiest && easiest.pct === 1 && games.length > 1 ? easiest : null,
     gamesPlayed: games.length,
     players: table.length,
+    playedCount: played.length,   // how many actually entered picks
   };
 }
 

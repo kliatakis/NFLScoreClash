@@ -7,7 +7,7 @@ import {
   fsSubscribeResults, fsSubscribeSpecialResults,
   fsSetPlayoffFixture, fsClearPlayoffFixture, fsSubscribePlayoffFixtures,
 } from "../firebase.js";
-import { DEFAULT_SCORING, getScoringSettings } from "../lib/scoring.js";
+import { getScoringSettings } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
 import TeamBadge from "./TeamBadge.jsx";
 

@@ -70,7 +70,10 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
             </div>
             <div className="recap-stat">
               <b>{recap.average}</b>
-              <span>league average</span>
+              <span>
+                average
+                {recap.playedCount < recap.players ? ` · ${recap.playedCount} of ${recap.players} played` : ""}
+              </span>
             </div>
             <div className="recap-stat">
               <b>{recap.exactCount}</b>

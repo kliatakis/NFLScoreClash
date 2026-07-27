@@ -15,8 +15,13 @@ export default function HowItWorks({ onClose }) {
           <div className="howto-heading">1 · Predict every game</div>
           <p>
             For each fixture you enter a final score — away team first, home team second.
-            Predictions are yours, not per-league: enter a score once and it counts in
-            every league you're in.
+            Use <b>Save all</b> at the top of a week to store the whole slate in one go, or save
+            games one at a time. A green tick means a pick is stored; an amber dot means you've
+            typed something you haven't saved yet.
+          </p>
+          <p style={{ marginTop: 6 }}>
+            Predictions are yours, not per-league: enter a score once and it counts in every
+            league you're in.
           </p>
         </div>
 
@@ -66,12 +71,35 @@ export default function HowItWorks({ onClose }) {
         </div>
 
         <div className="howto-section">
-          <div className="howto-heading">6 · Once games finish</div>
+          <div className="howto-heading">6 · The playoffs</div>
+          <p>
+            All thirteen playoff games are in the <b>Playoffs</b> tab from day one, sitting greyed
+            out until the regular season decides who's actually in them. Once a league admin
+            confirms a matchup it opens for predictions and scores exactly like any other game.
+          </p>
+        </div>
+
+        <div className="howto-section">
+          <div className="howto-heading">7 · Once games finish</div>
           <p>
             Completed games let you open <b>Show Everyone's Picks</b> to see what the whole
-            league guessed. The dashboard also calls out the week's exact-score hits, upsets,
-            and the occasional howler.
+            league guessed. The dashboard runs a recap of each week — who won it, the average
+            score, who climbed, who fell, and which game caught most people out — followed by
+            callouts for exact scores, upsets and the occasional howler.
           </p>
+        </div>
+
+        <div className="howto-section">
+          <div className="howto-heading">8 · Inside your league</div>
+          <p>
+            Open a league from <b>My Leagues</b> for four views beyond the main table:
+          </p>
+          <div className="scoring-summary" style={{ marginTop: 8 }}>
+            <div className="scoring-row"><span><b>Weekly Standings</b> — each week's own race, plus a 🏅 badge for every week you top</span></div>
+            <div className="scoring-row"><span><b>Head 2 Head</b> — pick a rival and see only the games you picked differently</span></div>
+            <div className="scoring-row"><span><b>Season Chart</b> — everyone's points plotted week by week</span></div>
+            <div className="scoring-row"><span><b>Members</b> — who's in, and who runs it</span></div>
+          </div>
         </div>
 
         <div className="modal-actions">
