@@ -9,6 +9,7 @@ import AdminPanel from "./AdminPanel.jsx";
 import StandingsCard from "./StandingsCard.jsx";
 import WeeklyStandingsCard from "./WeeklyStandingsCard.jsx";
 import HeadToHeadCard from "./HeadToHeadCard.jsx";
+import SeasonChartCard from "./SeasonChartCard.jsx";
 
 export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, results, specialResults, selectedLeague, onSetLeague }) {
   const [modal, setModal] = useState(null); // "create" | "join"
@@ -100,6 +101,7 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
                   <button className={`nav-tab ${expandedPanel === "standings" ? "active" : ""}`} onClick={() => setExpandedPanel("standings")}>Standings</button>
                   <button className={`nav-tab ${expandedPanel === "weekly" ? "active" : ""}`} onClick={() => setExpandedPanel("weekly")}>Weekly Standings</button>
                   <button className={`nav-tab ${expandedPanel === "h2h" ? "active" : ""}`} onClick={() => setExpandedPanel("h2h")}>Head 2 Head</button>
+                  <button className={`nav-tab ${expandedPanel === "chart" ? "active" : ""}`} onClick={() => setExpandedPanel("chart")}>Season Chart</button>
                   <button className={`nav-tab ${expandedPanel === "members" ? "active" : ""}`} onClick={() => setExpandedPanel("members")}>Members</button>
                   {isAdmin && <button className={`nav-tab ${expandedPanel === "admin" ? "active" : ""}`} onClick={() => setExpandedPanel("admin")}>Admin Panel</button>}
                 </div>
@@ -112,6 +114,9 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
                 )}
                 {expandedPanel === "h2h" && (
                   <HeadToHeadCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} />
+                )}
+                {expandedPanel === "chart" && (
+                  <SeasonChartCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} />
                 )}
                 {expandedPanel === "members" && (
                   <MembersList

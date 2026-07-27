@@ -322,6 +322,113 @@ export function weeklyWinTally(league, allUsers, allPredictions, results, scorin
   return { byUid, perWeek: perWeek.reverse(), weeks: weeks.slice().reverse() };
 }
 
+// ─── SEASON PROGRESSION ─────────────────────────────────────────────────────
+//
+// Cumulative points per player, week by week — the shape of the season rather
+// than just its current total. A table tells you who's ahead; this shows you
+// the surge, the collapse, and the week somebody made their move.
+//
+// GAME points only, like the weekly race. The season-long division /
+// conference / Super Bowl picks aren't tied to a week, so folding them in
+// would put an unexplained cliff in everyone's line on whatever date they
+// happened to be decided.
+export function calcSeasonProgression(league, allUsers, allPredictions, results, scoring) {
+  const members = league?.members || [];
+  const weeks = completedWeeks(results).slice().sort((a, b) => a - b);
+  if (weeks.length === 0) return { weeks: [], series: [], maxPoints: 0 };
+
+  const series = members.map(uid => {
+    const picks = (allPredictions[uid] || {}).picks || {};
+    let running = 0;
+    const points = weeks.map(week => {
+      for (const f of REGULAR_SEASON_FIXTURES) {
+        if (f.week !== week) continue;
+        const result = results[f.id];
+        if (!result) continue;
+        running += calcMatchScore(picks[f.id], result, scoring);
+      }
+      return running;
+    });
+    return { uid, username: allUsers[uid]?.username || "Unknown", points, total: running };
+  }).sort((a, b) => b.total - a.total);
+
+  const maxPoints = Math.max(1, ...series.map(s => s.total));
+  return { weeks, series, maxPoints };
+}
+
+// ─── WEEKLY RECAP ───────────────────────────────────────────────────────────
+//
+// The story of a week in a handful of facts: who won it, how the field did,
+// who moved, and which game caused the most damage.
+export function computeWeeklyRecap(league, allUsers, allPredictions, results, scoring, forWeek = null) {
+  const weeks = completedWeeks(results);
+  if (weeks.length === 0) return null;
+  const week = forWeek != null && weeks.includes(forWeek) ? forWeek : weeks[0];
+
+  const table = calcWeeklyStandings(league, allUsers, allPredictions, results, scoring, week);
+  if (table.length === 0) return null;
+
+  const topPoints = table[0].points;
+  const winners = topPoints > 0 ? table.filter(r => r.points === topPoints) : [];
+  const totalPoints = table.reduce((sum, r) => sum + r.points, 0);
+  const average = table.length ? Math.round((totalPoints / table.length) * 10) / 10 : 0;
+  const exactCount = table.reduce((sum, r) => sum + r.exact, 0);
+
+  // Movement is measured on cumulative game points, comparing the standings
+  // as they were before this week with how they are after it.
+  const progression = calcSeasonProgression(league, allUsers, allPredictions, results, scoring);
+  const idx = progression.weeks.indexOf(week);
+  const rankAt = (i) => {
+    if (i < 0) return null;
+    const snapshot = progression.series
+      .map(s => ({ uid: s.uid, username: s.username, points: s.points[i] ?? 0 }))
+      .sort((a, b) => b.points - a.points);
+    const ranks = {};
+    snapshot.forEach((s, n) => { ranks[s.uid] = n + 1; });
+    return ranks;
+  };
+  const after = rankAt(idx);
+  const before = rankAt(idx - 1);
+
+  let riser = null, faller = null;
+  if (before && after) {
+    for (const s of progression.series) {
+      const delta = (before[s.uid] ?? 0) - (after[s.uid] ?? 0); // + = climbed
+      if (delta > 0 && (!riser || delta > riser.delta)) riser = { username: s.username, uid: s.uid, delta };
+      if (delta < 0 && (!faller || delta < faller.delta)) faller = { username: s.username, uid: s.uid, delta: -delta };
+    }
+  }
+
+  // Which games the league found hardest and easiest — measured only among
+  // people who actually picked them.
+  const members = league?.members || [];
+  const games = [];
+  for (const f of REGULAR_SEASON_FIXTURES) {
+    if (f.week !== week || !results[f.id]) continue;
+    let picked = 0, right = 0;
+    for (const uid of members) {
+      const kind = classifyPick((allPredictions[uid] || {}).picks?.[f.id], results[f.id]);
+      if (!kind) continue;
+      picked++;
+      if (kind !== "wrong") right++;
+    }
+    if (picked > 0) games.push({ fixture: f, result: results[f.id], picked, right, pct: right / picked });
+  }
+  games.sort((a, b) => a.pct - b.pct);
+  const toughest = games.length ? games[0] : null;
+  const easiest = games.length ? games[games.length - 1] : null;
+
+  return {
+    week, weeks,
+    winners, topPoints, average, exactCount,
+    riser, faller,
+    toughest: toughest && toughest.pct < 1 ? toughest : null,   // only if someone missed it
+    easiest: easiest && easiest.pct === 1 && games.length > 1 ? easiest : null,
+    gamesPlayed: games.length,
+    players: table.length,
+  };
+}
+
 // ─── HEAD TO HEAD ───────────────────────────────────────────────────────────
 //
 // Beating one specific person is the most fun part of a friends league, and

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { computeHighlights } from "../lib/scoring.js";
+import { computeHighlights, computeWeeklyRecap, getScoringSettings } from "../lib/scoring.js";
 import { TEAMS } from "../data/teams.js";
+import TeamBadge from "./TeamBadge.jsx";
 
 const gameLabel = (fixture) => {
   const away = TEAMS[fixture.away], home = TEAMS[fixture.home];
@@ -27,12 +28,16 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
     [league, allUsers, allPredictions, results, pickedWeek]
   );
 
+  const recap = useMemo(
+    () => computeWeeklyRecap(league, allUsers, allPredictions, results, getScoringSettings(league), pickedWeek),
+    [league, allUsers, allPredictions, results, pickedWeek]
+  );
+
   if (!week) return null;
   const nothingHappened = fire.length === 0 && upsets.length === 0 && clowns.length === 0;
-  // With only one week of results and nothing notable in it, there's no card
-  // worth showing at all. Once there's history, keep it so the week selector
-  // stays reachable.
-  if (nothingHappened && weeks.length < 2) return null;
+  // The card used to hide itself when no callouts fired. It no longer does —
+  // the recap always has something to say about a completed week, even a
+  // quiet one.
 
   return (
     <div className="glass card" style={{ marginBottom: 24 }}>
@@ -50,6 +55,67 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
         )}
       </div>
       <div style={{ height: 16 }} />
+
+      {/* The week in numbers, before the individual callouts. */}
+      {recap && recap.week === week && (
+        <div className="recap">
+          <div className="recap-grid">
+            <div className="recap-stat">
+              <b>{recap.winners.length === 0 ? "—" : recap.winners.map(w => w.username).join(" & ")}</b>
+              <span>{recap.winners.length > 1 ? "shared the week" : "won the week"}</span>
+            </div>
+            <div className="recap-stat">
+              <b>{recap.topPoints}</b>
+              <span>top score</span>
+            </div>
+            <div className="recap-stat">
+              <b>{recap.average}</b>
+              <span>league average</span>
+            </div>
+            <div className="recap-stat">
+              <b>{recap.exactCount}</b>
+              <span>exact score{recap.exactCount === 1 ? "" : "s"}</span>
+            </div>
+          </div>
+
+          {(recap.riser || recap.faller) && (
+            <div className="recap-movers">
+              {recap.riser && (
+                <span className="recap-mover up">
+                  ▲ <b>{recap.riser.username}</b> climbed {recap.riser.delta} place{recap.riser.delta === 1 ? "" : "s"}
+                </span>
+              )}
+              {recap.faller && (
+                <span className="recap-mover down">
+                  ▼ <b>{recap.faller.username}</b> dropped {recap.faller.delta} place{recap.faller.delta === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+          )}
+
+          {(recap.toughest || recap.easiest) && (
+            <div className="recap-games">
+              {recap.toughest && (
+                <div className="recap-game">
+                  <span className="recap-game-tag tough">Trickiest</span>
+                  <TeamBadge code={recap.toughest.fixture.away} /> @ <TeamBadge code={recap.toughest.fixture.home} />
+                  <span className="recap-game-note">
+                    {recap.toughest.right} of {recap.toughest.picked} called it
+                  </span>
+                </div>
+              )}
+              {recap.easiest && (
+                <div className="recap-game">
+                  <span className="recap-game-tag easy">Everyone got</span>
+                  <TeamBadge code={recap.easiest.fixture.away} /> @ <TeamBadge code={recap.easiest.fixture.home} />
+                  <span className="recap-game-note">{recap.easiest.picked} of {recap.easiest.picked}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {nothingHappened && (
         <div style={{ fontSize: 13, color: "var(--muted)" }}>
           Nothing wild happened in Week {week} — no exact scores, no upsets, no howlers.

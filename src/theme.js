@@ -290,6 +290,45 @@ export const css = (dark = true) => `
   .badge-medal-icon { font-size: 20px; line-height: 1; }
   .badge-medal-week { font-size: 9px; font-weight: 800; letter-spacing: 1px; color: var(--gold); }
 
+  /* SEASON CHART — hand-drawn SVG, no charting library */
+  .chart-wrap { width: 100%; overflow: hidden; }
+  .season-chart { width: 100%; height: auto; display: block; }
+  .chart-grid { stroke: var(--border); stroke-width: 1; }
+  .chart-axis-label { fill: var(--muted); font-size: 11px; font-family: var(--font-body); }
+  .chart-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .chart-legend-item {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    padding: 5px 11px; border-radius: 20px; font-size: 11.5px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    transition: opacity 0.15s, border-color 0.15s;
+  }
+  .chart-legend-item:hover { border-color: var(--border2); }
+  .chart-legend-item.off { opacity: 0.4; }
+  .chart-legend-item.off .chart-legend-name { text-decoration: line-through; }
+  .chart-legend-item b { font-family: var(--font-display); font-size: 13px; letter-spacing: 0.5px; }
+  .chart-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .chart-legend-name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* WEEKLY RECAP — the week in numbers, above the individual callouts */
+  .recap { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+  .recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+  .recap-stat { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+  .recap-stat b {
+    display: block; font-family: var(--font-display); font-size: 18px; letter-spacing: 0.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .recap-stat span { display: block; font-size: 10.5px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .recap-movers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .recap-mover { font-size: 12px; padding: 5px 11px; border-radius: 20px; background: var(--surface2); border: 1px solid var(--border); }
+  .recap-mover.up { color: var(--green); }
+  .recap-mover.down { color: var(--accent2); }
+  .recap-games { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .recap-game { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .recap-game-tag { font-size: 9.5px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 8px; border-radius: 20px; }
+  .recap-game-tag.tough { background: rgba(244,63,94,0.14); color: var(--accent2); }
+  .recap-game-tag.easy { background: rgba(34,197,94,0.14); color: var(--green); }
+  .recap-game-note { margin-left: auto; font-size: 11px; }
+
   /* Closest-rival callout */
   .rival-card { margin-bottom: 24px; cursor: pointer; border-left: 3px solid var(--accent2); }
   .rival-card:hover { border-color: var(--border2); border-left-color: var(--accent2); }
