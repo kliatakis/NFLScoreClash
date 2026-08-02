@@ -14,17 +14,47 @@ const joinNames = (names) => {
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 };
 
-// A fun "announcement board" for the most recently completed week — exact
-// score hits, long-shot correct calls, and the rare miss on an "obvious"
-// result. Renders nothing at all if there's no completed week yet, or
+// Tier-specific wording. A Clean Sweep should read like an event; a Sharp Week
+// like a solid nod. Same template for all three would flatten the difference.
+function badgeShout({ badge, users }, week) {
+  const who = <b>{joinNames(users)}</b>;
+  const many = users.length > 1;
+  const pts = <> <b>+{badge.points}</b> points.</>;
+  if (badge.id === "sweep") {
+    return (
+      <>
+        {who} went a <b>perfect {badge.games} from {badge.games}</b> in Week {week}
+        {many ? " — they both swept it" : " — a Clean Sweep"}!!{pts}
+      </>
+    );
+  }
+  if (badge.id === "near") {
+    return (
+      <>
+        {who} {many ? "were" : "was"} one game away from perfection in Week {week} —
+        {" "}<b>Near Perfect</b>, {badge.games - 1} from {badge.games}.{pts}
+      </>
+    );
+  }
+  return (
+    <>
+      {who} dropped only two all week — <b>Sharp Week</b> in Week {week},
+      {" "}{badge.games - 2} from {badge.games}.{pts}
+    </>
+  );
+}
+
+// A fun "announcement board" for the most recently completed week — week
+// accuracy bonuses, long-shot correct calls, and the rare miss on an
+// "obvious" result. Renders nothing at all if there's no completed week yet, or
 // nothing notable happened (small leagues especially — see computeHighlights).
 export default function HighlightsCard({ league, allUsers, allPredictions, results }) {
   // null = follow the latest week automatically; a number = the user picked
   // a specific week from the selector.
   const [pickedWeek, setPickedWeek] = useState(null);
 
-  const { week, weeks, fire, upsets, clowns, hiddenCount } = useMemo(
-    () => computeHighlights(league, allUsers, allPredictions, results, pickedWeek),
+  const { week, weeks, sweeps, upsets, clowns, hiddenCount } = useMemo(
+    () => computeHighlights(league, allUsers, allPredictions, results, pickedWeek, getScoringSettings(league)),
     [league, allUsers, allPredictions, results, pickedWeek]
   );
 
@@ -34,7 +64,7 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
   );
 
   if (!week) return null;
-  const nothingHappened = fire.length === 0 && upsets.length === 0 && clowns.length === 0;
+  const nothingHappened = sweeps.length === 0 && upsets.length === 0 && clowns.length === 0;
   // The card used to hide itself when no callouts fired. It no longer does —
   // the recap always has something to say about a completed week, even a
   // quiet one.
@@ -76,8 +106,8 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
               </span>
             </div>
             <div className="recap-stat">
-              <b>{recap.exactCount}</b>
-              <span>exact score{recap.exactCount === 1 ? "" : "s"}</span>
+              <b>{recap.badgeEarners.length}</b>
+              <span>week bonus{recap.badgeEarners.length === 1 ? "" : "es"}</span>
             </div>
           </div>
 
@@ -121,18 +151,18 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
 
       {nothingHappened && (
         <div style={{ fontSize: 13, color: "var(--muted)" }}>
-          Nothing wild happened in Week {week} — no exact scores, no upsets, no howlers.
+          Nobody earned a week bonus in Week {week} — three or more misses across the board.
         </div>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {fire.map((h, i) => (
-          <div key={`fire-${i}`} className="highlight-row">
-            <b>{league.name}</b>: 🔥 <b>{joinNames(h.users)}</b> predicted the correct score of {gameLabel(h.fixture)} ({h.score})!!
+        {sweeps.map(s => (
+          <div key={`sweep-${s.badge.id}`} className={`highlight-row badge-shout acc-${s.badge.id}`}>
+            <b>{league.name}</b>: {s.badge.icon} {badgeShout(s, week)}
           </div>
         ))}
         {upsets.map((h, i) => (
           <div key={`upset-${i}`} className="highlight-row">
-            <b>{league.name}</b>: 🎯 <b>{joinNames(h.users)}</b> called the upset in {gameLabel(h.fixture)}!!
+            <b>{league.name}</b>: 🔮 <b>{joinNames(h.users)}</b> called the upset in {gameLabel(h.fixture)}!!
           </div>
         ))}
         {clowns.map((h, i) => (

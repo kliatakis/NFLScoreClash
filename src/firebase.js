@@ -252,24 +252,23 @@ export function fsSubscribeAllPredictions(callback) {
   });
 }
 
-export async function fsSaveGamePrediction(uid, fixtureId, homeScore, awayScore) {
+// A pick is just a side: "H" home, "A" away, "T" tie.
+export async function fsSaveGamePrediction(uid, fixtureId, winner) {
   await setDoc(doc(db, "predictions", uid), {
-    picks: { [fixtureId]: { homeScore: Number(homeScore), awayScore: Number(awayScore) } },
+    picks: { [fixtureId]: { winner } },
   }, { merge: true });
 }
 
 // Saves a whole batch of game predictions in ONE write.
 //
 // Entering a week one row at a time was both tedious and 16 separate writes;
-// Firestore merges nested maps, so the entire week can go in a single request.
-// `picks` is { fixtureId: { homeScore, awayScore } }.
-export async function fsSaveGamePredictions(uid, picks) {
-  const entries = Object.entries(picks || {});
+// Firestore merges nested maps, so the entire week goes in a single request.
+// `winners` is { fixtureId: "H" | "A" | "T" }.
+export async function fsSaveGamePredictions(uid, winners) {
+  const entries = Object.entries(winners || {});
   if (entries.length === 0) return;
   const payload = {};
-  for (const [fixtureId, v] of entries) {
-    payload[fixtureId] = { homeScore: Number(v.homeScore), awayScore: Number(v.awayScore) };
-  }
+  for (const [fixtureId, winner] of entries) payload[fixtureId] = { winner };
   await setDoc(doc(db, "predictions", uid), { picks: payload }, { merge: true });
 }
 
@@ -280,7 +279,16 @@ export async function fsClearGamePredictions(uid, fixtureIds) {
   if (ids.length === 0) return;
   const payload = {};
   for (const id of ids) payload[`picks.${id}`] = deleteField();
-  await updateDoc(doc(db, "predictions", uid), payload);
+  try {
+    await updateDoc(doc(db, "predictions", uid), payload);
+  } catch (err) {
+    // updateDoc throws if the document doesn't exist yet — which happens to a
+    // brand-new account whose first tap failed to save and who then taps again
+    // to undo it. There's nothing stored to remove, so that's already the
+    // desired end state; surfacing it as a save error would be a lie.
+    if (err?.code === "not-found") return;
+    throw err;
+  }
 }
 
 export async function fsSaveSpecialPick(uid, pickId, teamCode) {
@@ -291,12 +299,15 @@ export async function fsSaveSpecialPick(uid, pickId, teamCode) {
 
 // Admin override — same write path, but tags who changed it and when so the
 // UI can show the "corrected by an admin" asterisk.
-export async function fsAdminOverrideGamePrediction(targetUid, fixtureId, homeScore, awayScore, adminUid) {
+export async function fsAdminOverrideGamePrediction(targetUid, fixtureId, winner, adminUid) {
   await setDoc(doc(db, "predictions", targetUid), {
     picks: {
       [fixtureId]: {
-        homeScore: Number(homeScore),
-        awayScore: Number(awayScore),
+        winner,                 // "H" | "A" | "T"
+        // Wipe any scoreline left over from before the winner-only switch, so
+        // the corrected pick can't be read back through the legacy path.
+        homeScore: deleteField(),
+        awayScore: deleteField(),
         overriddenBy: adminUid,
         overriddenAt: Date.now(),
       },

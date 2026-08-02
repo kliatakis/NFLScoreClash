@@ -11,8 +11,6 @@
 // "vibe" pick instead (Falcons → fire, Seahawks → the loud "12th man" crowd)
 // so the league table doesn't look repetitive.
 
-export const CONFERENCES = ["AFC", "NFC"];
-
 export const DIVISIONS = {
   AFC: ["AFC East", "AFC North", "AFC South", "AFC West"],
   NFC: ["NFC East", "NFC North", "NFC South", "NFC West"],
@@ -70,11 +68,6 @@ export const TEAMS = {
 
 export const TEAM_CODES = Object.keys(TEAMS);
 
-export function teamLabel(code) {
-  const t = TEAMS[code];
-  return t ? `${t.city} ${t.name}` : code;
-}
-
 // Divisions grouped for the preseason "pick the division winner" picker and
 // for the Groups/Standings tab.
 export function teamsByDivision(div) {
@@ -90,6 +83,12 @@ export function teamsByConference(conf) {
 // more identical grey rectangle. Consumed by `.team-tinted` in theme.js —
 // the colours drive a very low-opacity gradient layer, never text, so
 // contrast is unaffected regardless of how dark a given team's colour is.
+// A single team's colour, for the tappable pick buttons.
+export function teamSideTint(code) {
+  const t = TEAMS[code];
+  return t ? { "--side-color": t.primary } : undefined;
+}
+
 export function teamTint(fixture) {
   const away = TEAMS[fixture?.away];
   const home = TEAMS[fixture?.home];

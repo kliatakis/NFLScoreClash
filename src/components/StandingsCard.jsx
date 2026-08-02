@@ -63,8 +63,8 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
       <div className="standings-row standings-head">
         <span className="standings-col-rank">Rank</span>
         <span className="standings-col-player">Player</span>
-        <span className="standings-col-stat">Exact</span>
-        <span className="standings-col-stat">Outcome</span>
+        <span className="standings-col-stat">Correct</span>
+        <span className="standings-col-stat">Bonus</span>
         <span className="standings-col-pts">Points</span>
         <span className="standings-col-move" />
       </div>
@@ -113,12 +113,12 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
                       readable name, so on mobile the stats drop under the name
                       and the columns are hidden instead. */}
                   <span className="standings-substats">
-                    {entry.exact} exact · {entry.correct} outcome
+                    {entry.correct} correct{entry.bonusPoints > 0 ? ` · +${entry.bonusPoints} bonus` : ""}
                   </span>
                 </span>
               </span>
-              <span className="standings-col-stat">{entry.exact}</span>
               <span className="standings-col-stat">{entry.correct}</span>
+              <span className="standings-col-stat">{entry.bonusPoints > 0 ? `+${entry.bonusPoints}` : "–"}</span>
               <span className="standings-pts standings-col-pts">{entry.points}</span>
               <span className="standings-col-move"><MovementArrows movement={movementByUid[entry.uid]} /></span>
             </div>
@@ -130,8 +130,11 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
       <div className="standings-legend">
         <div className="standings-legend-title">Scoring</div>
         <div className="scoring-summary">
-          <div className="scoring-row"><span>Correct Winner</span><span className="scoring-pts">{scoring.outcomePoints} pt{scoring.outcomePoints === 1 ? "" : "s"}</span></div>
-          <div className="scoring-row"><span>Exact Score</span><span className="scoring-pts">{scoring.exactPoints} pt{scoring.exactPoints === 1 ? "" : "s"}</span></div>
+          <div className="scoring-row"><span>Correct Winner</span><span className="scoring-pts">{scoring.correctPoints} pt{scoring.correctPoints === 1 ? "" : "s"}</span></div>
+          <div className="scoring-row"><span>🤝 Correctly Called a Tie</span><span className="scoring-pts">{scoring.tiePoints} pt{scoring.tiePoints === 1 ? "" : "s"}</span></div>
+          <div className="scoring-row"><span>🧹 Clean Sweep — whole week correct</span><span className="scoring-pts">+{scoring.sweepBonus}</span></div>
+          <div className="scoring-row"><span>🎯 Near Perfect — one miss</span><span className="scoring-pts">+{scoring.nearPerfectBonus}</span></div>
+          <div className="scoring-row"><span>💎 Sharp Week — two misses</span><span className="scoring-pts">+{scoring.sharpBonus}</span></div>
           <div className="scoring-row"><span>Division Winner</span><span className="scoring-pts">{scoring.divisionPoints} pt{scoring.divisionPoints === 1 ? "" : "s"}</span></div>
           <div className="scoring-row"><span>Conference Champion</span><span className="scoring-pts">{scoring.conferencePoints} pt{scoring.conferencePoints === 1 ? "" : "s"}</span></div>
           <div className="scoring-row"><span>Super Bowl Champion</span><span className="scoring-pts">{scoring.superbowlPoints} pt{scoring.superbowlPoints === 1 ? "" : "s"}</span></div>
@@ -142,8 +145,9 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
         <div className="standings-legend-title">Notes</div>
         <ol className="note-list">
           <li>
-            <b>Exact Score</b> and <b>Outcome</b> never double-count the same game — a perfectly-called score
-            (e.g. predicting 21–7 and it lands 21–7) counts as an Exact Score only, not also an Outcome.
+            Week bonuses are counted in <b>misses</b>, not a fixed score — weeks range from 13 to 16 games
+            because of byes, so a clean sweep means every game in <i>that</i> week. You must have picked the
+            whole week to qualify.
           </li>
           <li>
             Ties on Total Points are broken in this order — look for the <span className="tiebreak-info" style={{ position: "static" }}>ⓘ</span> next

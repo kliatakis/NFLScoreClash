@@ -1,4 +1,4 @@
-import { DEFAULT_SCORING } from "../lib/scoring.js";
+import { DEFAULT_SCORING, WEEK_BADGES } from "../lib/scoring.js";
 
 // A short explainer for people who just got handed a league code and have no
 // idea how any of this scores. Deliberately generic — it describes the rules
@@ -12,16 +12,15 @@ export default function HowItWorks({ onClose }) {
         <p className="modal-sub">The whole game in about a minute.</p>
 
         <div className="howto-section">
-          <div className="howto-heading">1 · Predict every game</div>
+          <div className="howto-heading">1 · Tap a winner</div>
           <p>
-            For each fixture you enter a final score — away team first, home team second.
-            Use <b>Save all</b> at the top of a week to store the whole slate in one go, or save
-            games one at a time. A green tick means a pick is stored; an amber dot means you've
-            typed something you haven't saved yet.
+            One tap per game — the away team, the home team, or the narrow <b>TIE</b> strip between
+            them. It saves the moment you tap; tap the same side again to undo. A whole week takes
+            about fifteen seconds. Ties are rare enough (about one a season) that calling one
+            correctly is worth several times a normal pick.
           </p>
           <p style={{ marginTop: 6 }}>
-            Predictions are yours, not per-league: enter a score once and it counts in every
-            league you're in.
+            Picks are yours, not per-league: tap once and it counts in every league you're in.
           </p>
         </div>
 
@@ -35,13 +34,9 @@ export default function HowItWorks({ onClose }) {
 
         <div className="howto-section">
           <div className="howto-heading">3 · How points work</div>
-          <p style={{ marginBottom: 8 }}>
-            Getting the winner right scores; getting the exact score scores more. They never
-            both count for the same game — a perfect call is an Exact Score only.
-          </p>
           <div className="scoring-summary">
-            <div className="scoring-row"><span>Correct winner</span><span className="scoring-pts">{DEFAULT_SCORING.outcomePoints} pt</span></div>
-            <div className="scoring-row"><span>Exact score</span><span className="scoring-pts">{DEFAULT_SCORING.exactPoints} pts</span></div>
+            <div className="scoring-row"><span>Correct winner</span><span className="scoring-pts">{DEFAULT_SCORING.correctPoints} pt</span></div>
+            <div className="scoring-row"><span>🤝 Correctly called a tie</span><span className="scoring-pts">{DEFAULT_SCORING.tiePoints} pts</span></div>
             <div className="scoring-row"><span>Division winner</span><span className="scoring-pts">{DEFAULT_SCORING.divisionPoints} pts</span></div>
             <div className="scoring-row"><span>Conference champion</span><span className="scoring-pts">{DEFAULT_SCORING.conferencePoints} pts</span></div>
             <div className="scoring-row"><span>Super Bowl champion</span><span className="scoring-pts">{DEFAULT_SCORING.superbowlPoints} pts</span></div>
@@ -53,7 +48,30 @@ export default function HowItWorks({ onClose }) {
         </div>
 
         <div className="howto-section">
-          <div className="howto-heading">4 · Season picks are worth the most</div>
+          <div className="howto-heading">4 · Nail a whole week for a bonus</div>
+          <p style={{ marginBottom: 8 }}>
+            This is where the real points are. Get through a week with almost nothing wrong and
+            you earn a badge plus bonus points — kept for the season.
+          </p>
+          <div className="scoring-summary">
+            {WEEK_BADGES.map(b => (
+              <div key={b.id} className="scoring-row">
+                <span>{b.icon} <b>{b.label}</b> — {b.blurb}</span>
+                <span className="scoring-pts">+{DEFAULT_SCORING[b.bonusKey]}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>
+            Counted in <b>misses</b>, not a fixed number correct — weeks run from 13 to 16 games
+            because of bye weeks, so a clean sweep means every game in that particular week. You
+            have to pick the whole week to qualify, and bonuses are regular season only.
+            They're settled once the last game of the week is in, so don't expect one on
+            Thursday night.
+          </p>
+        </div>
+
+        <div className="howto-section">
+          <div className="howto-heading">5 · Season picks are worth the most</div>
           <p>
             Before the season starts you also pick all eight division winners, both conference
             champions, and the Super Bowl winner. These lock when the first game of the season
@@ -62,16 +80,16 @@ export default function HowItWorks({ onClose }) {
         </div>
 
         <div className="howto-section">
-          <div className="howto-heading">5 · Ties</div>
+          <div className="howto-heading">6 · Ties</div>
           <p>
             Level on points? The tiebreakers run in order: Super Bowl pick, then conference
-            picks, then division picks, then number of exact scores. Whenever a tie is broken,
+            picks, then division picks, then total correct picks. Whenever a tie is broken,
             an ⓘ appears next to the name explaining exactly why.
           </p>
         </div>
 
         <div className="howto-section">
-          <div className="howto-heading">6 · The playoffs</div>
+          <div className="howto-heading">7 · The playoffs</div>
           <p>
             All thirteen playoff games are in the <b>Playoffs</b> tab from day one, sitting greyed
             out until the regular season decides who's actually in them. Once a league admin
@@ -80,17 +98,17 @@ export default function HowItWorks({ onClose }) {
         </div>
 
         <div className="howto-section">
-          <div className="howto-heading">7 · Once games finish</div>
+          <div className="howto-heading">8 · Once games finish</div>
           <p>
             Completed games let you open <b>Show Everyone's Picks</b> to see what the whole
             league guessed. The dashboard runs a recap of each week — who won it, the average
             score, who climbed, who fell, and which game caught most people out — followed by
-            callouts for exact scores, upsets and the occasional howler.
+            callouts for week bonuses, upsets and the occasional howler.
           </p>
         </div>
 
         <div className="howto-section">
-          <div className="howto-heading">8 · Inside your league</div>
+          <div className="howto-heading">9 · Inside your league</div>
           <p>
             Open a league from <b>My Leagues</b> for four views beyond the main table:
           </p>

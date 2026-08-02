@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { calcStandings, getScoringSettings } from "../lib/scoring.js";
+import { calcStandings, getScoringSettings, pickWinner } from "../lib/scoring.js";
 import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
 import { teamTint } from "../data/teams.js";
 import { formatKickoff } from "../lib/time.js";
@@ -73,7 +73,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
 
   // A rank is meaningless before anything has been scored — everyone is level
   // on zero and the order is just however the member list happens to sit. Show
-  // N/A until there's a real result (or a decided preseason pick) behind it.
+  // N/A until there's a real result (or a decided season pick) behind it.
   const seasonScoring = Object.keys(results).length > 0 || Object.keys(specialResults).length > 0;
   const myRank = seasonScoring && me ? standings.indexOf(me) + 1 : null;
 
@@ -96,16 +96,15 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
   const pickProgress = useMemo(() => {
     if (upcomingWeek == null) return null;
     const weekFixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === upcomingWeek);
-    const made = weekFixtures.filter(f => myPicks[f.id]?.homeScore != null).length;
+    const made = weekFixtures.filter(f => pickWinner(myPicks[f.id])).length;
     return { made, total: weekFixtures.length };
   }, [upcomingWeek, allPredictions, user.uid]);
 
-  // Accuracy = games where the winner was picked correctly (exact score
-  // counts too, it's still a correct-winner pick) out of games with an
-  // actual result AND a pick entered. Games with no pick made aren't held
-  // against you here — that's a "didn't play" state, not a wrong guess.
+  // Accuracy = games where you called the winner, out of games that have a
+  // result AND a pick. Games you didn't pick aren't held against you — that's
+  // a "didn't play" state, not a wrong guess.
   const accuracyPct = me && me.gamesScored > 0
-    ? Math.round(((me.correct + me.exact) / me.gamesScored) * 100)
+    ? Math.round((me.correct / me.gamesScored) * 100)
     : null;
 
   return (
@@ -178,7 +177,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
           accent="linear-gradient(90deg, #8b5cf6, var(--accent))"
         />
         <StatCard
-          value={me?.exact ?? 0} label="Exact Scores"
+          value={me?.bonusPoints ?? 0} label="Bonus Points"
           color="var(--gold)" accent="linear-gradient(90deg, var(--gold), #fbbf24)"
         />
         <StatCard
@@ -186,7 +185,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
           color="var(--green)" accent="linear-gradient(90deg, var(--green), #4ade80)"
           sub={me && me.gamesScored > 0 ? (
             <span style={{ display: "block", textTransform: "none", fontWeight: 500, marginTop: 2, opacity: 0.8 }}>
-              {me.correct + me.exact}/{me.gamesScored} winners called
+              {me.correct}/{me.gamesScored} winners called
             </span>
           ) : null}
         />

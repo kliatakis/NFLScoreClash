@@ -3,14 +3,14 @@ import {
   REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, hasEstimatedKickoff,
   PLAYOFF_FIXTURES, PLAYOFF_ROUNDS,
 } from "../data/fixtures.js";
-import { TEAMS, TEAM_CODES, teamsByDivision, teamTint } from "../data/teams.js";
+import { TEAMS, TEAM_CODES, teamsByDivision, teamTint, teamSideTint } from "../data/teams.js";
 import {
   fsSubscribePredictions, fsSaveGamePrediction, fsSaveSpecialPick, fsSubscribeResults,
   fsSubscribePlayoffFixtures, fsSaveGamePredictions, fsClearGamePredictions,
 } from "../firebase.js";
 import { useFixtureLock, useSeasonPicksLock, useCountdown, LOCK_MINUTES_BEFORE_KICKOFF } from "../lib/hooks.js";
 import { formatKickoff, lockUrgency, formatDuration } from "../lib/time.js";
-import { classifyPick } from "../lib/scoring.js";
+import { classifyPick, pickWinner, resultWinner } from "../lib/scoring.js";
 import TeamBadge from "./TeamBadge.jsx";
 
 // Predictions are shared across every league the user is in — this tab is
@@ -46,48 +46,39 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
   }, [user.uid]);
 
   const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
-  const madeCount = fixtures.filter(f => preds.picks?.[f.id]?.homeScore != null).length;
+  // Counted via pickWinner, not a stray homeScore field — winner-only picks
+  // have no scoreline, so the old check made the progress bar read 0 forever.
+  const madeCount = fixtures.filter(f => pickWinner(preds.picks?.[f.id]) != null).length;
 
-  // ── The week's in-progress scores live HERE, not in each row ──────────────
+  // ── The week's in-progress picks live HERE, not in each row ───────────────
   // Holding them at the week level is what makes "Save all" possible, and lets
   // the whole week go to Firestore as ONE write instead of sixteen.
-  const [drafts, setDrafts] = useState({});          // fixtureId -> { away, home }
+  // A draft is simply the side you've tapped: "H", "A" or "T".
+  const [drafts, setDrafts] = useState({});          // fixtureId -> "H" | "A" | "T"
   const [bulkBusy, setBulkBusy] = useState("");      // "" | "saving" | "clearing"
   const [bulkError, setBulkError] = useState("");
   const hydratedWeeks = useRef(new Set());
 
-  // Seed a week's inputs from saved picks exactly once — after the
-  // subscription has actually delivered. Re-seeding on every update would
-  // wipe whatever someone was mid-way through typing in other rows.
+  // Seed a week from saved picks exactly once, after the subscription has
+  // actually delivered. Re-seeding on every update would undo taps someone
+  // had made but not yet saved.
   useEffect(() => {
     if (!predsLoaded || hydratedWeeks.current.has(week)) return;
     hydratedWeeks.current.add(week);
     setDrafts(prev => {
       const next = { ...prev };
-      for (const f of fixtures) {
-        const p = preds.picks?.[f.id];
-        next[f.id] = { away: p?.awayScore ?? "", home: p?.homeScore ?? "" };
-      }
+      for (const f of fixtures) next[f.id] = pickWinner(preds.picks?.[f.id]);
       return next;
     });
   }, [week, predsLoaded]);
 
-  const draftFor = (id) => drafts[id] || { away: "", home: "" };
-  const setDraft = (id, patch) =>
-    setDrafts(d => ({ ...d, [id]: { ...draftFor(id), ...patch } }));
+  const draftFor = (id) => drafts[id] ?? null;
+  const setDraft = (id, winner) => setDrafts(d => ({ ...d, [id]: winner }));
 
   // Dirty is DERIVED by comparing against what's stored, so there's no
   // separate flag to keep in sync (and saving elsewhere can't desync it).
-  const isDirty = (f) => {
-    const d = drafts[f.id];
-    if (!d) return false;
-    const p = preds.picks?.[f.id];
-    return String(d.away) !== String(p?.awayScore ?? "") || String(d.home) !== String(p?.homeScore ?? "");
-  };
-  const isComplete = (f) => {
-    const d = draftFor(f.id);
-    return d.away !== "" && d.home !== "";
-  };
+  const isDirty = (f) => draftFor(f.id) !== pickWinner(preds.picks?.[f.id]);
+  const isComplete = (f) => draftFor(f.id) != null;
 
   // Lock state is computed HERE from the clock, not reported up by each row.
   //
@@ -119,10 +110,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
     setBulkBusy("saving"); setBulkError("");
     try {
       const payload = {};
-      for (const f of savableFixtures) {
-        const d = draftFor(f.id);
-        payload[f.id] = { homeScore: d.home, awayScore: d.away };
-      }
+      for (const f of savableFixtures) payload[f.id] = draftFor(f.id);
       await fsSaveGamePredictions(user.uid, payload);
     } catch (err) {
       console.error("Bulk save failed", err);
@@ -140,7 +128,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
       await fsClearGamePredictions(user.uid, ids);
       setDrafts(d => {
         const next = { ...d };
-        for (const id of ids) next[id] = { away: "", home: "" };
+        for (const id of ids) next[id] = null;
         return next;
       });
     } catch (err) {
@@ -216,7 +204,6 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
               league={league} allUsers={allUsers} allPredictions={allPredictions}
               draft={draftFor(f.id)}
               onDraftChange={(patch) => setDraft(f.id, patch)}
-              dirty={isDirty(f)}
             />
           ))}
         </div>
@@ -224,7 +211,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
 
       {view === "playoffs" && (
         <PlayoffPicks
-          preds={preds} results={results} uid={user.uid} timezone={user.timezone}
+          preds={preds} predsLoaded={predsLoaded} results={results} uid={user.uid} timezone={user.timezone}
           league={league} allUsers={allUsers} allPredictions={allPredictions}
         />
       )}
@@ -238,39 +225,46 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
 
 function GameRow({
   fixture, pick, result, uid, timezone, league, allUsers, allPredictions,
-  draft, onDraftChange, dirty,
+  draft, onDraftChange,
 }) {
   // Locks against the effective kickoff, which falls back to a derived time
   // for fixtures the NFL hasn't scheduled yet (all of Week 18) — those used
   // to stay editable forever. See data/fixtures.js.
   const lock = useFixtureLock(effectiveKickoffUTC(fixture));
   const estimated = hasEstimatedKickoff(fixture);
-  // The scores themselves live in the parent (see PredictionsTab) so the whole
-  // week can be saved at once; this row only owns its own busy/feedback state.
-  const away = draft?.away ?? "";
-  const home = draft?.home ?? "";
+  // The pick itself lives in the parent (see PredictionsTab) so the whole week
+  // can be saved at once; this row only owns its own busy/feedback state.
+  const selected = draft ?? null;                 // "H" | "A" | "T" | null
+  const savedWinner = pickWinner(pick);
   const [saving, setSaving] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [clearing, setClearing] = useState(false);
 
   const locked = lock?.locked;
   const hasResult = !!result;
 
-  const save = async () => {
-    if (home === "" || away === "") return;
-    setSaving(true);
+  // Tapping a side saves it immediately — with one tap per game there's no
+  // reason to make people confirm, and it removes a whole button from a row
+  // that's now meant to be a single gesture. "Save all" stays for anyone who
+  // taps through a week offline and needs a retry.
+  const choose = async (winner) => {
+    if (locked || hasResult) return;
+    const next = winner === selected ? null : winner;   // tap again to undo
+    onDraftChange?.(next);
     setSaveError(false);
+    if (next === null) {
+      setClearing(true);
+      try { await fsClearGamePredictions(uid, [fixture.id]); }
+      catch (err) { console.error("Failed to clear prediction", err); setSaveError(true); }
+      finally { setClearing(false); }
+      return;
+    }
+    setSaving(true);
     try {
-      await fsSaveGamePrediction(uid, fixture.id, home, away);
-      // Explicit confirmation. Previously the button just went disabled,
-      // which looks identical to "nothing happened" on a slow connection.
-      setJustSaved(true);
-      setTimeout(() => setJustSaved(false), 1600);
+      await fsSaveGamePrediction(uid, fixture.id, next);
     } catch (err) {
-      // This used to be swallowed entirely: a failed save (offline, denied,
-      // flaky signal) reset the button and said nothing, so you'd walk away
-      // believing your pick was in and only find out after kickoff.
+      // Never swallow this: a failed save that says nothing means someone
+      // walks away believing their pick is in and finds out after kickoff.
       console.error("Failed to save prediction", err);
       setSaveError(true);
     } finally {
@@ -278,41 +272,38 @@ function GameRow({
     }
   };
 
-  const clear = async () => {
-    setClearing(true);
-    setSaveError(false);
-    try {
-      await fsClearGamePredictions(uid, [fixture.id]);
-      onDraftChange?.({ away: "", home: "" });
-    } catch (err) {
-      console.error("Failed to clear prediction", err);
-      setSaveError(true);
-    } finally {
-      setClearing(false);
-    }
+  const optionClass = (side) => {
+    const chosen = selected === side;
+    const wasRight = hasResult && resultWinner(result) === side;
+    return [
+      "pick-option",
+      chosen ? "chosen" : "",
+      hasResult && chosen && wasRight ? "was-right" : "",
+      hasResult && chosen && !wasRight ? "was-wrong" : "",
+      hasResult && !chosen && wasRight ? "actual" : "",
+    ].filter(Boolean).join(" ");
   };
 
   // Only built once the game is final and we know which league's members to
   // reveal — nothing shown otherwise (no result yet, or no league selected).
   const revealRows = hasResult && league ? league.members.map(mUid => {
     const mPick = (allPredictions[mUid]?.picks || {})[fixture.id];
-    // Same classifier the standings and highlights use, so a pick can never
-    // be labelled one way here and counted another way there.
+    // Same classifier the standings use, so a pick can never be labelled one
+    // way here and counted another way there.
     const kind = classifyPick(mPick, result);
     if (!kind) return { uid: mUid, label: "No pick", status: "none" };
-    const icon = kind === "exact" ? "🔥" : kind === "outcome" ? "✅" : "❌";
+    const side = pickWinner(mPick);
+    const name = side === "T" ? "Tie" : (TEAMS[side === "H" ? fixture.home : fixture.away]?.abbr ?? side);
     return {
       uid: mUid,
-      label: `${mPick.awayScore}–${mPick.homeScore} ${icon}`,
-      status: kind === "exact" ? "exact" : kind === "outcome" ? "correct" : "wrong",
+      label: `${name} ${kind === "correct" ? "✅" : "❌"}`,
+      status: kind === "correct" ? "correct" : "wrong",
     };
   }) : null;
 
-  const myKind = classifyPick(pick, result);
-
   return (
     <div
-      className={`fixture-card glass team-tinted ${pick ? "predicted" : ""} ${locked ? "locked" : ""} ${myKind === "exact" ? "exact-hit" : ""}`}
+      className={`fixture-card glass team-tinted ${savedWinner ? "predicted" : ""} ${locked ? "locked" : ""}`}
       style={teamTint(fixture)}
     >
       <div className="fixture-meta">
@@ -324,58 +315,55 @@ function GameRow({
             ⏱ Locks in {estimated ? "~" : ""}{formatDuration(lock.msLeft)}
           </span>
         )}
-        {/* Unmistakable "this one's done" marker — the old cue was a subtle
-            border tint that was easy to miss while scanning 16 cards. */}
-        {pick && !hasResult && !dirty && <span className="picked-badge">✓ Picked {pick.awayScore}–{pick.homeScore}</span>}
-        {dirty && <span className="unsaved-badge">● Unsaved</span>}
-        {myKind === "exact" && <span className="exact-hit-badge">🔥 Exact score!</span>}
+        {hasResult && <span className="final-badge">Final {result.awayScore}–{result.homeScore}</span>}
+        {savedWinner && !hasResult && !saving && !clearing && <span className="picked-badge">✓ Picked</span>}
+        {/* Tied to the write actually being in flight, not to "draft differs
+            from stored". Those look the same until a save fails, at which
+            point the row would sit on "Saving…" forever next to an error
+            telling you it hadn't saved. */}
+        {(saving || clearing) && <span className="unsaved-badge">● Saving…</span>}
+        {saveError && <span className="save-error">Not saved — tap again</span>}
+        {pick?.overriddenBy && (
+          <span className="overridden-flag" title="This prediction was corrected by a league admin">*corrected</span>
+        )}
       </div>
-      <div className="fixture-body">
-        <span className="fixture-teams">
-          <span className="fixture-team-row"><TeamBadge code={fixture.away} showName /></span>
-          <span className="fixture-vs">@</span>
-          <span className="fixture-team-row"><TeamBadge code={fixture.home} showName /></span>
-        </span>
-        <span className="fixture-action">
-          {hasResult ? (
-            <span style={{ fontFamily: "var(--font-display)", fontSize: 18 }}>{result.awayScore}–{result.homeScore}</span>
-          ) : locked ? (
-            <span className="lock-badge locked">🔒 Locked</span>
-          ) : (
-            <>
-              {/* inputMode/pattern (rather than type="number") gets phones to
-                  open the number pad instead of the full QWERTY keyboard —
-                  this is 32 fields a week — while avoiding type="number"'s
-                  spinner arrows and scroll-wheel-changes-the-value behaviour. */}
-              <input className="score-input" placeholder="A" value={away} disabled={locked}
-                inputMode="numeric" pattern="[0-9]*" autoComplete="off"
-                onChange={e => onDraftChange?.({ away: e.target.value.replace(/\D/g, "").slice(0, 2) })} />
-              <span style={{ color: "var(--muted)" }}>–</span>
-              <input className="score-input" placeholder="H" value={home} disabled={locked}
-                inputMode="numeric" pattern="[0-9]*" autoComplete="off"
-                onChange={e => onDraftChange?.({ home: e.target.value.replace(/\D/g, "").slice(0, 2) })} />
-              <button
-                className={`btn btn-primary btn-sm ${justSaved ? "btn-saved" : ""} ${saveError ? "btn-failed" : ""}`}
-                disabled={!dirty || saving || clearing}
-                onClick={save}
-              >
-                {saving ? "Saving…" : justSaved ? "Saved ✓" : saveError ? "Retry" : "Save"}
-              </button>
-              {pick && (
-                <button className="btn btn-ghost btn-sm" disabled={saving || clearing} onClick={clear}>
-                  {clearing ? "…" : "Clear"}
-                </button>
-              )}
-              {saveError && (
-                <span className="save-error" title="Your pick was not saved">Not saved — check your connection</span>
-              )}
-            </>
-          )}
-          {pick?.overriddenBy && (
-            <span className="overridden-flag" title="This prediction was corrected by a league admin">*corrected</span>
-          )}
-        </span>
+
+      {/* One tap per game. Two large targets with a narrow tie strip between —
+          NFL ties are around 0.5% of games, so giving "Tie" a third of the row
+          would shrink the two options people actually use. */}
+      <div className="pick-row">
+        <button
+          className={optionClass("A")}
+          disabled={locked || hasResult || saving || clearing}
+          onClick={() => choose("A")}
+          style={teamSideTint(fixture.away)}
+        >
+          <TeamBadge code={fixture.away} showName />
+        </button>
+
+        <button
+          className={`${optionClass("T")} pick-option-tie`}
+          disabled={locked || hasResult || saving || clearing}
+          onClick={() => choose("T")}
+          title="Predict a tie"
+        >
+          TIE
+        </button>
+
+        <button
+          className={optionClass("H")}
+          disabled={locked || hasResult || saving || clearing}
+          onClick={() => choose("H")}
+          style={teamSideTint(fixture.home)}
+        >
+          <TeamBadge code={fixture.home} showName />
+        </button>
       </div>
+
+      {locked && !hasResult && (
+        <div className="fixture-reveal"><span className="lock-badge locked">🔒 Locked</span></div>
+      )}
+
       {revealRows && <RevealPicks rows={revealRows} allUsers={allUsers} />}
     </div>
   );
@@ -407,32 +395,30 @@ function RevealPicks({ rows, allUsers }) {
 // Playoff games are predictable exactly like regular-season ones — the only
 // difference is that who's playing isn't known until January, so each fixture
 // shows as a locked placeholder until a league admin attaches the teams.
-function PlayoffPicks({ preds, results, uid, timezone, league, allUsers, allPredictions }) {
+function PlayoffPicks({ preds, predsLoaded, results, uid, timezone, league, allUsers, allPredictions }) {
   const [matchups, setMatchups] = useState({});
   useEffect(() => fsSubscribePlayoffFixtures(setMatchups), []);
 
-  // Own draft state — there are only 13 of these and they arrive at different
-  // times, so they're hydrated per fixture as their matchups get confirmed
-  // rather than in one pass like a regular-season week.
+  // Seeded ONCE, on the first delivered snapshot — same rule as a regular
+  // season week.
+  //
+  // This used to seed each fixture lazily, the first time a saved pick showed
+  // up for it. That re-ran on every snapshot, which raced with the user: tap
+  // a team, tap a different one before the first write echoes back, and the
+  // arriving snapshot would seed the draft with the pick you'd just replaced.
+  // The row then showed the wrong team and sat on "Saving…" indefinitely.
   const [drafts, setDrafts] = useState({});
-  const hydrated = useRef(new Set());
+  const hydrated = useRef(false);
   useEffect(() => {
-    for (const f of PLAYOFF_FIXTURES) {
-      if (hydrated.current.has(f.id)) continue;
-      const p = preds.picks?.[f.id];
-      if (!p) continue;
-      hydrated.current.add(f.id);
-      setDrafts(d => ({ ...d, [f.id]: { away: p.awayScore ?? "", home: p.homeScore ?? "" } }));
-    }
-  }, [preds]);
+    if (!predsLoaded || hydrated.current) return;
+    hydrated.current = true;
+    const next = {};
+    for (const f of PLAYOFF_FIXTURES) next[f.id] = pickWinner(preds.picks?.[f.id]);
+    setDrafts(next);
+  }, [predsLoaded]);
 
-  const draftFor = (id) => drafts[id] || { away: "", home: "" };
-  const isDirty = (id) => {
-    const d = drafts[id];
-    if (!d) return false;
-    const p = preds.picks?.[id];
-    return String(d.away) !== String(p?.awayScore ?? "") || String(d.home) !== String(p?.homeScore ?? "");
-  };
+  const draftFor = (id) => drafts[id] ?? null;
+  const isDirty = (id) => drafts[id] !== undefined && drafts[id] !== pickWinner(preds.picks?.[id]);
 
   const readyCount = PLAYOFF_FIXTURES.filter(f => matchups[f.id]?.home && matchups[f.id]?.away).length;
 
@@ -472,8 +458,7 @@ function PlayoffPicks({ preds, results, uid, timezone, league, allUsers, allPred
                   uid={uid} timezone={timezone}
                   league={league} allUsers={allUsers} allPredictions={allPredictions}
                   draft={draftFor(f.id)}
-                  onDraftChange={(patch) => setDrafts(d => ({ ...d, [f.id]: { ...draftFor(f.id), ...patch } }))}
-                  dirty={isDirty(f.id)}
+                  onDraftChange={(winner) => setDrafts(d => ({ ...d, [f.id]: winner }))}
                 />
               );
             })}

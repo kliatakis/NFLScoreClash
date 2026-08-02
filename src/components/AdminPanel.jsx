@@ -300,10 +300,10 @@ function toLocalInput(iso) {
 function OverridesEntry({ league, adminUid }) {
   const [targetUid, setTargetUid] = useState("");
   const [fixtureId, setFixtureId] = useState("");
-  const [home, setHome] = useState("");
-  const [away, setAway] = useState("");
+  const [winner, setWinner] = useState("");
   const [users, setUsers] = useState(null);
   const [msg, setMsg] = useState("");
+  const fixture = REGULAR_SEASON_FIXTURES.find(f => f.id === fixtureId) || null;
 
   // Loaded in an effect, not during render — kicking off a fetch from the
   // render path re-fires on every render until it resolves and misbehaves
@@ -315,9 +315,10 @@ function OverridesEntry({ league, adminUid }) {
   }, []);
 
   const save = async () => {
-    if (!targetUid || !fixtureId || home === "" || away === "") return;
-    await fsAdminOverrideGamePrediction(targetUid, fixtureId, home, away, adminUid);
+    if (!targetUid || !fixtureId || !winner) return;
+    await fsAdminOverrideGamePrediction(targetUid, fixtureId, winner, adminUid);
     setMsg("Prediction overridden — the user will see a note that it was corrected.");
+    setWinner("");
     setTimeout(() => setMsg(""), 4000);
   };
 
@@ -338,17 +339,28 @@ function OverridesEntry({ league, adminUid }) {
       </div>
       <div className="form-group">
         <label className="form-label">Game</label>
-        <select className="form-select" value={fixtureId} onChange={e => setFixtureId(e.target.value)}>
+        <select className="form-select" value={fixtureId}
+          onChange={e => { setFixtureId(e.target.value); setWinner(""); }}>
           <option value="">Select a game…</option>
           {REGULAR_SEASON_FIXTURES.map(f => <option key={f.id} value={f.id}>Wk{f.week}: {f.away} @ {f.home}</option>)}
         </select>
       </div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
-        <input className="score-input" placeholder="A" value={away} onChange={e => setAway(e.target.value)} />
-        <span>–</span>
-        <input className="score-input" placeholder="H" value={home} onChange={e => setHome(e.target.value)} />
+      {/* Named sides rather than two score boxes — the game is winner-only, so
+          there is no scoreline to correct. Disabled until a game is chosen,
+          because the options are that game's teams. */}
+      <div className="form-group">
+        <label className="form-label">Corrected pick</label>
+        <select className="form-select" value={winner} disabled={!fixture}
+          onChange={e => setWinner(e.target.value)}>
+          <option value="">{fixture ? "Select the winner…" : "Pick a game first"}</option>
+          {fixture && <option value="A">{fixture.away} (away)</option>}
+          {fixture && <option value="H">{fixture.home} (home)</option>}
+          {fixture && <option value="T">Tie</option>}
+        </select>
       </div>
-      <button className="btn btn-primary" onClick={save}>Save Override</button>
+      <button className="btn btn-primary" onClick={save} disabled={!targetUid || !fixture || !winner}>
+        Save Override
+      </button>
     </div>
   );
 }
@@ -394,10 +406,10 @@ function SpecialResultsEntry() {
 }
 
 // 1–20 rather than a free-text number box: it keeps the values sane and,
-// more importantly, makes 0 unselectable. Zero-point categories used to
-// break the Exact/Outcome columns, since a wrong pick and a 0-point correct
-// pick were indistinguishable by score alone (see classifyPick in
-// lib/scoring.js, which now also defends against this independently).
+// more importantly, makes 0 unselectable. Zero-point categories used to make
+// a wrong pick and a correct one indistinguishable by score alone (see
+// classifyPick in lib/scoring.js, which now also defends against this
+// independently).
 const POINT_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 function ScoringSettings({ league }) {
@@ -408,18 +420,27 @@ function ScoringSettings({ league }) {
 
   const save = async () => {
     setError("");
-    const { outcomePoints, exactPoints, divisionPoints, conferencePoints, superbowlPoints } = draft;
-    const all = [outcomePoints, exactPoints, divisionPoints, conferencePoints, superbowlPoints];
+    const { correctPoints, tiePoints, sweepBonus, nearPerfectBonus, sharpBonus,
+            divisionPoints, conferencePoints, superbowlPoints } = draft;
+    const all = [correctPoints, tiePoints, sweepBonus, nearPerfectBonus, sharpBonus,
+                 divisionPoints, conferencePoints, superbowlPoints];
     if (all.some(v => !Number.isFinite(Number(v)) || Number(v) < 1 || Number(v) > 20)) {
-      return setError("Every category must be worth between 1 and 20 points.");
+      return setError("Every value must be between 1 and 20 points.");
     }
-    if (Number(exactPoints) <= Number(outcomePoints)) return setError("Exact score points must be greater than correct-winner points.");
+    // The bonus tiers have to descend, or a worse week would pay more.
+    if (Number(sweepBonus) <= Number(nearPerfectBonus)) return setError("Clean Sweep must be worth more than Near Perfect.");
+    if (Number(nearPerfectBonus) <= Number(sharpBonus)) return setError("Near Perfect must be worth more than Sharp Week.");
     if (Number(conferencePoints) <= Number(divisionPoints)) return setError("Conference champion points should be greater than division winner points.");
     if (Number(superbowlPoints) <= Number(conferencePoints)) return setError("Super Bowl points should be greater than conference champion points.");
     await fsUpdateLeague(league.id, {
       settings: {
-        outcomePoints: Number(outcomePoints), exactPoints: Number(exactPoints),
-        divisionPoints: Number(divisionPoints), conferencePoints: Number(conferencePoints),
+        correctPoints: Number(correctPoints),
+        tiePoints: Number(tiePoints),
+        sweepBonus: Number(sweepBonus),
+        nearPerfectBonus: Number(nearPerfectBonus),
+        sharpBonus: Number(sharpBonus),
+        divisionPoints: Number(divisionPoints),
+        conferencePoints: Number(conferencePoints),
         superbowlPoints: Number(superbowlPoints),
       },
     });
@@ -455,8 +476,23 @@ function ScoringSettings({ league }) {
     <div style={{ maxWidth: 320 }}>
       {error && <div className="error-msg">{error}</div>}
       {saved && <div className="success-msg">Scoring settings saved.</div>}
-      {field("outcomePoints", "Correct Winner")}
-      {field("exactPoints", "Exact Score")}
+      {field("correctPoints", "Correct Winner")}
+      {field("tiePoints", "🤝 Correctly Called a Tie")}
+      <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: -6, marginBottom: 4, lineHeight: 1.5 }}>
+        NFL ties run at roughly one or two a season, so this is worth more than a normal
+        pick. Only pays if the game actually ends level.
+      </p>
+
+      <div className="form-label" style={{ marginTop: 18, marginBottom: 8 }}>Week accuracy bonuses</div>
+      <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
+        Counted in misses, not a fixed score — weeks run 13 to 16 games because of byes. You must
+        pick the whole week to qualify. Regular season only.
+      </p>
+      {field("sweepBonus", "🧹 Clean Sweep — no misses")}
+      {field("nearPerfectBonus", "🎯 Near Perfect — one miss")}
+      {field("sharpBonus", "💎 Sharp Week — two misses")}
+
+      <div className="form-label" style={{ marginTop: 18, marginBottom: 8 }}>Season picks</div>
       {field("divisionPoints", "Division Winner")}
       {field("conferencePoints", "AFC/NFC Champion")}
       {field("superbowlPoints", "Super Bowl Winner")}

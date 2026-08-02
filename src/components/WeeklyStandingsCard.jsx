@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { calcWeeklyStandings, weeklyWinTally, getScoringSettings, completedWeeks } from "../lib/scoring.js";
+import { calcWeeklyStandings, weeklyWinTally, getScoringSettings, completedWeeks, weekAccuracyBadges } from "../lib/scoring.js";
 import Avatar from "./Avatar.jsx";
 
 // Per-week race, separate from the cumulative season table — so there's still
@@ -60,16 +60,19 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
                   <span className="standings-player-line">
                     <span className={`standings-name ${row.uid === user.uid ? "you" : ""}`}>{row.username}</span>
                   </span>
-                  {/* Mobile hides the Exact/Outcome columns app-wide, so this
-                      table needs the same under-the-name fallback the season
+                  {/* Mobile hides the stat columns app-wide, so this table
+                      needs the same under-the-name fallback the season
                       standings has, or those numbers vanish on a phone. */}
                   <span className="standings-substats">
-                    {row.exact} exact · {row.correct} outcome
+                    {row.correct} of {row.gamesInWeek} correct
+                    {row.badge ? ` · ${row.badge.icon} +${row.badge.points}` : ""}
                   </span>
                 </span>
               </span>
-              <span className="standings-col-stat">{row.exact}</span>
               <span className="standings-col-stat">{row.correct}</span>
+              <span className="standings-col-stat" title={row.badge ? `${row.badge.label} (+${row.badge.points})` : undefined}>
+                {row.badge ? `${row.badge.icon}+${row.badge.points}` : "–"}
+              </span>
               <span className="standings-pts standings-col-pts">{row.points}</span>
             </div>
           );
@@ -83,32 +86,49 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
               picks are season-long, so they're left out of the weekly race rather than dumped
               into whichever week they happened to be decided.
             </li>
+            <li>
+              Week bonuses are settled once every game in the week has a result — so the bonus
+              column stays empty while a week is still being played, even if you've got
+              everything right so far.
+            </li>
           </ol>
         </div>
       </div>
 
-      {/* Your own badge collection, spelled out — one medal per week you topped. */}
+      {/* Your badge cabinet — gold medals for weeks you topped, plus the
+          accuracy badges earned by getting a week almost entirely right. */}
       {(() => {
-        const mine = tally.perWeek.filter(w => w.winners.some(x => x.uid === user.uid)).map(w => w.week);
+        const wins = tally.perWeek.filter(w => w.winners.some(x => x.uid === user.uid)).map(w => w.week);
+        const accuracy = weekAccuracyBadges(user.uid, allPredictions, results, scoring);
+        const none = wins.length === 0 && accuracy.length === 0;
         return (
           <div className="glass card" style={{ marginBottom: 14 }}>
             <div className="card-title">Your Badges</div>
-            {mine.length === 0 ? (
+            {none ? (
               <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                No badges yet — top the league in any single week to earn one.
+                No badges yet — top the league in a week for a 🏅, or get a whole week almost
+                entirely right for an accuracy badge.
               </div>
             ) : (
               <>
                 <div className="badge-strip">
-                  {mine.slice().sort((a, b) => a - b).map(w => (
-                    <span key={w} className="badge-medal" title={`Top scorer in Week ${w}`}>
+                  {wins.slice().sort((a, b) => a - b).map(w => (
+                    <span key={`win-${w}`} className="badge-medal" title={`Top scorer in Week ${w}`}>
                       <span className="badge-medal-icon">🏅</span>
                       <span className="badge-medal-week">WK {w}</span>
                     </span>
                   ))}
+                  {accuracy.slice().reverse().map(b => (
+                    <span key={`acc-${b.week}`} className={`badge-medal acc-${b.id}`}
+                      title={`${b.label} in Week ${b.week} — ${b.blurb} of ${b.games} games, +${b.points} points`}>
+                      <span className="badge-medal-icon">{b.icon}</span>
+                      <span className="badge-medal-week">WK {b.week}</span>
+                    </span>
+                  ))}
                 </div>
                 <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 10 }}>
-                  {mine.length} week{mine.length === 1 ? "" : "s"} won. Ties share the badge.
+                  {wins.length} week{wins.length === 1 ? "" : "s"} won (ties share the medal)
+                  {accuracy.length > 0 && ` · ${accuracy.length} accuracy badge${accuracy.length === 1 ? "" : "s"} worth +${accuracy.reduce((s, b) => s + b.points, 0)} points`}
                 </div>
               </>
             )}

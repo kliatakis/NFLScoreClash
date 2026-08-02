@@ -62,18 +62,6 @@ export function formatKickoff(kickoffUTC, timezone = DEFAULT_TIMEZONE) {
   }
 }
 
-// Compact: "8:00 PM EEST" — for tight spaces like fixture card rows.
-export function formatKickoffTime(kickoffUTC, timezone = DEFAULT_TIMEZONE) {
-  if (!kickoffUTC) return "TBD";
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone, hour: "numeric", minute: "2-digit", timeZoneName: "short",
-    }).format(new Date(kickoffUTC));
-  } catch {
-    return new Date(kickoffUTC).toUTCString();
-  }
-}
-
 // ─── LOCK COUNTDOWN URGENCY ──────────────────────────────────────────────────
 // Shared by per-game locks (Predictions tab) and the season-picks lock
 // (Division/Conference/Super Bowl) so both use identical thresholds/colors:

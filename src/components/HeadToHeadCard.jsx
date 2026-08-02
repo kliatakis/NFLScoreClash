@@ -1,10 +1,16 @@
 import { useMemo, useState } from "react";
-import { headToHead, getScoringSettings } from "../lib/scoring.js";
+import { headToHead, getScoringSettings, pickWinner } from "../lib/scoring.js";
 import Avatar from "./Avatar.jsx";
 import TeamBadge from "./TeamBadge.jsx";
 import { teamTint } from "../data/teams.js";
 
-const scoreText = (pick) => (pick ? `${pick.awayScore}–${pick.homeScore}` : "No pick");
+// Which side the pick backed. Used to read a scoreline, which no longer
+// exists — a winner-only pick has no numbers to print.
+const pickText = (pick, fixture) => {
+  const side = pickWinner(pick);
+  if (!side) return "No pick";
+  return side === "T" ? "Tie" : side === "H" ? fixture.home : fixture.away;
+};
 
 export default function HeadToHeadCard({ league, user, allUsers, allPredictions, results }) {
   const scoring = getScoringSettings(league);
@@ -26,7 +32,9 @@ export default function HeadToHeadCard({ league, user, allUsers, allPredictions,
     return (
       <div className="glass card">
         <div className="empty-state">
-          <div className="empty-state-icon">🤝</div>
+          {/* Not 🤝 — that now means "correctly called a tie" in the scoring
+              tables, and reusing it here would blur the two. */}
+          <div className="empty-state-icon">🥊</div>
           <div className="empty-state-title">Nobody to compare against yet</div>
           <div className="empty-state-sub">Share your league code — once someone joins, you can go head to head with them here.</div>
         </div>
@@ -35,7 +43,7 @@ export default function HeadToHeadCard({ league, user, allUsers, allPredictions,
   }
   if (!h2h) return null;
 
-  const { usernameA, usernameB, pointsA, pointsB, exactA, exactB, winsA, winsB, differences } = h2h;
+  const { usernameA, usernameB, pointsA, pointsB, correctA, correctB, winsA, winsB, differences } = h2h;
   const lead = pointsA - pointsB;
 
   return (
@@ -70,7 +78,7 @@ export default function HeadToHeadCard({ league, user, allUsers, allPredictions,
 
         <div className="h2h-stats">
           <div className="h2h-stat"><b>{winsA}</b><span>games won outright</span><b>{winsB}</b></div>
-          <div className="h2h-stat"><b>{exactA}</b><span>exact scores</span><b>{exactB}</b></div>
+          <div className="h2h-stat"><b>{correctA}</b><span>correct picks</span><b>{correctB}</b></div>
           <div className="h2h-stat"><b>{differences.length}</b><span>games you differed on</span><b>{differences.length}</b></div>
         </div>
       </div>
@@ -91,10 +99,10 @@ export default function HeadToHeadCard({ league, user, allUsers, allPredictions,
               </div>
               <div className="h2h-row-picks">
                 <span className={`h2h-pick ${d.winner === "a" ? "won" : d.winner === "tie" ? "" : "lost"}`}>
-                  {scoreText(d.pickA)} <em>+{d.pointsA}</em>
+                  {pickText(d.pickA, d.fixture)} <em>+{d.pointsA}</em>
                 </span>
                 <span className={`h2h-pick ${d.winner === "b" ? "won" : d.winner === "tie" ? "" : "lost"}`}>
-                  {scoreText(d.pickB)} <em>+{d.pointsB}</em>
+                  {pickText(d.pickB, d.fixture)} <em>+{d.pointsB}</em>
                 </span>
               </div>
             </div>

@@ -164,11 +164,6 @@ export const css = (dark = true) => `
   /* Momentary "it saved" state — the button used to just quietly disable
      itself, which on a flaky phone connection is indistinguishable from
      nothing having happened. */
-  /* A save that DIDN'T work needs to look wrong, not just "not green". */
-  .btn-failed, .btn-failed:disabled {
-    background: rgba(244,63,94,0.18) !important; color: var(--accent2) !important;
-    opacity: 1 !important; border: 1px solid rgba(244,63,94,0.45);
-  }
   .save-error { font-size: 11px; color: var(--accent2); font-weight: 600; }
 
   .btn-saved, .btn-saved:disabled {
@@ -214,7 +209,6 @@ export const css = (dark = true) => `
   .card-title { font-family: var(--font-display); font-size: 15px; letter-spacing: 1px; color: var(--muted); margin-bottom: 16px; }
 
   .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
-  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
   .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
 
   /* STAT CARDS */
@@ -250,13 +244,38 @@ export const css = (dark = true) => `
   .team-tinted > * { position: relative; z-index: 1; }
   .team-tinted:hover::before { opacity: ${dark ? 0.3 : 0.18}; }
 
-  /* An exact score is the rarest thing in the game — give it a moment. */
-  .fixture-card.exact-hit { border-color: rgba(245,158,11,0.55); box-shadow: 0 0 0 1px rgba(245,158,11,0.25), 0 0 28px rgba(245,158,11,0.18); }
-  .exact-hit-badge {
-    display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;
-    padding: 2px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 800;
-    background: rgba(245,158,11,0.16); color: var(--gold); border: 1px solid rgba(245,158,11,0.4);
-    animation: exact-pulse 2.4s ease-in-out infinite;
+  /* ── PICK ROW ──────────────────────────────────────────────────────────
+     One tap per game. Two large targets with a narrow tie strip between:
+     NFL ties are around 0.5% of games, so giving "Tie" equal width would
+     shrink the two options people actually use on the smallest screens. */
+  .pick-row { display: grid; grid-template-columns: 1fr 54px 1fr; gap: 8px; padding: 4px 14px 14px; position: relative; z-index: 1; }
+  .pick-option {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 54px; padding: 10px 8px; border-radius: 14px; cursor: pointer;
+    background: var(--surface2); border: 1.5px solid var(--border); color: var(--text);
+    font-family: var(--font-body); transition: all 0.15s; min-width: 0;
+  }
+  .pick-option:hover:not(:disabled) { border-color: var(--side-color, var(--border2)); background: var(--surface3); }
+  .pick-option:active:not(:disabled) { transform: scale(0.97); }
+  .pick-option:disabled { cursor: default; opacity: 0.75; }
+  .pick-option.chosen {
+    border-color: var(--side-color, var(--accent));
+    background: color-mix(in srgb, var(--side-color, var(--accent)) 22%, transparent);
+    box-shadow: 0 0 0 1px var(--side-color, var(--accent)), 0 0 18px color-mix(in srgb, var(--side-color, var(--accent)) 35%, transparent);
+  }
+  /* Once a game is final, the row grades itself at a glance. */
+  .pick-option.was-right { border-color: var(--green); background: rgba(34,197,94,0.18); box-shadow: 0 0 0 1px var(--green); }
+  .pick-option.was-wrong { border-color: rgba(244,63,94,0.5); background: rgba(244,63,94,0.10); opacity: 0.75; }
+  .pick-option.actual { border-style: dashed; border-color: rgba(34,197,94,0.55); }
+  .pick-option-tie {
+    font-size: 10.5px; font-weight: 800; letter-spacing: 1px; color: var(--muted);
+    --side-color: var(--gold);
+  }
+  .pick-option-tie.chosen { color: var(--gold); }
+  .final-badge {
+    display: inline-flex; align-items: center; margin-left: 8px; padding: 2px 10px;
+    border-radius: 20px; font-size: 10.5px; font-weight: 800;
+    background: var(--surface3); color: var(--text);
   }
   .fixture-card.locked .fixture-body { opacity: 0.55; }
   /* A saved pick used to be signalled only by a faint border tint, which was
@@ -287,6 +306,12 @@ export const css = (dark = true) => `
     background: linear-gradient(180deg, rgba(245,158,11,0.20), rgba(245,158,11,0.05));
     border: 1px solid rgba(245,158,11,0.4);
   }
+  .badge-medal.acc-sweep { background: linear-gradient(180deg, rgba(59,130,246,0.22), rgba(59,130,246,0.05)); border-color: rgba(59,130,246,0.45); }
+  .badge-medal.acc-sweep .badge-medal-week { color: var(--accent); }
+  .badge-medal.acc-near { background: linear-gradient(180deg, rgba(34,197,94,0.20), rgba(34,197,94,0.05)); border-color: rgba(34,197,94,0.42); }
+  .badge-medal.acc-near .badge-medal-week { color: var(--green); }
+  .badge-medal.acc-sharp { background: linear-gradient(180deg, rgba(168,85,247,0.20), rgba(168,85,247,0.05)); border-color: rgba(168,85,247,0.42); }
+  .badge-medal.acc-sharp .badge-medal-week { color: #a855f7; }
   .badge-medal-icon { font-size: 20px; line-height: 1; }
   .badge-medal-week { font-size: 9px; font-weight: 800; letter-spacing: 1px; color: var(--gold); }
 
@@ -343,7 +368,6 @@ export const css = (dark = true) => `
   .fixture-teams { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .fixture-team-row { display: flex; align-items: center; }
   .fixture-vs { padding-left: 34px; font-size: 10px; color: var(--muted); letter-spacing: 1px; }
-  .fixture-action { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
   .score-input { width: 46px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: var(--font-body); font-size: 17px; font-weight: 800; padding: 6px; border-radius: 8px; text-align: center; outline: none; }
   .score-input:focus { border-color: var(--accent); }
   .score-input:disabled { opacity: 0.5; }
@@ -359,13 +383,18 @@ export const css = (dark = true) => `
   .reveal-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
   .reveal-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--border); }
   .reveal-row:last-child { border-bottom: none; }
-  .reveal-exact { color: var(--gold); font-weight: 700; }
   .reveal-correct { color: var(--green); font-weight: 600; }
   .reveal-wrong { color: var(--muted); }
   .reveal-none { color: var(--muted); font-style: italic; }
 
   /* Dashboard highlights ("announcement board") */
   .highlight-row { font-size: 13px; line-height: 1.5; padding: 10px 14px; border-radius: 10px; background: var(--surface2); }
+  /* Badge shoutouts get their tier's colour so a Clean Sweep reads as a bigger
+     deal than a Sharp Week at a glance. */
+  .badge-shout { border-left: 3px solid var(--border2); }
+  .badge-shout.acc-sweep { border-left-color: var(--accent); background: rgba(59,130,246,0.10); }
+  .badge-shout.acc-near { border-left-color: var(--green); background: rgba(34,197,94,0.09); }
+  .badge-shout.acc-sharp { border-left-color: #a855f7; background: rgba(168,85,247,0.09); }
 
   /* A playoff game whose teams aren't known yet — present so people can see
      what's coming, but obviously not pickable. */
@@ -526,8 +555,8 @@ export const css = (dark = true) => `
   .standings-col-player { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
   .standings-player-info { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .standings-player-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  /* Desktop has dedicated Exact/Outcome columns, so this duplicate is hidden
-     until the mobile breakpoint needs it. */
+  /* Desktop has dedicated stat columns, so this duplicate is hidden until
+     the mobile breakpoint needs it. */
   .standings-substats { display: none; font-size: 10.5px; color: var(--muted); }
   .standings-col-stat { width: 84px; flex-shrink: 0; text-align: center; }
   .standings-col-pts { width: 74px; flex-shrink: 0; text-align: right; }
@@ -611,7 +640,6 @@ export const css = (dark = true) => `
   @keyframes slide-in-right { to { opacity: 1; transform: translateX(0); } }
   @keyframes fade-up { to { opacity: 1; } }
   @keyframes pulse-bar { 0%, 100% { width: 20%; margin-left: 0%; } 50% { width: 60%; margin-left: 40%; } }
-  @keyframes exact-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.62; } }
   @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
   @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
@@ -685,8 +713,6 @@ export const css = (dark = true) => `
     .standings-pts { font-size: 17px; }
 
     .fixture-body { flex-direction: column; align-items: stretch; }
-    .fixture-action { width: 100%; }
-    .fixture-action .score-input { flex: 1; min-width: 0; }
 
     /* NFL standings: full team names need room next to a bar and a record. */
     .nfl-row { gap: 8px; padding: 8px 4px; }

@@ -382,10 +382,6 @@ export const SPECIAL_PICK_TYPES = [
   { id: "superbowl",     label: "Super Bowl Champion", kind: "superbowl" },
 ];
 
-export function fixturesForWeek(week) {
-  return REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
-}
-
 // The time a fixture should be treated as starting FOR LOCKING PURPOSES.
 //
 // Most fixtures have a real kickoff. The ones that don't — every Week 18 game

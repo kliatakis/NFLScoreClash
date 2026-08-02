@@ -1,9 +1,24 @@
 import { REGULAR_SEASON_FIXTURES, SCORABLE_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
 
 // ─── SCORING SETTINGS ───────────────────────────────────────────────────────
+//
+// The game is winner-only: you pick who wins (or a tie), nothing else. Exact
+// scoreline prediction was removed deliberately — it was the slowest thing to
+// enter and the least skilful thing to get right (calling 24–17 exactly is
+// close to a lottery even for people who know football). The week accuracy
+// bonuses below replace it with something that rewards judgement instead.
 export const DEFAULT_SCORING = {
-  outcomePoints: 1,     // correct winner, wrong score
-  exactPoints: 3,       // exact final score
+  correctPoints: 1,     // correct winner on a single game
+  // Calling a tie is worth more because ties barely happen — roughly one or
+  // two a season across 272 games. Backing one is a real call, not a coin
+  // flip, so it pays like a small bonus rather than a normal pick.
+  tiePoints: 5,
+  // Week accuracy bonuses. Defined by MISSES, not by a fixed score like
+  // "15 of 16" — weeks range from 13 to 16 games because of byes, so an
+  // absolute target would be unreachable in half the season.
+  sweepBonus: 8,        // every game in the week correct
+  nearPerfectBonus: 5,  // exactly one miss
+  sharpBonus: 3,        // exactly two misses
   divisionPoints: 5,    // correct division winner pick
   conferencePoints: 7,  // correct AFC/NFC champion pick
   superbowlPoints: 10,  // correct Super Bowl champion pick
@@ -12,13 +27,26 @@ export const DEFAULT_SCORING = {
 export function getScoringSettings(league) {
   const s = league?.settings || {};
   return {
-    outcomePoints: Number(s.outcomePoints ?? DEFAULT_SCORING.outcomePoints),
-    exactPoints: Number(s.exactPoints ?? DEFAULT_SCORING.exactPoints),
+    // `outcomePoints` is the pre-winner-only name for the same thing; read it
+    // as a fallback so leagues created before the change keep their setting.
+    correctPoints: Number(s.correctPoints ?? s.outcomePoints ?? DEFAULT_SCORING.correctPoints),
+    tiePoints: Number(s.tiePoints ?? DEFAULT_SCORING.tiePoints),
+    sweepBonus: Number(s.sweepBonus ?? DEFAULT_SCORING.sweepBonus),
+    nearPerfectBonus: Number(s.nearPerfectBonus ?? DEFAULT_SCORING.nearPerfectBonus),
+    sharpBonus: Number(s.sharpBonus ?? DEFAULT_SCORING.sharpBonus),
     divisionPoints: Number(s.divisionPoints ?? DEFAULT_SCORING.divisionPoints),
     conferencePoints: Number(s.conferencePoints ?? DEFAULT_SCORING.conferencePoints),
     superbowlPoints: Number(s.superbowlPoints ?? DEFAULT_SCORING.superbowlPoints),
   };
 }
+
+// ─── WEEK ACCURACY BADGES ───────────────────────────────────────────────────
+// Earned per week, kept for the season. Ordered best-first.
+export const WEEK_BADGES = [
+  { id: "sweep",   misses: 0, label: "Clean Sweep",  icon: "🧹", bonusKey: "sweepBonus",       blurb: "every game correct" },
+  { id: "near",    misses: 1, label: "Near Perfect", icon: "🎯", bonusKey: "nearPerfectBonus", blurb: "one miss" },
+  { id: "sharp",   misses: 2, label: "Sharp Week",   icon: "💎", bonusKey: "sharpBonus",       blurb: "two misses" },
+];
 
 export function generateCode(len = 6) {
   return Math.random().toString(36).substring(2, 2 + len).toUpperCase();
@@ -26,34 +54,98 @@ export function generateCode(len = 6) {
 
 // ─── GAME SCORING ───────────────────────────────────────────────────────────
 
-// What actually happened with one pick, independent of any league's point
-// values: "exact" (perfect score), "outcome" (right winner, wrong score),
-// "wrong", or null when there's nothing to score yet (no pick, or no result).
+// Which side a pick backs: "H" home, "A" away, "T" tie, or null if there's no
+// pick at all.
 //
-// This exists as its own function on purpose. Everything used to infer the
-// outcome by comparing the POINTS awarded back to the league's settings —
-// which breaks the moment two settings share a value. Concretely: a league
-// with Correct Winner set to 0 makes a wrong pick (0 points) and a
-// correct-winner pick (also 0 points) indistinguishable, so every wrong pick
-// got counted in the Outcome column and in prediction accuracy. Classifying
-// first and pricing second removes that whole class of bug regardless of what
-// point values an admin picks.
-export function classifyPick(pick, result) {
-  if (!pick || !result) return null;
-  const { homeScore: ph, awayScore: pa } = pick;
-  const { homeScore: rh, awayScore: ra } = result;
-  if (ph == null || pa == null || rh == null || ra == null) return null;
-  if (Number(ph) === Number(rh) && Number(pa) === Number(ra)) return "exact";
-  const pickOutcome = Number(ph) > Number(pa) ? "H" : Number(pa) > Number(ph) ? "A" : "T";
-  const realOutcome = Number(rh) > Number(ra) ? "H" : Number(ra) > Number(rh) ? "A" : "T";
-  return pickOutcome === realOutcome ? "outcome" : "wrong";
+// Also understands the old scoreline format, so predictions saved before the
+// switch to winner-only still resolve to a side instead of silently becoming
+// unscoreable. Costs three lines and avoids stranding existing data.
+export function pickWinner(pick) {
+  if (!pick) return null;
+  if (pick.winner === "H" || pick.winner === "A" || pick.winner === "T") return pick.winner;
+  const { homeScore: h, awayScore: a } = pick;
+  if (h == null || a == null) return null;
+  return Number(h) > Number(a) ? "H" : Number(a) > Number(h) ? "A" : "T";
 }
 
+export function resultWinner(result) {
+  if (!result) return null;
+  const { homeScore: h, awayScore: a } = result;
+  if (h == null || a == null) return null;
+  return Number(h) > Number(a) ? "H" : Number(a) > Number(h) ? "A" : "T";
+}
+
+// "correct", "wrong", or null when there's nothing to judge yet.
+//
+// Deliberately separate from the points it earns. Inferring what happened from
+// how many points were awarded breaks the moment two settings share a value —
+// a league with Correct Winner set to 0 would make right and wrong picks
+// indistinguishable. Classify first, price second.
+export function classifyPick(pick, result) {
+  const picked = pickWinner(pick);
+  const actual = resultWinner(result);
+  if (!picked || !actual) return null;
+  return picked === actual ? "correct" : "wrong";
+}
+
+// Correctly calling a tie pays `tiePoints` instead of `correctPoints`. Priced
+// off the RESULT, not the pick, so backing a tie in a game that ended 24–17 is
+// simply wrong and pays nothing — there's no partial credit for being brave.
 export function calcMatchScore(pick, result, scoring = DEFAULT_SCORING) {
-  const kind = classifyPick(pick, result);
-  if (kind === "exact") return scoring.exactPoints;
-  if (kind === "outcome") return scoring.outcomePoints;
-  return 0;
+  if (classifyPick(pick, result) !== "correct") return 0;
+  return resultWinner(result) === "T"
+    ? Number(scoring.tiePoints ?? DEFAULT_SCORING.tiePoints)
+    : scoring.correctPoints;
+}
+
+// ─── WEEK ACCURACY BONUS ────────────────────────────────────────────────────
+//
+// Two rules matter here:
+//
+//  1. Measured in MISSES, not a fixed hit count. Weeks run 13–16 games, so
+//     "15 of 16" would be unreachable in the nine short weeks of the season.
+//     A clean sweep is every game in THAT week.
+//  2. You must have picked the whole week. Otherwise you could pick only the
+//     three games you were sure of, go three-for-three, and claim a sweep.
+//
+// Regular season only — the playoff rounds are 6, 4, 2 and 1 games, and a
+// "clean sweep" of a one-game round is meaningless.
+export function weekAccuracyBadge(uid, week, allPredictions, results, scoring = DEFAULT_SCORING) {
+  // The week has to be FINISHED, not merely started.
+  //
+  // Judging only the games played so far meant the bonus landed on Thursday
+  // night: one game in, you called it, and you were "16 from 16" of what had
+  // been played — badge, points, and an announcement-board shoutout. Sunday
+  // then took it all away again. Points that appear and vanish mid-week are
+  // worse than points that arrive late, so nothing is awarded until every
+  // game in the week has a result.
+  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+  if (fixtures.length === 0 || !fixtures.every(f => results[f.id])) return null;
+
+  const picks = (allPredictions[uid] || {}).picks || {};
+  let misses = 0;
+  for (const f of fixtures) {
+    const kind = classifyPick(picks[f.id], results[f.id]);
+    if (kind === null) return null;      // an unpicked game disqualifies the week
+    if (kind === "wrong") misses++;
+    if (misses > 2) return null;         // beyond the lowest tier, stop early
+  }
+
+  const badge = WEEK_BADGES.find(b => b.misses === misses);
+  if (!badge) return null;
+  return { ...badge, week, points: Number(scoring[badge.bonusKey] ?? 0), games: fixtures.length };
+}
+
+// Every accuracy badge a member has earned this season, newest week first.
+export function weekAccuracyBadges(uid, allPredictions, results, scoring = DEFAULT_SCORING) {
+  return finishedWeeks(results)
+    .map(week => weekAccuracyBadge(uid, week, allPredictions, results, scoring))
+    .filter(Boolean);
+}
+
+function totalAccuracyBonus(uid, allPredictions, results, scoring) {
+  return weekAccuracyBadges(uid, allPredictions, results, scoring)
+    .reduce((sum, b) => sum + b.points, 0);
 }
 
 function specialPickPoints(kind, scoring) {
@@ -107,7 +199,7 @@ export function computeResultsVersion(results, specialResults, allPredictions, l
 // Computes standings for one league. `allPredictions` is keyed by uid (the
 // shared, per-user prediction docs) — NOT per-league, since predictions are
 // shared across leagues now; only the scoring settings differ per league.
-export function calcStandings(league, allUsers, allPredictions, results, specialResults, scoring) {
+export function calcStandings(league, allUsers, allPredictions, results, specialResults, scoring = DEFAULT_SCORING) {
   const members = league.members || [];
 
   return members.map(uid => {
@@ -116,7 +208,7 @@ export function calcStandings(league, allUsers, allPredictions, results, special
     const picks = preds.picks || {};
     const specials = preds.specials || {};
 
-    let points = 0, exact = 0, correct = 0, gamesScored = 0;
+    let points = 0, correct = 0, gamesScored = 0;
 
     // SCORABLE_FIXTURES, not just the regular season — playoff picks count
     // towards the table too. Scoring never needs to know who was playing, so
@@ -131,10 +223,14 @@ export function calcStandings(league, allUsers, allPredictions, results, special
       const kind = classifyPick(pick, result);
       if (kind) {
         gamesScored++;
-        if (kind === "exact") exact++;
-        else if (kind === "outcome") correct++;
+        if (kind === "correct") correct++;
       }
     }
+
+    // Week accuracy bonuses (regular season only, full week required).
+    const badges = weekAccuracyBadges(uid, allPredictions, results, scoring);
+    const bonusPoints = badges.reduce((sum, b) => sum + b.points, 0);
+    points += bonusPoints;
 
     // Broken out per pick-type (not just a lumped `specialCorrect` total) so
     // the tiebreaker order below — Super Bowl, then conference, then
@@ -155,15 +251,16 @@ export function calcStandings(league, allUsers, allPredictions, results, special
     return {
       uid,
       username: user?.username || "Unknown",
-      points, exact, correct, gamesScored, specialCorrect,
+      points, correct, gamesScored, specialCorrect,
       superbowlCorrect, conferenceCorrect, divisionCorrect,
+      badges, bonusPoints,
     };
   }).sort((a, b) =>
     b.points - a.points ||
     b.superbowlCorrect - a.superbowlCorrect ||
     b.conferenceCorrect - a.conferenceCorrect ||
     b.divisionCorrect - a.divisionCorrect ||
-    b.exact - a.exact
+    b.correct - a.correct          // was "most exact scores" before winner-only
   );
 }
 
@@ -182,8 +279,8 @@ export function explainTiebreak(a, b) {
   if (a.divisionCorrect !== b.divisionCorrect) {
     return `Ahead of ${b.username} on tiebreaker #3: ${a.divisionCorrect} correct division pick${a.divisionCorrect === 1 ? "" : "s"} vs ${b.divisionCorrect}.`;
   }
-  if (a.exact !== b.exact) {
-    return `Ahead of ${b.username} on tiebreaker #4: ${a.exact} exact score${a.exact === 1 ? "" : "s"} vs ${b.exact}.`;
+  if (a.correct !== b.correct) {
+    return `Ahead of ${b.username} on tiebreaker #4: ${a.correct} correct pick${a.correct === 1 ? "" : "s"} vs ${b.correct}.`;
   }
   return null;
 }
@@ -209,7 +306,7 @@ export function explainTiebreak(a, b) {
 // generations means the baseline only rotates to "ranks as of the PREVIOUS
 // result" — so it stays put, correctly, until the NEXT new result (whether
 // entered by an admin or pulled in by the auto-fetch cron) actually arrives.
-export function calcStandingsWithMovement(league, allUsers, allPredictions, results, specialResults, scoring) {
+export function calcStandingsWithMovement(league, allUsers, allPredictions, results, specialResults, scoring = DEFAULT_SCORING) {
   const standings = calcStandings(league, allUsers, allPredictions, results, specialResults, scoring);
   const currentVersion = computeResultsVersion(results, specialResults, allPredictions, league.members || []);
 
@@ -282,25 +379,32 @@ export function calcStandingsWithMovement(league, allUsers, allPredictions, resu
 // Only GAME points count here. The preseason division / conference / Super
 // Bowl picks aren't tied to any week — folding them in would hand their whole
 // value to whichever week they happened to be decided in.
-export function calcWeeklyStandings(league, allUsers, allPredictions, results, scoring, week) {
+export function calcWeeklyStandings(league, allUsers, allPredictions, results, scoring = DEFAULT_SCORING, week) {
   const members = league?.members || [];
   const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week && results[f.id]);
 
   return members.map(uid => {
     const picks = (allPredictions[uid] || {}).picks || {};
-    let points = 0, exact = 0, correct = 0, played = 0;
+    let points = 0, correct = 0, played = 0;
     for (const f of fixtures) {
       const result = results[f.id];
       points += calcMatchScore(picks[f.id], result, scoring);
       const kind = classifyPick(picks[f.id], result);
       if (kind) {
         played++;
-        if (kind === "exact") exact++;
-        else if (kind === "outcome") correct++;
+        if (kind === "correct") correct++;
       }
     }
-    return { uid, username: allUsers[uid]?.username || "Unknown", points, exact, correct, played, gamesInWeek: fixtures.length };
-  }).sort((a, b) => b.points - a.points || b.exact - a.exact || a.username.localeCompare(b.username));
+    // The week's accuracy bonus belongs in the week's total — it's earned by
+    // this week's picks and nothing else.
+    const badge = weekAccuracyBadge(uid, week, allPredictions, results, scoring);
+    if (badge) points += badge.points;
+
+    return {
+      uid, username: allUsers[uid]?.username || "Unknown",
+      points, correct, played, gamesInWeek: fixtures.length, badge,
+    };
+  }).sort((a, b) => b.points - a.points || b.correct - a.correct || a.username.localeCompare(b.username));
 }
 
 // How many weeks each member has topped. Ties share the win — in a friends
@@ -360,7 +464,7 @@ export function calcSeasonProgression(league, allUsers, allPredictions, results,
 //
 // The story of a week in a handful of facts: who won it, how the field did,
 // who moved, and which game caused the most damage.
-export function computeWeeklyRecap(league, allUsers, allPredictions, results, scoring, forWeek = null) {
+export function computeWeeklyRecap(league, allUsers, allPredictions, results, scoring = DEFAULT_SCORING, forWeek = null) {
   const weeks = completedWeeks(results);
   if (weeks.length === 0) return null;
   const week = forWeek != null && weeks.includes(forWeek) ? forWeek : weeks[0];
@@ -370,7 +474,10 @@ export function computeWeeklyRecap(league, allUsers, allPredictions, results, sc
 
   const topPoints = table[0].points;
   const winners = topPoints > 0 ? table.filter(r => r.points === topPoints) : [];
-  const exactCount = table.reduce((sum, r) => sum + r.exact, 0);
+  // How many people earned any accuracy badge this week — the winner-only
+  // replacement for the old "exact scores" headline figure.
+  const badgeEarners = table.filter(r => r.badge);
+  const sweepCount = table.filter(r => r.badge?.id === "sweep").length;
 
   // Averaged over people who actually PLAYED that week, not the whole roster.
   // Counting members who never made a pick drags the figure toward zero — in
@@ -426,7 +533,8 @@ export function computeWeeklyRecap(league, allUsers, allPredictions, results, sc
 
   return {
     week, weeks,
-    winners, topPoints, average, exactCount,
+    winners, topPoints, average,
+    badgeEarners, sweepCount,
     riser, faller,
     toughest: toughest && toughest.pct < 1 ? toughest : null,   // only if someone missed it
     easiest: easiest && easiest.pct === 1 && games.length > 1 ? easiest : null,
@@ -442,11 +550,11 @@ export function computeWeeklyRecap(league, allUsers, allPredictions, results, sc
 // nothing in the app spoke to that. Compares two members across the season and
 // — more interestingly — isolates only the games where they actually picked
 // DIFFERENTLY, which is where the bragging rights live.
-export function headToHead(uidA, uidB, allUsers, allPredictions, results, scoring) {
+export function headToHead(uidA, uidB, allUsers, allPredictions, results, scoring = DEFAULT_SCORING) {
   const picksA = (allPredictions[uidA] || {}).picks || {};
   const picksB = (allPredictions[uidB] || {}).picks || {};
 
-  let pointsA = 0, pointsB = 0, exactA = 0, exactB = 0, winsA = 0, winsB = 0;
+  let pointsA = 0, pointsB = 0, correctA = 0, correctB = 0, winsA = 0, winsB = 0;
   const differences = [];
 
   // SCORABLE_FIXTURES so playoff games count here too — otherwise a head to
@@ -461,8 +569,8 @@ export function headToHead(uidA, uidB, allUsers, allPredictions, results, scorin
 
     const kA = classifyPick(picksA[f.id], result);
     const kB = classifyPick(picksB[f.id], result);
-    if (kA === "exact") exactA++;
-    if (kB === "exact") exactB++;
+    if (kA === "correct") correctA++;
+    if (kB === "correct") correctB++;
 
     const pa = picksA[f.id], pb = picksB[f.id];
 
@@ -471,9 +579,10 @@ export function headToHead(uidA, uidB, allUsers, allPredictions, results, scorin
     // comparison with games nobody engaged with.
     if (!pa && !pb) continue;
 
-    const samePick = pa && pb
-      && Number(pa.homeScore) === Number(pb.homeScore)
-      && Number(pa.awayScore) === Number(pb.awayScore);
+    // Compared by SIDE, not by scoreline. Under winner-only picks the old
+    // scoreline comparison was always false, so every game showed up as a
+    // "difference" — including ones where you both backed the same team.
+    const samePick = pa && pb && pickWinner(pa) === pickWinner(pb);
     if (samePick) continue; // identical picks tell you nothing about either
 
     if (sA > sB) winsA++;
@@ -492,7 +601,7 @@ export function headToHead(uidA, uidB, allUsers, allPredictions, results, scorin
   return {
     usernameA: allUsers[uidA]?.username || "Unknown",
     usernameB: allUsers[uidB]?.username || "Unknown",
-    pointsA, pointsB, exactA, exactB, winsA, winsB,
+    pointsA, pointsB, correctA, correctB, winsA, winsB,
     differences: differences.reverse(), // most recent first
   };
 }
@@ -501,7 +610,8 @@ export function headToHead(uidA, uidB, allUsers, allPredictions, results, scorin
 // Fun "announcement board" callouts for the most recently completed week —
 // not the whole season, so the card stays a fixed, current-feeling size
 // instead of growing forever. Three categories:
-//   fire   — someone nailed the exact final score (always shown, no threshold)
+//   sweeps — earned a week accuracy badge (replaced the old exact-score 🔥,
+//            which no longer exists now the game is winner-only)
 //   upsets — only a handful of people called the winner correctly
 //   clowns — only a handful of people got it wrong (it was "obvious")
 //
@@ -561,18 +671,32 @@ export function hasCompletedWeek(results) {
 // Every week that has at least one result in, newest first — powers the week
 // picker on the highlights board so past weeks stay reachable instead of
 // being lost the moment a new week starts.
+// Weeks with AT LEAST ONE result — i.e. weeks there's something to show.
+// Drives the week selectors, the recap and the highlights board, all of which
+// should come alive as soon as the first game is in.
 export function completedWeeks(results) {
   const weeks = new Set(REGULAR_SEASON_FIXTURES.filter(f => results[f.id]).map(f => f.week));
   return [...weeks].sort((a, b) => b - a);
 }
 
-export function computeHighlights(league, allUsers, allPredictions, results, forWeek = null) {
-  const members = league?.members || [];
-  const empty = { week: null, weeks: [], fire: [], upsets: [], clowns: [], hiddenCount: 0 };
+// Weeks where EVERY game has a result. Stricter, and used only for the week
+// accuracy bonuses — see weekAccuracyBadge for why they can't be settled while
+// games are still outstanding.
+export function finishedWeeks(results) {
+  const byWeek = new Map();
+  for (const f of REGULAR_SEASON_FIXTURES) {
+    if (!byWeek.has(f.week)) byWeek.set(f.week, []);
+    byWeek.get(f.week).push(f);
+  }
+  return [...byWeek.entries()]
+    .filter(([, fixtures]) => fixtures.every(f => results[f.id]))
+    .map(([week]) => week)
+    .sort((a, b) => b - a);
+}
 
-  // Whole board off for small leagues — keyed on league SIZE, unlike the
-  // callout thresholds above which key on how many people picked a given game.
-  if (members.length < MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS) return empty;
+export function computeHighlights(league, allUsers, allPredictions, results, forWeek = null, scoring = DEFAULT_SCORING) {
+  const members = league?.members || [];
+  const empty = { week: null, weeks: [], sweeps: [], upsets: [], clowns: [], hiddenCount: 0 };
 
   const weeksWithResults = completedWeeks(results);
   if (weeksWithResults.length === 0) return empty;
@@ -581,7 +705,33 @@ export function computeHighlights(league, allUsers, allPredictions, results, for
   const week = forWeek != null && weeksWithResults.includes(forWeek) ? forWeek : weeksWithResults[0];
   const weekFixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week && results[f.id]);
 
-  const fire = [], upsets = [], clowns = [];
+  // ── Badge shoutouts, grouped by tier ─────────────────────────────────────
+  // These are INDIVIDUAL achievements — you either got the week nearly right
+  // or you didn't — so unlike the upset/clown callouts they make sense at any
+  // league size and aren't gated below. Grouped by tier so three people
+  // earning a Sharp Week produce one line, not three.
+  const earners = members
+    .map(uid => {
+      const badge = weekAccuracyBadge(uid, week, allPredictions, results, scoring);
+      return badge ? { uid, username: allUsers[uid]?.username || "Unknown", badge } : null;
+    })
+    .filter(Boolean);
+
+  const sweeps = WEEK_BADGES
+    .map(tier => {
+      const got = earners.filter(e => e.badge.id === tier.id);
+      return got.length ? { badge: got[0].badge, users: got.map(g => g.username) } : null;
+    })
+    .filter(Boolean);
+
+  const upsets = [], clowns = [];
+
+  // Upset and clown callouts DO need a crowd — "you were the only one who got
+  // it wrong" means very little when everyone else is one other person — so
+  // only these are gated on league size.
+  if (members.length < MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS) {
+    return { week, weeks: weeksWithResults, sweeps, upsets, clowns, hiddenCount: 0 };
+  }
 
   for (const fixture of weekFixtures) {
     const result = results[fixture.id];
@@ -594,17 +744,11 @@ export function computeHighlights(league, allUsers, allPredictions, results, for
       made.push({
         uid,
         username: allUsers[uid]?.username || "Unknown",
-        isExact: kind === "exact",
-        isCorrect: kind !== "wrong",
+        isCorrect: kind === "correct",
       });
     }
     const total = made.length;
     if (total === 0) continue;
-
-    const exactHitters = made.filter(p => p.isExact).map(p => p.username);
-    if (exactHitters.length > 0) {
-      fire.push({ fixture, users: exactHitters, score: `${result.awayScore}-${result.homeScore}` });
-    }
 
     const correct = made.filter(p => p.isCorrect);
     const incorrect = made.filter(p => !p.isCorrect);
@@ -626,14 +770,14 @@ export function computeHighlights(league, allUsers, allPredictions, results, for
   // Trim to the cap, but report how much was left out rather than silently
   // swallowing it — a week busy enough to hit this is worth acknowledging.
   const hiddenCount =
-    Math.max(0, fire.length - MAX_CALLOUTS_PER_CATEGORY) +
+    Math.max(0, sweeps.length - MAX_CALLOUTS_PER_CATEGORY) +
     Math.max(0, upsets.length - MAX_CALLOUTS_PER_CATEGORY) +
     Math.max(0, clowns.length - MAX_CALLOUTS_PER_CATEGORY);
 
   return {
     week,
     weeks: weeksWithResults,
-    fire: fire.slice(0, MAX_CALLOUTS_PER_CATEGORY),
+    sweeps: sweeps.slice(0, MAX_CALLOUTS_PER_CATEGORY),
     upsets: upsets.slice(0, MAX_CALLOUTS_PER_CATEGORY),
     clowns: clowns.slice(0, MAX_CALLOUTS_PER_CATEGORY),
     hiddenCount,
