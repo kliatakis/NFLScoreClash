@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS } from "../data/fixtures.js";
-import { TEAMS, TEAM_CODES, teamsByDivision, teamsByConference } from "../data/teams.js";
+import { TEAMS, TEAM_CODES, teamsByDivision, teamsByConference, teamsForSpecialPick } from "../data/teams.js";
 import {
   fsSetResult, fsClearResult, fsSetSpecialResult, fsUpdateLeague, fsDeleteLeague,
   fsAdminOverrideGamePrediction, fsGetPredictions, fsGetAllUsers,
@@ -389,7 +389,9 @@ function SpecialResultsEntry() {
         {" "}<b>{decidedCount} of {SPECIAL_PICK_TYPES.length}</b> decided so far.
       </p>
       {SPECIAL_PICK_TYPES.map(type => {
-        const options = type.kind === "division" ? teamsByDivision(type.division) : TEAM_CODES;
+        // Constrained per pick type — an admin could previously record an
+        // NFC team as the AFC champion.
+        const options = teamsForSpecialPick(type);
         return (
           <div key={type.id} className="standings-row">
             <span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{type.label}</span>

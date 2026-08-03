@@ -208,7 +208,7 @@ export function calcStandings(league, allUsers, allPredictions, results, special
     const picks = preds.picks || {};
     const specials = preds.specials || {};
 
-    let points = 0, correct = 0, gamesScored = 0;
+    let points = 0, correct = 0, gamesScored = 0, tiesCalled = 0;
 
     // SCORABLE_FIXTURES, not just the regular season — playoff picks count
     // towards the table too. Scoring never needs to know who was playing, so
@@ -223,9 +223,18 @@ export function calcStandings(league, allUsers, allPredictions, results, special
       const kind = classifyPick(pick, result);
       if (kind) {
         gamesScored++;
-        if (kind === "correct") correct++;
+        if (kind === "correct") {
+          correct++;
+          if (resultWinner(result) === "T") tiesCalled++;
+        }
       }
     }
+
+    // The PREMIUM a called tie earned over an ordinary correct pick — not the
+    // full tie value. That pick is already counted once in `correct`, so
+    // crediting the whole 5 here would count a point twice and the bonus
+    // breakdown wouldn't reconcile with the points total.
+    const tieBonus = tiesCalled * Math.max(0, Number(scoring.tiePoints ?? 0) - Number(scoring.correctPoints ?? 0));
 
     // Week accuracy bonuses (regular season only, full week required).
     const badges = weekAccuracyBadges(uid, allPredictions, results, scoring);
@@ -254,6 +263,10 @@ export function calcStandings(league, allUsers, allPredictions, results, special
       points, correct, gamesScored, specialCorrect,
       superbowlCorrect, conferenceCorrect, divisionCorrect,
       badges, bonusPoints,
+      // `bonusPoints` stays week-badges-only (it's what the badge cabinet and
+      // the recap mean by "bonus"). `totalBonus` is what the standings column
+      // shows: everything earned above the flat correct-pick rate.
+      tiesCalled, tieBonus, totalBonus: bonusPoints + tieBonus,
       // Tiebreaker inputs #4–#7, counted here so the sort below stays a plain
       // comparison and the UI can show the same numbers it's being ranked on.
       medals: medalsByUid[uid] || 0,
@@ -277,6 +290,28 @@ export function calcStandings(league, allUsers, allPredictions, results, special
     // order instead of one that flips between renders.
     b.correct - a.correct
   );
+}
+
+// Human-readable breakdown of a player's bonus total, one line per tier, for
+// the ⓘ tooltip in the standings.
+//
+// Kept here rather than in the component so the arithmetic that has to
+// reconcile with `totalBonus` lives next to the code that produces it.
+// Returns [] when there's nothing to explain.
+export function describeBonuses(entry) {
+  if (!entry) return [];
+  const lines = [];
+  for (const tier of WEEK_BADGES) {
+    const earned = (entry.badges || []).filter(b => b.id === tier.id);
+    if (earned.length === 0) continue;
+    const pts = earned.reduce((sum, b) => sum + b.points, 0);
+    const weeks = earned.map(b => b.week).sort((a, b) => a - b).join(", ");
+    lines.push(`${tier.icon} ${tier.label} ×${earned.length} — +${pts}  (week${earned.length > 1 ? "s" : ""} ${weeks})`);
+  }
+  if (entry.tieBonus > 0) {
+    lines.push(`🤝 Called a tie ×${entry.tiesCalled} — +${entry.tieBonus} above a normal correct pick`);
+  }
+  return lines;
 }
 
 // Explains WHY `a` outranks `b`, for two entries already known to be tied on

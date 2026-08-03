@@ -78,6 +78,20 @@ export function teamsByConference(conf) {
   return TEAM_CODES.filter(c => TEAMS[c].conf === conf);
 }
 
+// The teams eligible for a given season pick.
+//
+// Division and conference picks are constrained to that group — an NFC team
+// can't win the AFC, so offering all 32 was just a longer list with wrong
+// answers in it. Only the Super Bowl is genuinely open to everyone.
+//
+// Shared by the predictions picker and the admin's results entry so the two
+// can't drift apart and let an admin record an impossible winner.
+export function teamsForSpecialPick(type) {
+  if (type?.kind === "division") return teamsByDivision(type.division);
+  if (type?.kind === "conference") return teamsByConference(type.conference);
+  return TEAM_CODES;
+}
+
 // Inline CSS custom properties carrying both teams' real colours, so a
 // fixture card can tint itself with the actual matchup instead of being one
 // more identical grey rectangle. Consumed by `.team-tinted` in theme.js —

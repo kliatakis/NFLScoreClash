@@ -3,7 +3,7 @@ import {
   REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, hasEstimatedKickoff,
   PLAYOFF_FIXTURES, PLAYOFF_ROUNDS,
 } from "../data/fixtures.js";
-import { TEAMS, TEAM_CODES, teamsByDivision, teamTint, teamSideTint } from "../data/teams.js";
+import { TEAMS, teamsForSpecialPick, teamTint, teamSideTint } from "../data/teams.js";
 import {
   fsSubscribePredictions, fsSaveGamePrediction, fsSaveSpecialPick, fsSubscribeResults,
   fsSubscribePlayoffFixtures, fsSaveGamePredictions, fsClearGamePredictions,
@@ -474,16 +474,28 @@ function SpecialPicks({ kind, preds, uid, league, allUsers, allPredictions, spec
   const countdown = useCountdown(SEASON_LOCK_AT);
 
   const [saveError, setSaveError] = useState("");
+  // Which row is mid-write, and which just landed — so a saved pick confirms
+  // itself instead of the dropdown quietly changing and leaving you to guess
+  // whether it stuck.
+  const [savingId, setSavingId] = useState(null);
+  const [justSavedId, setJustSavedId] = useState(null);
 
   const save = async (typeId, team) => {
     setSaveError("");
+    setSavingId(typeId);
     try {
       await fsSaveSpecialPick(uid, typeId, team);
+      if (team) {
+        setJustSavedId(typeId);
+        setTimeout(() => setJustSavedId(id => (id === typeId ? null : id)), 2200);
+      }
     } catch (err) {
       // Same problem as the game rows: silently dropping this would leave the
       // dropdown showing a pick that was never stored.
       console.error("Failed to save season pick", err);
       setSaveError("Couldn't save that pick — check your connection and try again.");
+    } finally {
+      setSavingId(id => (id === typeId ? null : id));
     }
   };
 
@@ -502,9 +514,13 @@ function SpecialPicks({ kind, preds, uid, league, allUsers, allPredictions, spec
       {saveError && <div className="error-msg">{saveError}</div>}
 
       {typesForKind.map(type => {
-        const options = type.kind === "division" ? teamsByDivision(type.division) : TEAM_CODES;
+        // Only the teams that could actually win this — an NFC team can't be
+        // AFC champion, so listing all 32 was 16 wrong answers of scrolling.
+        const options = teamsForSpecialPick(type);
         const current = preds.specials?.[type.id] || "";
         const actual = specialResults?.[type.id];
+        const saving = savingId === type.id;
+        const justSaved = justSavedId === type.id;
 
         const revealRows = actual && league ? league.members.map(mUid => {
           const mPick = (allPredictions[mUid]?.specials || {})[type.id];
@@ -520,9 +536,15 @@ function SpecialPicks({ kind, preds, uid, league, allUsers, allPredictions, spec
 
         return (
           <div key={type.id} style={{ marginBottom: 4 }}>
-            <div className="standings-row">
+            <div className={`standings-row special-pick-row ${current ? "has-pick" : ""}`}>
               <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{type.label}</span>
-              <select className="form-select" style={{ maxWidth: 220 }} disabled={seasonLocked} value={current}
+              <span className="special-pick-state">
+                {saving && <span className="unsaved-badge">● Saving…</span>}
+                {!saving && justSaved && <span className="picked-badge saved-flash">✓ Saved</span>}
+                {!saving && !justSaved && current && <span className="picked-badge">✓ Picked</span>}
+              </span>
+              <select className={`form-select ${current ? "has-pick" : ""}`} style={{ maxWidth: 220 }}
+                disabled={seasonLocked || saving} value={current}
                 onChange={e => save(type.id, e.target.value)}>
                 <option value="">Pick a team…</option>
                 {options.map(code => <option key={code} value={code}>{TEAMS[code].city} {TEAMS[code].name}</option>)}

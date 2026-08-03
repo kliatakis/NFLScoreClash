@@ -566,6 +566,34 @@ export const css = (dark = true) => `
   .standings-head:hover { background: none; }
 
   .tiebreak-info { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: var(--surface3); color: var(--accent); font-size: 11px; font-style: normal; cursor: help; flex-shrink: 0; }
+  /* Sits beside the bonus total rather than after a name, so it needs its own
+     spacing and a gold tint to read as "there's more detail here". */
+  .bonus-info { margin-left: 5px; width: 14px; height: 14px; font-size: 10px; color: var(--gold); vertical-align: middle; }
+
+  /* SEASON PICKS — a made pick should be obvious at a glance, since these are
+     set once in August and then not looked at for months. Green edge on the
+     row, green border on the select, and a confirmation chip. */
+  .special-pick-row { border-left: 3px solid transparent; transition: background 0.2s, border-color 0.2s; }
+  .special-pick-row.has-pick { border-left-color: var(--green); background: rgba(34,197,94,0.07); }
+  .form-select.has-pick { border-color: rgba(34,197,94,0.5); }
+  .special-pick-state { display: flex; align-items: center; justify-content: flex-end; min-width: 84px; flex-shrink: 0; }
+  /* Briefly pulses when a pick lands, then settles back to "✓ Picked". */
+  .saved-flash { animation: saved-pop 0.35s ease; }
+  @keyframes saved-pop {
+    0% { transform: scale(0.8); opacity: 0; }
+    60% { transform: scale(1.08); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .saved-flash { animation: none; } }
+  @media (max-width: 560px) {
+    /* The chip and the dropdown won't sit side by side on a phone. */
+    .special-pick-row { flex-wrap: wrap; }
+    .special-pick-state { min-width: 0; order: 3; }
+    .special-pick-row .form-select { flex: 1; }
+  }
+  /* Mobile-only: the ⓘ tooltip needs a hover, which a phone doesn't have, so
+     the breakdown is printed under the name instead. */
+  .standings-substats-bonus { display: block; margin-top: 1px; letter-spacing: 0.5px; }
   .standings-legend { margin-top: 14px; padding: 18px 16px 4px; font-size: 11px; line-height: 1.6; color: var(--muted); border-top: 2px solid var(--border2); }
   .standings-legend-title { font-family: var(--font-body); font-size: 12px; font-weight: 800; letter-spacing: 1.5px; color: var(--text); margin-bottom: 6px; text-transform: uppercase; }
   .standings-legend ol { margin: 0; padding-left: 18px; }

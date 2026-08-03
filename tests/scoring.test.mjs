@@ -14,8 +14,9 @@ import {
   DEFAULT_SCORING, getScoringSettings, pickWinner, resultWinner, classifyPick,
   calcMatchScore, weekAccuracyBadge, calcStandings, calcWeeklyStandings,
   computeWeeklyRecap, computeHighlights, headToHead, weeklyWinTally,
-  calcSeasonProgression, explainTiebreak, finishedWeeks, completedWeeks,
+  calcSeasonProgression, explainTiebreak, finishedWeeks, completedWeeks, describeBonuses,
 } from "../src/lib/scoring.js";
+import { TEAMS, TEAM_CODES, teamsForSpecialPick } from "../src/data/teams.js";
 
 let failures = 0, total = 0;
 const group = (name) => console.log(`\n── ${name} `.padEnd(64, "─"));
@@ -212,6 +213,89 @@ group("Head to head");
   t("a genuine disagreement is listed", h.differences.length === 1);
   t("it is priced to whoever was right", h.differences[0].pointsA > h.differences[0].pointsB);
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Bonus breakdown (standings tooltip)");
+{
+  // One sweep, one near, one sharp — no ties involved.
+  const g = scenario({ a: { 1: 0, 2: 1, 3: 2 } });
+  const A = calcStandings(g.league, g.users, g.preds, g.results, {}, SC)[0];
+  const lines = describeBonuses(A);
+  console.log("        " + lines.join("\n        "));
+  t("one line per tier earned", lines.length === 3);
+  t("tiers listed best-first", /Clean Sweep/.test(lines[0]) && /Near Perfect/.test(lines[1]) && /Sharp/.test(lines[2]));
+  t("each line names the week it came from", lines.every(l => /week/.test(l)));
+  t("totalBonus equals the tiers summed",
+    A.totalBonus === SC.sweepBonus + SC.nearPerfectBonus + SC.sharpBonus, `${A.totalBonus}`);
+  t("no tie line when no tie was called", !lines.some(l => l.includes("🤝")));
+  t("nothing to explain for a player with no bonuses", describeBonuses({ badges: [], tieBonus: 0 }).length === 0);
+}
+{
+  // A week containing a real tie, called correctly.
+  const fixtures = week(1);
+  const league = { members: ["a"] }, users = { a: { username: "A" } };
+  const preds = { a: { picks: {}, specials: {} } }, results = {};
+  fixtures.forEach((f, i) => {
+    const isTie = i === 0;
+    results[f.id] = isTie ? { homeScore: 20, awayScore: 20 } : { homeScore: 24, awayScore: 10 };
+    preds.a.picks[f.id] = { winner: isTie ? "T" : "H" };
+  });
+  const A = calcStandings(league, users, preds, results, {}, SC)[0];
+  const lines = describeBonuses(A);
+  console.log("        " + lines.join("\n        "));
+  t("the called tie is counted", A.tiesCalled === 1);
+  t("tie credited as the PREMIUM, not the full value",
+    A.tieBonus === SC.tiePoints - SC.correctPoints, `tieBonus=${A.tieBonus}`);
+  t("a tie line appears", lines.some(l => l.includes("🤝")));
+  // The whole point of using the premium: the breakdown has to reconcile.
+  t("correct picks + totalBonus reconciles with the points total",
+    A.correct * SC.correctPoints + A.totalBonus === A.points,
+    `${A.correct}×${SC.correctPoints} + ${A.totalBonus} vs ${A.points}`);
+}
+{
+  // A league that prices ties BELOW a normal pick — the premium must not go
+  // negative and quietly reduce someone's bonus.
+  const odd = { tiePoints: 1, correctPoints: 5 };
+  const scoring = getScoringSettings({ settings: odd });
+  const fixtures = week(1);
+  const league = { members: ["a"] }, users = { a: { username: "A" } };
+  const preds = { a: { picks: {}, specials: {} } }, results = {};
+  fixtures.forEach((f, i) => {
+    const isTie = i === 0;
+    results[f.id] = isTie ? { homeScore: 20, awayScore: 20 } : { homeScore: 24, awayScore: 10 };
+    preds.a.picks[f.id] = { winner: isTie ? "T" : "H" };
+  });
+  const A = calcStandings(league, users, preds, results, {}, scoring)[0];
+  t("a cheap tie never produces a negative bonus", A.tieBonus === 0, `tieBonus=${A.tieBonus}`);
+  t("...and no misleading tie line is shown", !describeBonuses(A).some(l => l.includes("🤝")));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Season pick eligibility");
+for (const type of SPECIAL_PICK_TYPES) {
+  const opts = teamsForSpecialPick(type);
+  if (type.kind === "division") {
+    t(`${type.label}: exactly its 4 teams`,
+      opts.length === 4 && opts.every(c => TEAMS[c].div === type.division), `${opts.length}`);
+  } else if (type.kind === "conference") {
+    const wrong = opts.filter(c => TEAMS[c].conf !== type.conference);
+    t(`${type.label}: 16 teams, none from the other conference`,
+      opts.length === 16 && wrong.length === 0, `${opts.length} teams, ${wrong.length} wrong`);
+  } else {
+    t(`${type.label}: open to all 32`, opts.length === 32, `${opts.length}`);
+  }
+}
+{
+  const afc = teamsForSpecialPick(SPECIAL_PICK_TYPES.find(x => x.id === "conf_AFC"));
+  const nfc = teamsForSpecialPick(SPECIAL_PICK_TYPES.find(x => x.id === "conf_NFC"));
+  t("the two conference lists don't overlap", afc.filter(c => nfc.includes(c)).length === 0);
+  t("together they cover the whole league", new Set([...afc, ...nfc]).size === 32);
+  for (const type of SPECIAL_PICK_TYPES.filter(x => x.kind === "division")) {
+    const conf = type.division.startsWith("AFC") ? afc : nfc;
+    t(`${type.label} rolls up into its conference`, teamsForSpecialPick(type).every(c => conf.includes(c)));
+  }
+}
+t("an unknown pick type falls back to all teams", teamsForSpecialPick(undefined).length === TEAM_CODES.length);
 
 // ────────────────────────────────────────────────────────────────────────────
 console.log(`\n${total - failures}/${total} passed.`);

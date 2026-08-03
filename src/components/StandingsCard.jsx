@@ -1,10 +1,22 @@
 import { useEffect, useMemo, Fragment } from "react";
-import { calcStandingsWithMovement, getScoringSettings, explainTiebreak, hasCompletedWeek, weeklyWinTally } from "../lib/scoring.js";
+import { calcStandingsWithMovement, getScoringSettings, explainTiebreak, hasCompletedWeek, weeklyWinTally, describeBonuses } from "../lib/scoring.js";
 import { useFlipRows } from "../lib/hooks.js";
 import { fsSaveLeagueStandingsSnapshot } from "../firebase.js";
 import Avatar from "./Avatar.jsx";
 import MovementArrows from "./MovementArrows.jsx";
 import Podium from "./Podium.jsx";
+
+// One-line "🧹2 🎯1 💎3 🤝1" summary — only the tiers actually earned, so it
+// stays short on a phone.
+const bonusChips = (entry) => {
+  const parts = [];
+  for (const [id, icon] of [["sweep", "🧹"], ["near", "🎯"], ["sharp", "💎"]]) {
+    const n = (entry.badges || []).filter(b => b.id === id).length;
+    if (n) parts.push(`${icon}${n}`);
+  }
+  if (entry.tiesCalled > 0) parts.push(`🤝${entry.tiesCalled}`);
+  return parts.join(" ");
+};
 
 // Shared between DashboardTab (the selected league) and LeaguesTab (any
 // league you expand) so the standings + movement-snapshot-persist logic
@@ -79,6 +91,7 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
         // explains which of the eight tiebreakers separated them.
         const next = standings[i + 1];
         const tieInfo = next && next.points === entry.points ? explainTiebreak(entry, next) : null;
+        const bonusLines = describeBonuses(entry);
         // A divider after the podium, and one before the last spot — skipped
         // together if they'd land on the same row (e.g. a 4-person league,
         // where "4th" and "last" are the same person).
@@ -113,12 +126,24 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
                       readable name, so on mobile the stats drop under the name
                       and the columns are hidden instead. */}
                   <span className="standings-substats">
-                    {entry.correct} correct{entry.bonusPoints > 0 ? ` · +${entry.bonusPoints} bonus` : ""}
+                    {entry.correct} correct{entry.totalBonus > 0 ? ` · +${entry.totalBonus} bonus` : ""}
+                    {/* The tooltip is unreachable on a phone, so the mobile
+                        line spells the breakdown out instead. */}
+                    {bonusLines.length > 0 && (
+                      <span className="standings-substats-bonus">{bonusChips(entry)}</span>
+                    )}
                   </span>
                 </span>
               </span>
               <span className="standings-col-stat">{entry.correct}</span>
-              <span className="standings-col-stat">{entry.bonusPoints > 0 ? `+${entry.bonusPoints}` : "–"}</span>
+              <span className="standings-col-stat">
+                {entry.totalBonus > 0 ? (
+                  <>
+                    +{entry.totalBonus}
+                    <span className="tiebreak-info bonus-info" title={bonusLines.join("\n")}>ⓘ</span>
+                  </>
+                ) : "–"}
+              </span>
               <span className="standings-pts standings-col-pts">{entry.points}</span>
               <span className="standings-col-move"><MovementArrows movement={movementByUid[entry.uid]} /></span>
             </div>
