@@ -121,10 +121,20 @@ export default function App() {
     });
   }, [user?.uid]);
 
+  // Drop a selection that no longer exists — you left the league, an admin
+  // kicked you, or the whole league was deleted. Without this the id lingers,
+  // `selectedLeague` resolves to null, and the dashboard claims you have no
+  // league at all even when you're still in one. Runs before the auto-select
+  // below so the two can't fight over the same render.
+  useEffect(() => {
+    if (!selectedLeagueId) return;
+    if (!myLeagues.some(l => l.id === selectedLeagueId)) setSelectedLeagueId(null);
+  }, [myLeagues, selectedLeagueId]);
+
   useEffect(() => {
     if (!user || selectedLeagueId || myLeagues.length !== 1) return;
     setSelectedLeagueId(myLeagues[0].id);
-  }, [user, myLeagues]);
+  }, [user, myLeagues, selectedLeagueId]);
 
   const handleLogin = (u) => setUser(u);
   const handleLogout = async () => { await fbLogout(); };

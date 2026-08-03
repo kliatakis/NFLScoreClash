@@ -76,7 +76,7 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
         const isLast = showToilet && i === standings.length - 1;
         const isMe = entry.uid === user.uid;
         // Only relevant when tied on points with whoever's directly below —
-        // explains which of the 4 tiebreakers separated them.
+        // explains which of the eight tiebreakers separated them.
         const next = standings[i + 1];
         const tieInfo = next && next.points === entry.points ? explainTiebreak(entry, next) : null;
         // A divider after the podium, and one before the last spot — skipped
@@ -156,7 +156,11 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
               <span className="tiebreak-step"><span className="tiebreak-step-num">1</span>Super Bowl pick</span>
               <span className="tiebreak-step"><span className="tiebreak-step-num">2</span>Conference picks</span>
               <span className="tiebreak-step"><span className="tiebreak-step-num">3</span>Division picks</span>
-              <span className="tiebreak-step"><span className="tiebreak-step-num">4</span>Exact scores</span>
+              <span className="tiebreak-step"><span className="tiebreak-step-num">4</span>🏅 Game weeks won</span>
+              <span className="tiebreak-step"><span className="tiebreak-step-num">5</span>🧹 Clean Sweeps</span>
+              <span className="tiebreak-step"><span className="tiebreak-step-num">6</span>🎯 Near Perfects</span>
+              <span className="tiebreak-step"><span className="tiebreak-step-num">7</span>💎 Sharp Weeks</span>
+              <span className="tiebreak-step"><span className="tiebreak-step-num">8</span>Total correct picks</span>
             </div>
           </li>
         </ol>

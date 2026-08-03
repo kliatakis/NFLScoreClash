@@ -143,11 +143,6 @@ export function weekAccuracyBadges(uid, allPredictions, results, scoring = DEFAU
     .filter(Boolean);
 }
 
-function totalAccuracyBonus(uid, allPredictions, results, scoring) {
-  return weekAccuracyBadges(uid, allPredictions, results, scoring)
-    .reduce((sum, b) => sum + b.points, 0);
-}
-
 function specialPickPoints(kind, scoring) {
   if (kind === "division") return scoring.divisionPoints;
   if (kind === "conference") return scoring.conferencePoints;
@@ -202,6 +197,11 @@ export function computeResultsVersion(results, specialResults, allPredictions, l
 export function calcStandings(league, allUsers, allPredictions, results, specialResults, scoring = DEFAULT_SCORING) {
   const members = league.members || [];
 
+  // Weekly wins ("gold medals") feed tiebreaker #4, so the whole tally is
+  // computed ONCE here rather than per member — it walks every completed week
+  // and would otherwise be recomputed once for each person in the league.
+  const medalsByUid = weeklyWinTally(league, allUsers, allPredictions, results, scoring).byUid;
+
   return members.map(uid => {
     const user = allUsers[uid];
     const preds = allPredictions[uid] || {};
@@ -234,7 +234,7 @@ export function calcStandings(league, allUsers, allPredictions, results, special
 
     // Broken out per pick-type (not just a lumped `specialCorrect` total) so
     // the tiebreaker order below — Super Bowl, then conference, then
-    // division, then exact scores — can compare each level independently.
+    // division — can compare each level independently.
     let specialCorrect = 0, superbowlCorrect = 0, conferenceCorrect = 0, divisionCorrect = 0;
     for (const type of SPECIAL_PICK_TYPES) {
       const actual = specialResults[type.id];
@@ -254,13 +254,28 @@ export function calcStandings(league, allUsers, allPredictions, results, special
       points, correct, gamesScored, specialCorrect,
       superbowlCorrect, conferenceCorrect, divisionCorrect,
       badges, bonusPoints,
+      // Tiebreaker inputs #4–#7, counted here so the sort below stays a plain
+      // comparison and the UI can show the same numbers it's being ranked on.
+      medals: medalsByUid[uid] || 0,
+      sweepWeeks: badges.filter(b => b.id === "sweep").length,
+      nearWeeks: badges.filter(b => b.id === "near").length,
+      sharpWeeks: badges.filter(b => b.id === "sharp").length,
     };
   }).sort((a, b) =>
+    // Tiebreakers run hardest-to-fluke first: one Super Bowl call, then the
+    // two conference picks, then the eight division picks, then sustained
+    // week-by-week form (medals, then each accuracy tier in turn).
     b.points - a.points ||
     b.superbowlCorrect - a.superbowlCorrect ||
     b.conferenceCorrect - a.conferenceCorrect ||
     b.divisionCorrect - a.divisionCorrect ||
-    b.correct - a.correct          // was "most exact scores" before winner-only
+    b.medals - a.medals ||
+    b.sweepWeeks - a.sweepWeeks ||
+    b.nearWeeks - a.nearWeeks ||
+    b.sharpWeeks - a.sharpWeeks ||
+    // Last resort, so two players who match on all seven still get a stable
+    // order instead of one that flips between renders.
+    b.correct - a.correct
   );
 }
 
@@ -279,8 +294,20 @@ export function explainTiebreak(a, b) {
   if (a.divisionCorrect !== b.divisionCorrect) {
     return `Ahead of ${b.username} on tiebreaker #3: ${a.divisionCorrect} correct division pick${a.divisionCorrect === 1 ? "" : "s"} vs ${b.divisionCorrect}.`;
   }
+  if (a.medals !== b.medals) {
+    return `Ahead of ${b.username} on tiebreaker #4: won ${a.medals} game week${a.medals === 1 ? "" : "s"} 🏅 vs ${b.medals}.`;
+  }
+  if (a.sweepWeeks !== b.sweepWeeks) {
+    return `Ahead of ${b.username} on tiebreaker #5: ${a.sweepWeeks} Clean Sweep week${a.sweepWeeks === 1 ? "" : "s"} 🧹 vs ${b.sweepWeeks}.`;
+  }
+  if (a.nearWeeks !== b.nearWeeks) {
+    return `Ahead of ${b.username} on tiebreaker #6: ${a.nearWeeks} Near Perfect week${a.nearWeeks === 1 ? "" : "s"} 🎯 vs ${b.nearWeeks}.`;
+  }
+  if (a.sharpWeeks !== b.sharpWeeks) {
+    return `Ahead of ${b.username} on tiebreaker #7: ${a.sharpWeeks} Sharp Week${a.sharpWeeks === 1 ? "" : "s"} 💎 vs ${b.sharpWeeks}.`;
+  }
   if (a.correct !== b.correct) {
-    return `Ahead of ${b.username} on tiebreaker #4: ${a.correct} correct pick${a.correct === 1 ? "" : "s"} vs ${b.correct}.`;
+    return `Ahead of ${b.username} on tiebreaker #8: ${a.correct} correct pick${a.correct === 1 ? "" : "s"} vs ${b.correct}.`;
   }
   return null;
 }

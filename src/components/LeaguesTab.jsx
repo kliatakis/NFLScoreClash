@@ -227,16 +227,37 @@ function CreateLeagueModal({ user, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
 
   const create = async () => {
+    setError("");
     if (!name.trim()) { setError("Please enter a league name."); return; }
     setBusy(true);
-    const id = generateCode(6);
-    await fsCreateLeague({
-      id, name: name.trim(),
-      superAdminId: user.uid, adminIds: [], members: [user.uid],
-      settings: { ...DEFAULT_SCORING },
-      createdAt: Date.now(),
-    });
-    onDone(id);
+    // Retried on the vanishingly rare chance the generated code is already
+    // taken (fsCreateLeague refuses to overwrite rather than clobbering the
+    // existing league). Wrapped so a network or permission failure shows an
+    // error instead of leaving the button disabled forever.
+    try {
+      let id = null;
+      for (let attempt = 0; attempt < 5 && !id; attempt++) {
+        const candidate = generateCode(6);
+        try {
+          await fsCreateLeague({
+            id: candidate, name: name.trim(),
+            superAdminId: user.uid, adminIds: [], members: [user.uid],
+            settings: { ...DEFAULT_SCORING },
+            createdAt: Date.now(),
+          });
+          id = candidate;
+        } catch (err) {
+          if (err?.code !== "league-code-collision") throw err;
+        }
+      }
+      if (!id) { setError("Couldn't generate a free league code. Try again."); return; }
+      onDone(id);
+    } catch (err) {
+      console.error("Create league failed", err);
+      setError("Couldn't create the league — check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -265,18 +286,27 @@ function JoinLeagueModal({ user, onClose, onDone }) {
 
   const join = async () => {
     const trimmed = code.trim().toUpperCase();
+    setError("");
     if (!trimmed) return;
     setBusy(true);
-    const league = await fsGetLeague(trimmed);
-    if (!league) {
-      setError(`No league found with code "${trimmed}". Double-check with the league admin.`);
+    try {
+      const league = await fsGetLeague(trimmed);
+      if (!league) {
+        setError(`No league found with code "${trimmed}". Double-check with the league admin.`);
+        return;
+      }
+      if (!league.members.includes(user.uid)) {
+        await fsAddLeagueMember(trimmed, user.uid);
+      }
+      onDone(trimmed);
+    } catch (err) {
+      // Without this the button stayed disabled and nothing was reported —
+      // it just looked like the app had ignored the click.
+      console.error("Join league failed", err);
+      setError("Couldn't join that league — check your connection and try again.");
+    } finally {
       setBusy(false);
-      return;
     }
-    if (!league.members.includes(user.uid)) {
-      await fsAddLeagueMember(trimmed, user.uid);
-    }
-    onDone(trimmed);
   };
 
   return (

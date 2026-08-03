@@ -99,6 +99,26 @@ export async function fsGetAllUsers() {
 
 const usernameKey = (name) => String(name || "").trim().toLowerCase();
 
+export const USERNAME_MAX = 20;
+
+// Validates a username BEFORE it's used as a Firestore document id.
+//
+// This isn't cosmetic. The lowercased name becomes the id of a doc in
+// `usernames`, and Firestore rejects ids containing "/" or equal to "." or
+// ".." — so a name like "a/b" made getDoc throw, which surfaced as a raw
+// SDK error mid-signup. The character allowlist sidesteps all of that, and
+// the length cap stops a 200-character name wrecking the standings table.
+// Returns an error string, or null when the name is fine.
+export function validateUsername(name) {
+  const trimmed = String(name || "").trim();
+  if (trimmed.length < 3) return "Username must be at least 3 characters.";
+  if (trimmed.length > USERNAME_MAX) return `Username can be at most ${USERNAME_MAX} characters.`;
+  if (!/^[A-Za-z0-9 _-]+$/.test(trimmed)) return "Use only letters, numbers, spaces, hyphens and underscores.";
+  if (!/[A-Za-z0-9]/.test(trimmed)) return "Username needs at least one letter or number.";
+  if (/\s{2,}/.test(trimmed)) return "Username can't contain double spaces.";
+  return null;
+}
+
 export async function fsIsUsernameTaken(username, excludeUid) {
   const key = usernameKey(username);
   if (!key) return false;
@@ -151,8 +171,22 @@ export async function fsRecordLoginAndGetPrevious(uid) {
 // count in the app.
 // ══════════════════════════════════════════════════════════════════════════
 
+// Creates a league under a randomly generated code.
+//
+// The existence check matters: the code IS the document id, so a plain setDoc
+// on a code that happened to already exist would silently overwrite a real
+// league — deleting its members, settings and history. A collision is very
+// unlikely (36^6 ≈ 2.2 billion codes) but the consequence is total data loss
+// for that league, so it's worth the extra read.
 export async function fsCreateLeague(league) {
-  await setDoc(doc(db, "leagues", league.id), league);
+  const ref = doc(db, "leagues", league.id);
+  const existing = await getDoc(ref);
+  if (existing.exists()) {
+    const err = new Error("league-code-collision");
+    err.code = "league-code-collision";
+    throw err;
+  }
+  await setDoc(ref, league);
 }
 
 export async function fsGetLeague(leagueId) {

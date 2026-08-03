@@ -29,26 +29,21 @@ function StatCard({ value, label, color, accent, suffix = "", sub = null, emptyL
 }
 
 export default function DashboardTab({ user, league, allUsers, allPredictions, results, specialResults, lastLoginPrev, setTab }) {
-  if (!league) {
-    return (
-      <div className="glass card">
-        <div className="empty-state">
-          <div className="empty-state-icon">🏈</div>
-          <div className="empty-state-title">No league yet</div>
-          <div className="empty-state-sub" style={{ marginBottom: 16 }}>
-            Create one and share the code with friends, or join a league someone's already sent you a code for.
-          </div>
-          <button className="btn btn-primary" onClick={() => setTab("leagues")}>Go to My Leagues</button>
-        </div>
-      </div>
-    );
-  }
-
+  // ⚠️ Every hook in this component must run BEFORE the "no league" guard
+  // further down.
+  //
+  // The guard used to sit at the top, which broke the rules of hooks: on load
+  // the leagues subscription hasn't delivered yet, so `league` is null and the
+  // component returned early having called no hooks. A moment later the league
+  // arrives, the same mounted component re-renders, and suddenly five useMemos
+  // run — React sees more hooks than last time and throws. Keep the guard
+  // below the hooks and this can't recur.
   const scoring = getScoringSettings(league);
   // Used only for the "my rank / my points / my accuracy" stat cards below;
   // StandingsCard independently computes (and persists) the same standings
   // for the movement-arrow table, so this is a light, side-effect-free calc.
-  const standings = useMemo(() => calcStandings(league, allUsers, allPredictions, results, specialResults, scoring),
+  const standings = useMemo(
+    () => (league ? calcStandings(league, allUsers, allPredictions, results, specialResults, scoring) : []),
     [league, allUsers, allPredictions, results, specialResults]);
 
   // "What's new since you last logged in" — driven by the account-wide
@@ -106,6 +101,22 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
   const accuracyPct = me && me.gamesScored > 0
     ? Math.round((me.correct / me.gamesScored) * 100)
     : null;
+
+  // ── Guard goes HERE, after every hook. See the note at the top. ──────────
+  if (!league) {
+    return (
+      <div className="glass card">
+        <div className="empty-state">
+          <div className="empty-state-icon">🏈</div>
+          <div className="empty-state-title">No league yet</div>
+          <div className="empty-state-sub" style={{ marginBottom: 16 }}>
+            Create one and share the code with friends, or join a league someone's already sent you a code for.
+          </div>
+          <button className="btn btn-primary" onClick={() => setTab("leagues")}>Go to My Leagues</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

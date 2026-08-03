@@ -81,10 +81,24 @@ export default function HowItWorks({ onClose }) {
 
         <div className="howto-section">
           <div className="howto-heading">6 · Ties</div>
-          <p>
-            Level on points? The tiebreakers run in order: Super Bowl pick, then conference
-            picks, then division picks, then total correct picks. Whenever a tie is broken,
-            an ⓘ appears next to the name explaining exactly why.
+          <p style={{ marginBottom: 8 }}>
+            Level on points? Eight tiebreakers run in order — the season picks first, since
+            calling the Super Bowl in August is the hardest thing to fluke, then your
+            week-by-week form.
+          </p>
+          <div className="scoring-summary">
+            <div className="scoring-row"><span>1 · Correct Super Bowl pick</span></div>
+            <div className="scoring-row"><span>2 · Correct conference picks</span></div>
+            <div className="scoring-row"><span>3 · Correct division picks</span></div>
+            <div className="scoring-row"><span>4 · 🏅 Game weeks won</span></div>
+            <div className="scoring-row"><span>5 · 🧹 Clean Sweep weeks</span></div>
+            <div className="scoring-row"><span>6 · 🎯 Near Perfect weeks</span></div>
+            <div className="scoring-row"><span>7 · 💎 Sharp Weeks</span></div>
+            <div className="scoring-row"><span>8 · Total correct picks</span></div>
+          </div>
+          <p style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>
+            Whenever a tie is broken, an ⓘ appears next to the name explaining exactly which
+            one separated you.
           </p>
         </div>
 

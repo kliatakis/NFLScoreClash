@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fbRegister, fbLogin, fbResetPassword, fbSendVerificationEmail, fsWriteUser, fsReadUser, fsIsUsernameTaken, fsClaimUsername } from "../firebase.js";
+import { fbRegister, fbLogin, fbResetPassword, fbSendVerificationEmail, fsWriteUser, fsReadUser, fsIsUsernameTaken, fsClaimUsername, validateUsername, USERNAME_MAX } from "../firebase.js";
 import { WordmarkLogo } from "./Logo.jsx";
 import { detectTimezone } from "../lib/time.js";
 import Footer from "./Footer.jsx";
@@ -23,7 +23,8 @@ export default function AuthPage({ onLogin }) {
         return;
       }
       if (mode === "register") {
-        if (!username.trim()) { setError("Pick a username."); return; }
+        const nameError = validateUsername(username);
+        if (nameError) { setError(nameError); return; }
         // Checked against the public `usernames` collection, NOT `users` —
         // there's no signed-in user at this point, so reading `users` here is
         // (correctly) forbidden and used to fail the whole sign-up.
@@ -66,7 +67,8 @@ export default function AuthPage({ onLogin }) {
           {mode === "register" && (
             <div className="form-group">
               <label className="form-label">Username</label>
-              <input className="form-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="How friends will see you" />
+              <input className="form-input" value={username} onChange={e => setUsername(e.target.value)}
+                placeholder="How friends will see you" maxLength={USERNAME_MAX} />
             </div>
           )}
           <div className="form-group">

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fsWriteUser, fsIsUsernameTaken, fsClaimUsername, fbChangePassword, fbChangeEmail, fbDeleteAccountCascade } from "../firebase.js";
+import { fsWriteUser, fsIsUsernameTaken, fsClaimUsername, fbChangePassword, fbChangeEmail, fbDeleteAccountCascade, validateUsername, USERNAME_MAX } from "../firebase.js";
 import Avatar, { PRESET_AVATARS } from "./Avatar.jsx";
 import { COMMON_TIMEZONES, DEFAULT_TIMEZONE } from "../lib/time.js";
 
@@ -7,6 +7,8 @@ export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, on
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState(user.username);
   const [usernameErr, setUsernameErr] = useState("");
+  const [usernameOk, setUsernameOk] = useState(false);
+  const [savingName, setSavingName] = useState(false);
   // main | password | email | delete — swaps the bottom of the dropdown
   // into a small inline form instead of opening a separate modal.
   const [accountView, setAccountView] = useState("main");
@@ -19,20 +21,28 @@ export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, on
 
   const saveUsername = async () => {
     const trimmed = username.trim();
-    setUsernameErr("");
-    if (!trimmed) return;
+    setUsernameErr(""); setUsernameOk(false);
     if (trimmed === user.username) return;
-    if (await fsIsUsernameTaken(trimmed, user.uid)) { setUsernameErr("That username is taken."); return; }
+    const invalid = validateUsername(trimmed);
+    if (invalid) { setUsernameErr(invalid); return; }
+    // The whole thing is wrapped: fsIsUsernameTaken talks to the network and
+    // used to be awaited bare, so a failure there became an unhandled
+    // rejection and the button just did nothing at all.
+    setSavingName(true);
     try {
+      if (await fsIsUsernameTaken(trimmed, user.uid)) { setUsernameErr("That username is taken."); return; }
       // Claim first: if this fails the rename doesn't happen, so the profile
       // and the claim can't disagree about who owns the name.
       await fsClaimUsername(user.uid, trimmed, user.username);
+      await fsWriteUser(user.uid, { username: trimmed });
+      onUpdate({ ...user, username: trimmed });
+      setUsernameOk(true);
+      setTimeout(() => setUsernameOk(false), 2000);
     } catch (err) {
-      setUsernameErr(err?.message || "Couldn't take that username.");
-      return;
+      setUsernameErr(err?.message || "Couldn't save that username.");
+    } finally {
+      setSavingName(false);
     }
-    await fsWriteUser(user.uid, { username: trimmed });
-    onUpdate({ ...user, username: trimmed });
   };
 
   const closeAccountPanel = () => setAccountView("main");
@@ -77,10 +87,14 @@ export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, on
               </div>
             </div>
             <div className="profile-section" style={{ display: "flex", gap: 8 }}>
-              <input className="form-input" value={username} onChange={e => setUsername(e.target.value)} style={{ fontSize: 13, padding: "8px 12px" }} />
-              <button className="btn btn-primary btn-sm" onClick={saveUsername}>Save</button>
+              <input className="form-input" value={username} maxLength={USERNAME_MAX}
+                onChange={e => setUsername(e.target.value)} style={{ fontSize: 13, padding: "8px 12px" }} />
+              <button className="btn btn-primary btn-sm" disabled={savingName} onClick={saveUsername}>
+                {savingName ? "…" : "Save"}
+              </button>
             </div>
             {usernameErr && <div className="error-msg" style={{ margin: "0 12px 8px" }}>{usernameErr}</div>}
+            {usernameOk && <div className="success-msg" style={{ margin: "0 12px 8px" }}>Username updated.</div>}
             <div className="profile-section toggle-row">
               <span style={{ fontSize: 13, fontWeight: 600 }}>Dark mode</span>
               <div className={`toggle ${darkMode ? "on" : ""}`} onClick={onToggleDark} />
