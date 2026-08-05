@@ -97,7 +97,9 @@ export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, on
             {usernameOk && <div className="success-msg" style={{ margin: "0 12px 8px" }}>Username updated.</div>}
             <div className="profile-section toggle-row">
               <span style={{ fontSize: 13, fontWeight: 600 }}>Dark mode</span>
-              <div className={`toggle ${darkMode ? "on" : ""}`} onClick={onToggleDark} />
+              {/* A div can't be focused or toggled with the keyboard. */}
+              <button type="button" className={`toggle ${darkMode ? "on" : ""}`}
+                role="switch" aria-checked={darkMode} aria-label="Dark mode" onClick={onToggleDark} />
             </div>
             <div className="profile-section">
               <div className="form-label">Kickoff times shown in</div>

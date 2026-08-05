@@ -1,12 +1,14 @@
 import { DEFAULT_SCORING, WEEK_BADGES } from "../lib/scoring.js";
+import { useEscapeKey } from "../lib/hooks.js";
 
 // A short explainer for people who just got handed a league code and have no
 // idea how any of this scores. Deliberately generic — it describes the rules
 // and shows the DEFAULT point values, noting that each league can change
 // them (the live values for a specific league are shown under its standings).
 export default function HowItWorks({ onClose }) {
+  useEscapeKey(onClose);
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="How ScoreClash works">
       <div className="modal" style={{ maxWidth: 520, maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         <div className="modal-title">How ScoreClash Works</div>
         <p className="modal-sub">The whole game in about a minute.</p>
@@ -106,8 +108,10 @@ export default function HowItWorks({ onClose }) {
           <div className="howto-heading">7 · The playoffs</div>
           <p>
             All thirteen playoff games are in the <b>Playoffs</b> tab from day one, sitting greyed
-            out until the regular season decides who's actually in them. Once a league admin
-            confirms a matchup it opens for predictions and scores exactly like any other game.
+            out until the regular season decides who's actually in them. A game opens for
+            predictions once an admin has set both teams <i>and</i> a kickoff time — the kickoff
+            is what locks it, so without one it stays closed. From there it scores exactly like
+            any other game.
           </p>
         </div>
 

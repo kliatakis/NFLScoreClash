@@ -9,6 +9,7 @@
 
 import {
   REGULAR_SEASON_FIXTURES, PLAYOFF_FIXTURES, SCORABLE_FIXTURES, SPECIAL_PICK_TYPES,
+  effectiveKickoffUTC, isPlayoffMatchupReady,
 } from "../src/data/fixtures.js";
 import {
   DEFAULT_SCORING, getScoringSettings, pickWinner, resultWinner, classifyPick,
@@ -296,6 +297,44 @@ for (const type of SPECIAL_PICK_TYPES) {
   }
 }
 t("an unknown pick type falls back to all teams", teamsForSpecialPick(undefined).length === TEAM_CODES.length);
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Schedule integrity");
+{
+  const ids = [...REGULAR_SEASON_FIXTURES, ...PLAYOFF_FIXTURES].map(f => f.id);
+  t("no duplicate fixture ids", new Set(ids).size === ids.length);
+  t("every fixture references known teams",
+    REGULAR_SEASON_FIXTURES.every(f => TEAMS[f.home] && TEAMS[f.away]));
+  const counts = Object.fromEntries(TEAM_CODES.map(c => [c, 0]));
+  for (const f of REGULAR_SEASON_FIXTURES) { counts[f.home]++; counts[f.away]++; }
+  t("every team plays exactly 17 games", Object.values(counts).every(n => n === 17));
+  let clash = false;
+  for (let w = 1; w <= 18; w++) {
+    const seen = new Set();
+    for (const f of REGULAR_SEASON_FIXTURES.filter(x => x.week === w)) {
+      for (const c of [f.home, f.away]) { if (seen.has(c)) clash = true; seen.add(c); }
+    }
+  }
+  t("no team appears twice in the same week", !clash);
+  const pairs = new Map();
+  for (const f of REGULAR_SEASON_FIXTURES) {
+    const k = `${f.away}@${f.home}`;
+    pairs.set(k, (pairs.get(k) || 0) + 1);
+  }
+  t("no ambiguous away@home pair (the fetcher matches on this)",
+    [...pairs.values()].every(n => n === 1));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Playoff matchups must be lockable");
+t("a placeholder alone has no lock time", effectiveKickoffUTC(PLAYOFF_FIXTURES[0]) === null);
+t("teams but no kickoff is NOT ready", isPlayoffMatchupReady({ home: "KC", away: "BUF" }) === false);
+t("kickoff but no teams is NOT ready", isPlayoffMatchupReady({ kickoffUTC: "2027-01-10T18:00:00Z" }) === false);
+t("teams AND kickoff is ready",
+  isPlayoffMatchupReady({ home: "KC", away: "BUF", kickoffUTC: "2027-01-10T18:00:00Z" }) === true);
+t("nothing at all is not ready", isPlayoffMatchupReady(undefined) === false);
+t("a merged, ready matchup does resolve a lock time",
+  effectiveKickoffUTC({ ...PLAYOFF_FIXTURES[0], kickoffUTC: "2027-01-10T18:00:00Z" }) === "2027-01-10T18:00:00Z");
 
 // ────────────────────────────────────────────────────────────────────────────
 console.log(`\n${total - failures}/${total} passed.`);

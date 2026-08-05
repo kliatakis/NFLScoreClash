@@ -141,3 +141,15 @@ export function useSeasonPicksLock() {
   }, []);
   return locked;
 }
+
+// Closes a modal on Escape. Every dialog in the app could be dismissed by
+// clicking the backdrop but not by keyboard, which left keyboard and screen
+// reader users stuck inside one.
+export function useEscapeKey(onEscape) {
+  useEffect(() => {
+    if (!onEscape) return;
+    const onKey = (e) => { if (e.key === "Escape") onEscape(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onEscape]);
+}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useEscapeKey } from "../lib/hooks.js";
 import {
   fsCreateLeague, fsGetLeague, fsAddLeagueMember, fsRemoveLeagueMember,
   fsSetLeagueAdmins, fsDeleteLeague, fsGetAllUsers, fsLeaveLeague,
@@ -222,6 +223,7 @@ function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, onLeft }) 
 }
 
 function CreateLeagueModal({ user, onClose, onDone }) {
+  useEscapeKey(onClose);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -261,7 +263,7 @@ function CreateLeagueModal({ user, onClose, onDone }) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Create league">
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-title">Create League</div>
         <p className="modal-sub">A unique code will be generated for your friends to join.</p>
@@ -280,6 +282,7 @@ function CreateLeagueModal({ user, onClose, onDone }) {
 }
 
 function JoinLeagueModal({ user, onClose, onDone }) {
+  useEscapeKey(onClose);
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -310,7 +313,7 @@ function JoinLeagueModal({ user, onClose, onDone }) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Join league">
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-title">Join League</div>
         <p className="modal-sub">Enter the 6-character league code shared by the league admin.</p>

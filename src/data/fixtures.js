@@ -411,3 +411,15 @@ export function effectiveKickoffUTC(fixture) {
 export function hasEstimatedKickoff(fixture) {
   return !!fixture && !fixture.kickoffUTC;
 }
+
+// Whether an admin-entered playoff matchup is complete enough to open for
+// predictions.
+//
+// The kickoff time is REQUIRED, not optional. A playoff placeholder has no
+// week to derive a fallback lock time from (see effectiveKickoffUTC), so a
+// matchup saved with teams but no time produced a game that opened for picks
+// and then never locked — editable while it was being played. Teams alone are
+// not enough.
+export function isPlayoffMatchupReady(matchup) {
+  return !!(matchup && matchup.home && matchup.away && matchup.kickoffUTC);
+}

@@ -87,13 +87,17 @@ export default function AuthPage({ onLogin }) {
           </button>
 
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, fontSize: 12, color: "var(--muted)" }}>
+            {/* Buttons, not spans. These were click-only, which meant a
+                keyboard user could not reach "Create an account" at all —
+                there is no other route to the sign-up form. type="button" is
+                required: inside a <form>, a bare button submits it. */}
             {mode === "login" ? (
               <>
-                <span style={{ cursor: "pointer" }} onClick={() => setMode("register")}>Create an account</span>
-                <span style={{ cursor: "pointer" }} onClick={() => setMode("reset")}>Forgot password?</span>
+                <button type="button" className="link-btn" onClick={() => setMode("register")}>Create an account</button>
+                <button type="button" className="link-btn" onClick={() => setMode("reset")}>Forgot password?</button>
               </>
             ) : (
-              <span style={{ cursor: "pointer" }} onClick={() => setMode("login")}>← Back to sign in</span>
+              <button type="button" className="link-btn" onClick={() => setMode("login")}>← Back to sign in</button>
             )}
           </div>
         </form>

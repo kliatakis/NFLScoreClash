@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS } from "../data/fixtures.js";
+import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, isPlayoffMatchupReady } from "../data/fixtures.js";
 import { TEAMS, TEAM_CODES, teamsByDivision, teamsByConference, teamsForSpecialPick } from "../data/teams.js";
 import {
   fsSetResult, fsClearResult, fsSetSpecialResult, fsUpdateLeague, fsDeleteLeague,
@@ -191,7 +191,7 @@ function PlayoffEntry({ timezone }) {
   useEffect(() => fsSubscribePlayoffFixtures(setMatchups), []);
   useEffect(() => fsSubscribeResults(setResults), []);
 
-  const setCount = PLAYOFF_FIXTURES.filter(f => matchups[f.id]?.home && matchups[f.id]?.away).length;
+  const setCount = PLAYOFF_FIXTURES.filter(f => isPlayoffMatchupReady(matchups[f.id])).length;
 
   return (
     <div>
@@ -235,22 +235,34 @@ function PlayoffRow({ fixture, matchup, result, timezone }) {
   const options = fixture.conf ? teamsByConference(fixture.conf) : TEAM_CODES;
   const isSet = !!(matchup?.home && matchup?.away);
 
+  const [error, setError] = useState("");
+
   const save = async () => {
+    setError("");
     if (!away || !home || away === home) return;
+    // A kickoff time is mandatory: it's the only thing that can lock this game,
+    // so saving without one would open it for picks that never close.
+    if (!when) { setError("Set a kickoff time — without one this game would never lock."); return; }
+    const kickoff = new Date(when);
+    if (isNaN(kickoff)) { setError("That kickoff time isn't valid."); return; }
     setBusy(true);
-    await fsSetPlayoffFixture(fixture.id, {
-      away, home,
-      kickoffUTC: when ? new Date(when).toISOString() : null,
-    });
-    setBusy(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
+    try {
+      await fsSetPlayoffFixture(fixture.id, { away, home, kickoffUTC: kickoff.toISOString() });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (err) {
+      console.error("Failed to save playoff matchup", err);
+      setError("Couldn't save — check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const clear = async () => {
     setBusy(true);
-    await fsClearPlayoffFixture(fixture.id);
-    setBusy(false);
+    try { await fsClearPlayoffFixture(fixture.id); }
+    catch (err) { console.error("Failed to clear playoff matchup", err); setError("Couldn't clear that matchup."); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -260,6 +272,8 @@ function PlayoffRow({ fixture, matchup, result, timezone }) {
         {isSet && <span className="chip active">Set</span>}
         {result && <span className="chip">Final {result.awayScore}–{result.homeScore}</span>}
         {isSet && matchup?.kickoffUTC && <span>{formatKickoff(matchup.kickoffUTC, timezone)}</span>}
+        {isSet && !matchup?.kickoffUTC && <span style={{ color: "var(--gold)" }}>No kickoff time — still closed for picks</span>}
+        {error && <span style={{ color: "var(--accent2)" }}>{error}</span>}
       </span>
 
       <select className="form-select" style={{ maxWidth: 190 }} value={away} onChange={e => setAway(e.target.value)}>

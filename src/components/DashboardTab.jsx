@@ -135,7 +135,9 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
       />
 
       {rival && (
-        <div className="glass card rival-card" onClick={() => setTab("leagues")}>
+        <div className="glass card rival-card" role="button" tabIndex={0} aria-label="View the league standings"
+          onClick={() => setTab("leagues")}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("leagues"); } }}>
           <div className="rival-label">Closest rival</div>
           <div className="rival-body">
             <Avatar user={allUsers[rival.entry.uid]} size={40} />
@@ -155,7 +157,9 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
       )}
 
       {pickProgress && pickProgress.made < pickProgress.total && (
-        <div className="glass card pick-progress" onClick={() => setTab("predictions")}>
+        <div className="glass card pick-progress" role="button" tabIndex={0} aria-label="Go to your predictions"
+          onClick={() => setTab("predictions")}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("predictions"); } }}>
           <div className="pick-progress-head">
             <span>Week {upcomingWeek} picks</span>
             <b>{pickProgress.made} / {pickProgress.total}</b>
@@ -208,7 +212,10 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
 
       <div className="card-title">{upcomingWeek != null ? `Week ${upcomingWeek} — Upcoming Games` : "Upcoming Games"}</div>
       {upcoming.length === 0 && <div className="glass card" style={{ color: "var(--muted)" }}>No upcoming games loaded.</div>}
-      <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
+      {/* Own class rather than inline styles so it can carry a visible
+          scrollbar — the global 5px one is nearly invisible on a dark card,
+          and there was nothing to suggest the row scrolled at all. */}
+      <div className="hscroll">
         {upcoming.map(f => (
           <div key={f.id} className="fixture-card glass team-tinted" style={{ minWidth: 200, flexShrink: 0, ...teamTint(f) }}>
             <div className="fixture-meta">

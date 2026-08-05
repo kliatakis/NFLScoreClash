@@ -53,6 +53,30 @@ export const css = (dark = true) => `
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
 
+  /* Horizontally scrolling strips (the dashboard's upcoming games) get a
+     deliberately VISIBLE scrollbar. The 5px near-transparent default gave no
+     hint that the row scrolled at all, so half the week's fixtures were
+     effectively hidden. */
+  .hscroll {
+    display: flex; gap: 12px; overflow-x: auto;
+    padding-bottom: 14px;
+    scrollbar-width: thin;                       /* Firefox */
+    scrollbar-color: var(--accent) var(--surface2);
+    /* Fades the right edge while there's more to scroll to — a second,
+       colour-independent hint that the row continues. */
+    scroll-snap-type: x proximity;
+  }
+  .hscroll > * { scroll-snap-align: start; }
+  .hscroll::-webkit-scrollbar { height: 10px; }
+  .hscroll::-webkit-scrollbar-track {
+    background: var(--surface2); border-radius: 10px; margin: 0 2px;
+  }
+  .hscroll::-webkit-scrollbar-thumb {
+    background: linear-gradient(90deg, var(--accent), #06d6f7);
+    border-radius: 10px; border: 2px solid transparent; background-clip: padding-box;
+  }
+  .hscroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
   .app { min-height: 100vh; display: flex; flex-direction: column; }
 
   /* Footer — scrolls with the page, not fixed/sticky (no floating bars
@@ -68,6 +92,15 @@ export const css = (dark = true) => `
     font-size: 14px; font-weight: 800; transition: all 0.18s; flex-shrink: 0;
   }
   .help-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* A button that reads as a text link — used for the sign-in / sign-up mode
+     switches, which were plain spans and therefore unreachable by keyboard. */
+  .link-btn {
+    background: none; border: none; padding: 0; cursor: pointer;
+    font-family: var(--font-body); font-size: 12px; color: var(--muted);
+    text-decoration: none;
+  }
+  .link-btn:hover { color: var(--accent); text-decoration: underline; }
 
   .app-footer {
     padding: 28px 24px 20px; text-align: center; margin-top: auto;
@@ -258,14 +291,50 @@ export const css = (dark = true) => `
   .pick-option:hover:not(:disabled) { border-color: var(--side-color, var(--border2)); background: var(--surface3); }
   .pick-option:active:not(:disabled) { transform: scale(0.97); }
   .pick-option:disabled { cursor: default; opacity: 0.75; }
+  /* THE selected state. Deliberately does NOT use the team's own colour.
+     Team colours range from near-black (Browns, Ravens, Jets) to bright, so a
+     tint built from them was invisible for a third of the league — you
+     genuinely could not tell which side you'd picked. This is one fixed,
+     high-contrast treatment that reads identically for all 32 teams. */
   .pick-option.chosen {
-    border-color: var(--side-color, var(--accent));
-    background: color-mix(in srgb, var(--side-color, var(--accent)) 22%, transparent);
-    box-shadow: 0 0 0 1px var(--side-color, var(--accent)), 0 0 18px color-mix(in srgb, var(--side-color, var(--accent)) 35%, transparent);
+    border-color: var(--accent);
+    border-width: 2px;
+    background: linear-gradient(135deg, rgba(59,130,246,0.30), rgba(59,130,246,0.14));
+    box-shadow: 0 0 0 2px var(--accent-glow), 0 4px 20px rgba(59,130,246,0.30);
+    font-weight: 800;
+    transform: translateY(-1px);
   }
+  /* A tick in the corner, so the state survives colour-blindness and doesn't
+     rest on hue alone. */
+  .pick-option.chosen::after {
+    content: "✓";
+    position: absolute; top: -8px; right: -6px;
+    width: 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent); color: #fff; font-size: 11px; font-weight: 900;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+  }
+  .pick-option { position: relative; }
+  /* Once a side is chosen the other one recedes. Contrast between the two
+     options does more work than the highlight alone. */
+  .pick-row.has-pick .pick-option:not(.chosen):not(.actual):not(.was-right) {
+    opacity: 0.4; filter: saturate(0.45);
+  }
+  .pick-row.has-pick .pick-option:not(.chosen):hover:not(:disabled) { opacity: 0.75; filter: none; }
   /* Once a game is final, the row grades itself at a glance. */
-  .pick-option.was-right { border-color: var(--green); background: rgba(34,197,94,0.18); box-shadow: 0 0 0 1px var(--green); }
-  .pick-option.was-wrong { border-color: rgba(244,63,94,0.5); background: rgba(244,63,94,0.10); opacity: 0.75; }
+  /* After the whistle, the result overrides the blue "this is my pick" look —
+     green if you called it, red if you didn't. Both override .chosen, hence
+     the extra specificity. */
+  .pick-option.chosen.was-right, .pick-option.was-right {
+    border-color: var(--green); background: rgba(34,197,94,0.20);
+    box-shadow: 0 0 0 2px rgba(34,197,94,0.45);
+  }
+  .pick-option.chosen.was-right::after { background: var(--green); }
+  .pick-option.chosen.was-wrong, .pick-option.was-wrong {
+    border-color: rgba(244,63,94,0.6); background: rgba(244,63,94,0.12);
+    box-shadow: none; transform: none; opacity: 0.8;
+  }
+  .pick-option.chosen.was-wrong::after { content: "✕"; background: var(--accent2); }
   .pick-option.actual { border-style: dashed; border-color: rgba(34,197,94,0.55); }
   .pick-option-tie {
     font-size: 10.5px; font-weight: 800; letter-spacing: 1px; color: var(--muted);
@@ -286,6 +355,8 @@ export const css = (dark = true) => `
     display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;
     padding: 2px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 800;
     background: rgba(34,197,94,0.14); color: var(--green); border: 1px solid rgba(34,197,94,0.35);
+    /* Now carries a full team name, so it must not break mid-name. */
+    white-space: nowrap;
   }
   .unsaved-badge {
     display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;

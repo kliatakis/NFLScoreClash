@@ -62,24 +62,49 @@ export default function App() {
 
   useEffect(() => {
     const unsub = fbOnAuthChange(async (fbUser) => {
-      setAuthChecked(true);
-      if (!fbUser) { setUser(null); setSelectedLeagueId(null); setTab("dashboard"); return; }
-      const [profile, prevLogin] = await Promise.all([
-        fsReadUser(fbUser.uid),
-        fsRecordLoginAndGetPrevious(fbUser.uid), // account-wide, not per-device
-      ]);
-      setLastLoginPrev(prevLogin);
-      // Back-fill the username claim for accounts created before the
-      // `usernames` collection existed, so their names can't be taken by
-      // someone new. No-ops once claimed; never blocks login.
-      if (profile?.username) {
-        fsClaimUsername(fbUser.uid, profile.username).catch(() => {});
+      // `authChecked` is what gates the sign-in page, and it deliberately does
+      // NOT flip the moment Firebase hands us a user.
+      //
+      // It used to. Firebase would restore the session, this fired with a real
+      // user, authChecked went true — and then we spent two round trips
+      // fetching the profile with `user` still null. For that window the app
+      // decided nobody was signed in and rendered the login page, which is the
+      // flash you'd see on every reload. Now the boot screen stays up until
+      // there's either a full user or a definite no.
+      if (!fbUser) {
+        setUser(null); setSelectedLeagueId(null); setTab("dashboard");
+        setAuthChecked(true);
+        return;
       }
-      setUser({
-        uid: fbUser.uid, username: profile?.username || fbUser.email, email: fbUser.email,
-        avatar: profile?.avatar, timezone: profile?.timezone || "Europe/Athens",
-        emailVerified: fbUser.emailVerified,
-      });
+      try {
+        const [profile, prevLogin] = await Promise.all([
+          fsReadUser(fbUser.uid),
+          fsRecordLoginAndGetPrevious(fbUser.uid), // account-wide, not per-device
+        ]);
+        setLastLoginPrev(prevLogin);
+        // Back-fill the username claim for accounts created before the
+        // `usernames` collection existed, so their names can't be taken by
+        // someone new. No-ops once claimed; never blocks login.
+        if (profile?.username) {
+          fsClaimUsername(fbUser.uid, profile.username).catch(() => {});
+        }
+        setUser({
+          uid: fbUser.uid, username: profile?.username || fbUser.email, email: fbUser.email,
+          avatar: profile?.avatar, timezone: profile?.timezone || "Europe/Athens",
+          emailVerified: fbUser.emailVerified,
+        });
+      } catch (err) {
+        // A failed profile read must not strand a signed-in person on the boot
+        // screen forever — let them in with what the auth token already tells
+        // us, and the live profile subscription will fill in the rest.
+        console.error("Couldn't load profile on sign-in", err);
+        setUser({
+          uid: fbUser.uid, username: fbUser.email, email: fbUser.email,
+          avatar: null, timezone: "Europe/Athens", emailVerified: fbUser.emailVerified,
+        });
+      } finally {
+        setAuthChecked(true);
+      }
     });
     return () => unsub();
   }, []);

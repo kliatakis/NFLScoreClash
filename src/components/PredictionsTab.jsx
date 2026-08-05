@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, hasEstimatedKickoff,
-  PLAYOFF_FIXTURES, PLAYOFF_ROUNDS,
+  PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, isPlayoffMatchupReady,
 } from "../data/fixtures.js";
 import { TEAMS, teamsForSpecialPick, teamTint, teamSideTint } from "../data/teams.js";
 import {
@@ -272,6 +272,16 @@ function GameRow({
     }
   };
 
+  // "You picked the Cleveland Browns" beats a bare "✓ Picked" — with two team
+  // names side by side, the chip should say which one you actually backed.
+  const pickedLabel = () => {
+    if (!savedWinner) return null;
+    if (savedWinner === "T") return "You picked a Tie";
+    const code = savedWinner === "H" ? fixture.home : fixture.away;
+    const team = TEAMS[code];
+    return `You picked the ${team ? `${team.city} ${team.name}` : code}`;
+  };
+
   const optionClass = (side) => {
     const chosen = selected === side;
     const wasRight = hasResult && resultWinner(result) === side;
@@ -316,7 +326,9 @@ function GameRow({
           </span>
         )}
         {hasResult && <span className="final-badge">Final {result.awayScore}–{result.homeScore}</span>}
-        {savedWinner && !hasResult && !saving && !clearing && <span className="picked-badge">✓ Picked</span>}
+        {savedWinner && !hasResult && !saving && !clearing && (
+          <span className="picked-badge">✓ {pickedLabel()}</span>
+        )}
         {/* Tied to the write actually being in flight, not to "draft differs
             from stored". Those look the same until a save fails, at which
             point the row would sit on "Saving…" forever next to an error
@@ -331,7 +343,8 @@ function GameRow({
       {/* One tap per game. Two large targets with a narrow tie strip between —
           NFL ties are around 0.5% of games, so giving "Tie" a third of the row
           would shrink the two options people actually use. */}
-      <div className="pick-row">
+      {/* `has-pick` lets the CSS fade whichever side you DIDN'T choose. */}
+      <div className={`pick-row ${selected ? "has-pick" : ""}`}>
         <button
           className={optionClass("A")}
           disabled={locked || hasResult || saving || clearing}
@@ -420,7 +433,7 @@ function PlayoffPicks({ preds, predsLoaded, results, uid, timezone, league, allU
   const draftFor = (id) => drafts[id] ?? null;
   const isDirty = (id) => drafts[id] !== undefined && drafts[id] !== pickWinner(preds.picks?.[id]);
 
-  const readyCount = PLAYOFF_FIXTURES.filter(f => matchups[f.id]?.home && matchups[f.id]?.away).length;
+  const readyCount = PLAYOFF_FIXTURES.filter(f => isPlayoffMatchupReady(matchups[f.id])).length;
 
   return (
     <div>
@@ -438,13 +451,17 @@ function PlayoffPicks({ preds, predsLoaded, results, uid, timezone, league, allU
             <div className="card-title" style={{ marginBottom: 10 }}>{round.label}</div>
             {fixtures.map(f => {
               const m = matchups[f.id];
-              const ready = !!(m?.home && m?.away);
+              // Requires a kickoff time too — without one the row would never
+              // lock. See isPlayoffMatchupReady.
+              const ready = isPlayoffMatchupReady(m);
               if (!ready) {
                 return (
                   <div key={f.id} className="fixture-card glass playoff-pending">
                     <div className="fixture-meta">{f.label}</div>
                     <div className="fixture-body">
-                      <span style={{ fontSize: 13, color: "var(--muted)" }}>🔒 Teams to be confirmed</span>
+                      <span style={{ fontSize: 13, color: "var(--muted)" }}>
+                        {m?.home && m?.away ? "🔒 Kickoff time not set yet" : "🔒 Teams to be confirmed"}
+                      </span>
                     </div>
                   </div>
                 );
