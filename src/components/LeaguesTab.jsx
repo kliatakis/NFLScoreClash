@@ -12,7 +12,7 @@ import WeeklyStandingsCard from "./WeeklyStandingsCard.jsx";
 import HeadToHeadCard from "./HeadToHeadCard.jsx";
 import SeasonChartCard from "./SeasonChartCard.jsx";
 
-export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, results, specialResults, selectedLeague, onSetLeague }) {
+export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, results, specialResults, selectedLeague, onSetLeague, leaguesLoaded = true }) {
   const [modal, setModal] = useState(null); // "create" | "join"
   const [expandedId, setExpandedId] = useState(null);
   const [expandedPanel, setExpandedPanel] = useState("standings"); // standings | members | admin
@@ -49,7 +49,16 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
         <button className="btn btn-ghost" onClick={() => setModal("join")}>Join with Code</button>
       </div>
 
-      {myLeagues.length === 0 && (
+      {/* Same three-state rule as the dashboard — don't claim someone has no
+          leagues before the subscription has actually answered. */}
+      {!leaguesLoaded && myLeagues.length === 0 && (
+        <div className="glass card">
+          <div className="skeleton skeleton-row" />
+          <div className="skeleton skeleton-row" />
+        </div>
+      )}
+
+      {leaguesLoaded && myLeagues.length === 0 && (
         <div className="glass card">
           <div className="empty-state">
             <div className="empty-state-icon">🏆</div>

@@ -38,6 +38,11 @@ export default function App() {
 
   const [allUsers, setAllUsers] = useState({});
   const [myLeagues, setMyLeagues] = useState([]);
+  // Distinguishes "you have no leagues" from "we haven't heard back yet".
+  // Without it the dashboard rendered its empty state during the gap between
+  // sign-in and the leagues snapshot arriving — a "No league yet" flash on
+  // every single reload, for people who are very much in a league.
+  const [leaguesLoaded, setLeaguesLoaded] = useState(false);
   const [allPredictions, setAllPredictions] = useState({});
   const [results, setResults] = useState({});
   const [specialResults, setSpecialResults] = useState({});
@@ -117,7 +122,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const u1 = fsSubscribeAllUsers(setAllUsers);
-    const u2 = fsSubscribeMyLeagues(user.uid, setMyLeagues);
+    const u2 = fsSubscribeMyLeagues(user.uid, (ls) => { setMyLeagues(ls); setLeaguesLoaded(true); });
     const u3 = fsSubscribeAllPredictions(setAllPredictions);
     const u4 = fsSubscribeResults(setResults);
     const u5 = fsSubscribeSpecialResults(setSpecialResults);
@@ -185,7 +190,14 @@ export default function App() {
     );
   }
 
-  const selectedLeague = myLeagues.find(l => l.id === selectedLeagueId) || null;
+  // Falls back to your only league rather than waiting for the auto-select
+  // effect to run. That effect fires AFTER the render in which the leagues
+  // first arrive, so without this fallback there is one frame where you have
+  // exactly one league and nothing selected — another flash of the empty
+  // state.
+  const selectedLeague =
+    myLeagues.find(l => l.id === selectedLeagueId)
+    || (myLeagues.length === 1 ? myLeagues[0] : null);
 
   const navItems = [
     { key: "dashboard", label: "Dashboard" },
@@ -224,11 +236,12 @@ export default function App() {
             <DashboardTab
               user={user} league={selectedLeague} allUsers={allUsers} allPredictions={allPredictions}
               results={results} specialResults={specialResults} lastLoginPrev={lastLoginPrev} setTab={setTab}
+              leaguesLoaded={leaguesLoaded} hasLeagues={myLeagues.length > 0}
             />
           )}
           {tab === "leagues" && (
             <LeaguesTab
-              user={user} myLeagues={myLeagues} allUsers={allUsers}
+              user={user} myLeagues={myLeagues} allUsers={allUsers} leaguesLoaded={leaguesLoaded}
               allPredictions={allPredictions} results={results} specialResults={specialResults}
               selectedLeague={selectedLeagueId} onSetLeague={setSelectedLeagueId}
 

@@ -28,7 +28,7 @@ function StatCard({ value, label, color, accent, suffix = "", sub = null, emptyL
   );
 }
 
-export default function DashboardTab({ user, league, allUsers, allPredictions, results, specialResults, lastLoginPrev, setTab }) {
+export default function DashboardTab({ user, league, allUsers, allPredictions, results, specialResults, lastLoginPrev, setTab, leaguesLoaded = true, hasLeagues = false }) {
   // ⚠️ Every hook in this component must run BEFORE the "no league" guard
   // further down.
   //
@@ -103,14 +103,31 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
     : null;
 
   // ── Guard goes HERE, after every hook. See the note at the top. ──────────
+  //
+  // Three distinct states, not two. Collapsing the first into the second is
+  // what produced a "No league yet" flash on every reload: between signing in
+  // and the leagues snapshot landing there IS no league, but saying so is a
+  // lie that gets corrected a moment later.
   if (!league) {
+    if (!leaguesLoaded) {
+      return (
+        <div className="glass card">
+          <div className="skeleton skeleton-title" />
+          <div className="skeleton skeleton-row" />
+          <div className="skeleton skeleton-row" />
+          <div className="skeleton skeleton-row" />
+        </div>
+      );
+    }
     return (
       <div className="glass card">
         <div className="empty-state">
           <div className="empty-state-icon">🏈</div>
-          <div className="empty-state-title">No league yet</div>
+          <div className="empty-state-title">{hasLeagues ? "Pick a league" : "No league yet"}</div>
           <div className="empty-state-sub" style={{ marginBottom: 16 }}>
-            Create one and share the code with friends, or join a league someone's already sent you a code for.
+            {hasLeagues
+              ? "You're in more than one league — choose which one this dashboard should follow."
+              : "Create one and share the code with friends, or join a league someone's already sent you a code for."}
           </div>
           <button className="btn btn-primary" onClick={() => setTab("leagues")}>Go to My Leagues</button>
         </div>

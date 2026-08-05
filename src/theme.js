@@ -770,6 +770,7 @@ export const css = (dark = true) => `
      panel that snaps into content. */
   .skeleton { border-radius: 8px; background: linear-gradient(90deg, var(--surface2) 25%, var(--surface3) 50%, var(--surface2) 75%); background-size: 800px 100%; animation: shimmer 1.4s linear infinite; }
   .skeleton-row { height: 44px; margin-bottom: 8px; border-radius: 12px; }
+  .skeleton-title { height: 20px; width: 45%; margin-bottom: 16px; }
 
   /* Fade each tab's content in, so switching views feels intentional. */
   .tab-view { animation: tab-in 0.28s ease both; }

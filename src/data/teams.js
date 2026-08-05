@@ -6,10 +6,18 @@
 // to a flat color+abbreviation badge (falling back is still supported by
 // TeamBadge for any team missing an `emoji` field — see components/TeamBadge.jsx).
 //
-// A few raptor-heavy teams (Eagles/Falcons/Seahawks/Ravens) would otherwise all
-// want the same generic hawk/eagle emoji, so a couple were given a distinct
-// "vibe" pick instead (Falcons → fire, Seahawks → the loud "12th man" crowd)
-// so the league table doesn't look repetitive.
+// A few raptor-heavy teams (Eagles/Falcons/Seahawks/Ravens/Cardinals) would
+// otherwise all want the same bird, and Unicode has no falcon or hawk at all —
+// only 🦅 and 🦉 are birds of prey. So the cluster is split: Eagles keep 🦅,
+// Ravens 🐦‍⬛, Cardinals 🐦, Falcons take 🪶 (the bird by implication rather
+// than the wrong species), and Seahawks get the loud "12th man" crowd 🔊.
+//
+// Two more worth knowing about, since they look arbitrary otherwise:
+//   Patriots 🇺🇸 — there is no rifle emoji (proposed for Unicode 9, withdrawn;
+//     🔫 renders as a water pistol everywhere), so the flag stands in.
+//   Commanders 🪖 — built on the current name. The franchise retired its
+//     previous identity in 2020, and Unicode has no Native American emoji in
+//     any case; the nearest, 🏹, is already the Chiefs.
 
 export const DIVISIONS = {
   AFC: ["AFC East", "AFC North", "AFC South", "AFC West"],
@@ -20,7 +28,7 @@ export const TEAMS = {
   // ── AFC East ──
   BUF: { city: "Buffalo",       name: "Bills",       abbr: "BUF", conf: "AFC", div: "AFC East",  primary: "#00338D", secondary: "#C60C30", emoji: "🦬" },
   MIA: { city: "Miami",         name: "Dolphins",    abbr: "MIA", conf: "AFC", div: "AFC East",  primary: "#008E97", secondary: "#FC4C02", emoji: "🐬" },
-  NE:  { city: "New England",   name: "Patriots",    abbr: "NE",  conf: "AFC", div: "AFC East",  primary: "#002244", secondary: "#C60C30", emoji: "🔔" },
+  NE:  { city: "New England",   name: "Patriots",    abbr: "NE",  conf: "AFC", div: "AFC East",  primary: "#002244", secondary: "#C60C30", emoji: "🇺🇸" },
   NYJ: { city: "New York",      name: "Jets",        abbr: "NYJ", conf: "AFC", div: "AFC East",  primary: "#125740", secondary: "#000000", emoji: "✈️" },
 
   // ── AFC North ──
@@ -45,7 +53,7 @@ export const TEAMS = {
   DAL: { city: "Dallas",        name: "Cowboys",     abbr: "DAL", conf: "NFC", div: "NFC East",  primary: "#003594", secondary: "#869397", emoji: "🤠" },
   NYG: { city: "New York",      name: "Giants",      abbr: "NYG", conf: "NFC", div: "NFC East",  primary: "#0B2265", secondary: "#A71930", emoji: "🗽" },
   PHI: { city: "Philadelphia",  name: "Eagles",      abbr: "PHI", conf: "NFC", div: "NFC East",  primary: "#004C54", secondary: "#A5ACAF", emoji: "🦅" },
-  WAS: { city: "Washington",    name: "Commanders",  abbr: "WAS", conf: "NFC", div: "NFC East",  primary: "#5A1414", secondary: "#FFB612", emoji: "🫡" },
+  WAS: { city: "Washington",    name: "Commanders",  abbr: "WAS", conf: "NFC", div: "NFC East",  primary: "#5A1414", secondary: "#FFB612", emoji: "🪖" },
 
   // ── NFC North ──
   CHI: { city: "Chicago",       name: "Bears",       abbr: "CHI", conf: "NFC", div: "NFC North", primary: "#0B162A", secondary: "#C83803", emoji: "🐻" },
@@ -54,7 +62,7 @@ export const TEAMS = {
   MIN: { city: "Minnesota",     name: "Vikings",     abbr: "MIN", conf: "NFC", div: "NFC North", primary: "#4F2683", secondary: "#FFC62F", emoji: "⚔️" },
 
   // ── NFC South ──
-  ATL: { city: "Atlanta",       name: "Falcons",     abbr: "ATL", conf: "NFC", div: "NFC South", primary: "#A71930", secondary: "#000000", emoji: "🔥" },
+  ATL: { city: "Atlanta",       name: "Falcons",     abbr: "ATL", conf: "NFC", div: "NFC South", primary: "#A71930", secondary: "#000000", emoji: "🪶" },
   CAR: { city: "Carolina",      name: "Panthers",    abbr: "CAR", conf: "NFC", div: "NFC South", primary: "#0085CA", secondary: "#101820", emoji: "🐈‍⬛" },
   NO:  { city: "New Orleans",   name: "Saints",      abbr: "NO",  conf: "NFC", div: "NFC South", primary: "#D3BC8D", secondary: "#101820", emoji: "⚜️" },
   TB:  { city: "Tampa Bay",     name: "Buccaneers",  abbr: "TB",  conf: "NFC", div: "NFC South", primary: "#D50A0A", secondary: "#34302B", emoji: "🏴‍☠️" },
