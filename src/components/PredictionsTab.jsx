@@ -294,22 +294,49 @@ function GameRow({
     ].filter(Boolean).join(" ");
   };
 
-  // Only built once the game is final and we know which league's members to
-  // reveal — nothing shown otherwise (no result yet, or no league selected).
-  const revealRows = hasResult && league ? league.members.map(mUid => {
+  // Revealed from the moment the game LOCKS, not from the moment it's scored.
+  //
+  // Once picks are locked nobody can act on this, so hiding it until a result
+  // lands only removed the most interesting hour of the week — "four of us
+  // took the Chiefs and you didn't" is the whole point of playing in a group.
+  // Before the result there are no ✅/❌ marks, just who took whom.
+  const revealOpen = (locked || hasResult) && !!league;
+  const sideName = (side) =>
+    side === "T" ? "Tie" : (TEAMS[side === "H" ? fixture.home : fixture.away]?.abbr ?? side);
+
+  const revealRows = revealOpen ? league.members.map(mUid => {
     const mPick = (allPredictions[mUid]?.picks || {})[fixture.id];
+    const side = pickWinner(mPick);
+    if (!side) return { uid: mUid, label: "No pick", status: "none", side: null };
+    if (!hasResult) return { uid: mUid, label: sideName(side), status: "pending", side };
     // Same classifier the standings use, so a pick can never be labelled one
     // way here and counted another way there.
     const kind = classifyPick(mPick, result);
-    if (!kind) return { uid: mUid, label: "No pick", status: "none" };
-    const side = pickWinner(mPick);
-    const name = side === "T" ? "Tie" : (TEAMS[side === "H" ? fixture.home : fixture.away]?.abbr ?? side);
     return {
       uid: mUid,
-      label: `${name} ${kind === "correct" ? "✅" : "❌"}`,
+      label: `${sideName(side)} ${kind === "correct" ? "✅" : "❌"}`,
       status: kind === "correct" ? "correct" : "wrong",
+      side,
     };
   }) : null;
+
+  // "5 of 6 backed KC" — the headline that makes the list worth opening, and
+  // the thing that tells you instantly whether you're with the crowd.
+  const consensus = (() => {
+    if (!revealRows) return null;
+    const made = revealRows.filter(r => r.side);
+    if (made.length === 0) return null;
+    const tally = {};
+    for (const r of made) tally[r.side] = (tally[r.side] || 0) + 1;
+    const [topSide, count] = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+    const mine = selected;
+    return {
+      text: `${count} of ${made.length} backed ${sideName(topSide)}`,
+      // Only interesting when you're actually against the grain.
+      contrarian: mine && tally[mine] === 1 && made.length > 2,
+      unanimous: count === made.length && made.length > 1,
+    };
+  })();
 
   return (
     <div
@@ -377,20 +404,31 @@ function GameRow({
         <div className="fixture-reveal"><span className="lock-badge locked">🔒 Locked</span></div>
       )}
 
-      {revealRows && <RevealPicks rows={revealRows} allUsers={allUsers} />}
+      {revealRows && <RevealPicks rows={revealRows} allUsers={allUsers} consensus={consensus} settled={hasResult} />}
     </div>
   );
 }
 
 // Shared by GameRow and SpecialPicks — collapsed by default so a long weekly
 // slate doesn't turn into a wall of everyone's scores by default.
-function RevealPicks({ rows, allUsers }) {
+function RevealPicks({ rows, allUsers, consensus, settled }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="fixture-reveal">
-      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>
-        {open ? "Hide" : "Show"} Everyone's Picks
-      </button>
+      <div className="reveal-head">
+        <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>
+          {open ? "Hide" : "Show"} Everyone's Picks
+        </button>
+        {consensus && (
+          <span className={`consensus ${consensus.contrarian ? "contrarian" : ""} ${consensus.unanimous ? "unanimous" : ""}`}>
+            {consensus.unanimous ? "Everyone agreed · " : ""}{consensus.text}
+            {consensus.contrarian ? " · you're on your own 😬" : ""}
+          </span>
+        )}
+      </div>
+      {!settled && open && (
+        <div className="reveal-note">Locked in — result still to come.</div>
+      )}
       {open && (
         <div className="reveal-list">
           {rows.map(r => (

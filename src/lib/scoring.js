@@ -1,4 +1,4 @@
-import { REGULAR_SEASON_FIXTURES, SCORABLE_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
+import { REGULAR_SEASON_FIXTURES, SCORABLE_FIXTURES, SPECIAL_PICK_TYPES, effectiveKickoffUTC } from "../data/fixtures.js";
 
 // ─── SCORING SETTINGS ───────────────────────────────────────────────────────
 //
@@ -290,6 +290,100 @@ export function calcStandings(league, allUsers, allPredictions, results, special
     // order instead of one that flips between renders.
     b.correct - a.correct
   );
+}
+
+// ─── STREAKS ────────────────────────────────────────────────────────────────
+//
+// Consecutive correct picks, in the order the games were actually played.
+//
+// Games you didn't pick are SKIPPED rather than treated as a miss — the same
+// rule the accuracy stat already uses ("didn't play" is not "got it wrong").
+// Without that, taking one week off would wipe a run you'd earned over a
+// month, which reads as a punishment for something that isn't a bad call.
+export function pickStreaks(uid, allPredictions, results) {
+  const picks = (allPredictions[uid] || {}).picks || {};
+  const played = SCORABLE_FIXTURES
+    .filter(f => results[f.id])
+    .map(f => ({ f, kind: classifyPick(picks[f.id], results[f.id]) }))
+    .filter(x => x.kind !== null)
+    .sort((a, b) => {
+      const ka = effectiveKickoffUTC(a.f), kb = effectiveKickoffUTC(b.f);
+      if (ka && kb && ka !== kb) return ka < kb ? -1 : 1;
+      return (a.f.week ?? 99) - (b.f.week ?? 99);
+    });
+
+  let current = 0, best = 0;
+  for (const { kind } of played) {
+    if (kind === "correct") { current++; if (current > best) best = current; }
+    else current = 0;
+  }
+  return { current, best, scored: played.length };
+}
+
+// ─── LIVE WEEK STATUS ───────────────────────────────────────────────────────
+//
+// What's still on the table in a week that's PART WAY through.
+//
+// The bonus itself doesn't settle until every game is in (see
+// weekAccuracyBadge), but that's about awarding points — it shouldn't stop the
+// app saying "you're 6 from 6, the sweep is still alive" on a Sunday
+// afternoon, which is the most exciting the week ever gets.
+//
+// Returns null when there's nothing to say: week not started, already
+// finished, or you didn't pick the whole week so no bonus was ever possible.
+export function liveWeekStatus(uid, week, allPredictions, results, scoring = DEFAULT_SCORING) {
+  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+  if (fixtures.length === 0) return null;
+
+  const picks = (allPredictions[uid] || {}).picks || {};
+  const withResults = fixtures.filter(f => results[f.id]);
+  if (withResults.length === 0 || withResults.length === fixtures.length) return null; // not started, or done
+
+  // A bonus needs the WHOLE week picked, including games not yet played.
+  if (!fixtures.every(f => pickWinner(picks[f.id]))) return null;
+
+  let misses = 0, correct = 0;
+  for (const f of withResults) {
+    if (classifyPick(picks[f.id], results[f.id]) === "correct") correct++;
+    else misses++;
+  }
+  // The best tier still mathematically reachable given the misses so far.
+  const tier = WEEK_BADGES.find(b => b.misses >= misses) || null;
+  if (!tier) return null; // three or more misses — nothing left to chase
+
+  return {
+    week,
+    played: withResults.length,
+    total: fixtures.length,
+    remaining: fixtures.length - withResults.length,
+    correct,
+    misses,
+    tier,
+    points: Number(scoring[tier.bonusKey] ?? 0),
+    perfect: misses === 0,
+  };
+}
+
+// Which league members still have unmade picks for a given week, and when the
+// first game of that week locks. Drives the "chase the stragglers" nudge —
+// the recurring friction in a friends league is the person who forgets.
+export function pendingPickers(league, allUsers, allPredictions, week, results = {}) {
+  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+  if (fixtures.length === 0) return null;
+  // Once the week is under way, nagging is pointless — those games are locked.
+  if (fixtures.some(f => results[f.id])) return null;
+
+  const kickoffs = fixtures.map(f => effectiveKickoffUTC(f)).filter(Boolean).sort();
+  const missing = (league?.members || [])
+    .map(uid => {
+      const picks = (allPredictions[uid] || {}).picks || {};
+      const made = fixtures.filter(f => pickWinner(picks[f.id])).length;
+      return { uid, username: allUsers[uid]?.username || "Unknown", made, total: fixtures.length };
+    })
+    .filter(m => m.made < m.total)
+    .sort((a, b) => a.made - b.made || a.username.localeCompare(b.username));
+
+  return { week, missing, firstKickoffUTC: kickoffs[0] || null, total: fixtures.length };
 }
 
 // Human-readable breakdown of a player's bonus total, one line per tier, for

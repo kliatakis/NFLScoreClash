@@ -16,6 +16,7 @@ import {
   calcMatchScore, weekAccuracyBadge, calcStandings, calcWeeklyStandings,
   computeWeeklyRecap, computeHighlights, headToHead, weeklyWinTally,
   calcSeasonProgression, explainTiebreak, finishedWeeks, completedWeeks, describeBonuses,
+  pickStreaks, liveWeekStatus, pendingPickers,
 } from "../src/lib/scoring.js";
 import { TEAMS, TEAM_CODES, teamsForSpecialPick } from "../src/data/teams.js";
 
@@ -335,6 +336,96 @@ t("teams AND kickoff is ready",
 t("nothing at all is not ready", isPlayoffMatchupReady(undefined) === false);
 t("a merged, ready matchup does resolve a lock time",
   effectiveKickoffUTC({ ...PLAYOFF_FIXTURES[0], kickoffUTC: "2027-01-10T18:00:00Z" }) === "2027-01-10T18:00:00Z");
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Streaks");
+{
+  const g = scenario({ a: { 1: 0, 2: 0 } });   // two perfect weeks back to back
+  const st = pickStreaks("a", g.preds, g.results);
+  t("a perfect run counts every game", st.current === week(1).length + week(2).length, `${st.current}`);
+  t("best equals current while unbroken", st.best === st.current);
+}
+{
+  // scenario() puts the misses FIRST in each week, so week 1 ends on a long
+  // correct run and week 2 opens with three misses.
+  const g = scenario({ a: { 1: 0, 2: 3 } });
+  const st = pickStreaks("a", g.preds, g.results);
+  t("a miss resets the current streak", st.current < st.best, `current ${st.current}, best ${st.best}`);
+  t("best remembers the earlier run", st.best >= week(1).length, `${st.best}`);
+}
+{
+  // A skipped game must not be treated as a miss.
+  const g = scenario({ a: { 1: 0, 2: 0 } });
+  const skipped = week(2)[0];
+  delete g.preds.a.picks[skipped.id];
+  const st = pickStreaks("a", g.preds, g.results);
+  t("an unpicked game is skipped, not counted as wrong",
+    st.current === week(1).length + week(2).length - 1, `${st.current}`);
+}
+t("no picks at all is a zero streak", pickStreaks("nobody", {}, {}).current === 0);
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Live week status");
+{
+  const g = scenario({ a: { 1: 0 } });
+  const fixtures = week(1);
+  for (const f of fixtures.slice(5)) delete g.results[f.id];    // 5 of 16 played
+  const live = liveWeekStatus("a", 1, g.preds, g.results, SC);
+  t("a part-played perfect week reports a live sweep", live?.tier.id === "sweep");
+  t("it counts what's played, not the whole week", live.played === 5 && live.total === fixtures.length);
+  t("remaining games reported", live.remaining === fixtures.length - 5);
+  t("it carries the league's bonus value", live.points === SC.sweepBonus);
+  t("perfect flag set", live.perfect === true);
+}
+{
+  const g = scenario({ a: { 1: 1 } });                          // one miss
+  for (const f of week(1).slice(5)) delete g.results[f.id];
+  const live = liveWeekStatus("a", 1, g.preds, g.results, SC);
+  t("one miss drops the live tier to Near Perfect", live?.tier.id === "near");
+  t("...and it is no longer flagged perfect", live.perfect === false);
+}
+{
+  const g = scenario({ a: { 1: 4 } });                          // four misses
+  for (const f of week(1).slice(6)) delete g.results[f.id];
+  t("four misses leaves nothing to chase", liveWeekStatus("a", 1, g.preds, g.results, SC) === null);
+}
+{
+  const g = scenario({ a: { 1: 0 } });                          // week complete
+  t("a finished week reports no live status (the badge does)",
+    liveWeekStatus("a", 1, g.preds, g.results, SC) === null);
+}
+{
+  const g = scenario({ a: { 1: 0 } });
+  for (const f of week(1).slice(5)) delete g.results[f.id];
+  delete g.preds.a.picks[week(1)[15].id];                       // an unpicked game later in the week
+  t("an unpicked game later in the week kills the live status",
+    liveWeekStatus("a", 1, g.preds, g.results, SC) === null);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Straggler nudge");
+{
+  const g = scenario({ a: { 1: 0 }, b: { 1: 0 }, c: {} });
+  const results = {};                                            // nothing played yet
+  const pend = pendingPickers(g.league, g.users, g.preds, 1, results);
+  t("only members with gaps are listed", pend.missing.length === 1 && pend.missing[0].uid === "c");
+  t("it reports how far along they are", pend.missing[0].made === 0 && pend.missing[0].total === week(1).length);
+  t("a first kickoff is resolved for the nudge clock", !!pend.firstKickoffUTC);
+}
+{
+  const g = scenario({ a: { 1: 0 }, b: { 1: 0 } });
+  t("nobody outstanding means no nudge",
+    pendingPickers(g.league, g.users, g.preds, 1, {}).missing.length === 0);
+}
+{
+  // scenario() only creates results for weeks someone played, so week 1 has to
+  // actually be under way for this to test what it claims to.
+  const g = scenario({ a: { 1: 0 }, b: { 1: 0 } });
+  t("games already have results, so the week is under way",
+    week(1).some(f => g.results[f.id]));
+  t("once the week has started, nagging stops",
+    pendingPickers(g.league, g.users, g.preds, 1, g.results) === null);
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 console.log(`\n${total - failures}/${total} passed.`);

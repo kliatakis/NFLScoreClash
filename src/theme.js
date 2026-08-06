@@ -229,11 +229,49 @@ export const css = (dark = true) => `
     transition: border-color 0.18s;
   }
   .form-input:focus, .form-select:focus { border-color: var(--accent); }
+
+  /* Native selects render as an OS control — grey on Windows, rounded-blue on
+     macOS — which looked like a foreign object dropped into a dark neon UI.
+     appearance:none hands the box back to us; the arrow then has to be drawn
+     ourselves, since removing the native chrome removes the native chevron. */
+  .form-select {
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    background-color: var(--surface2);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23${dark ? "8890ab" : "6b7290"}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 11px 8px;
+    padding-right: 34px;
+    cursor: pointer;
+  }
+  .form-select:hover { border-color: var(--border2); }
+  .form-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+  }
+  .form-select:disabled { opacity: 0.55; cursor: default; background-image: none; }
+  /* Compact variant — a real class rather than inline padding, because an
+     inline padding shorthand overrides the padding-right above and the
+     arrow ends up sitting on top of the text. */
+  .form-select-sm {
+    font-size: 12px; padding: 6px 28px 6px 10px;
+    background-position: right 9px center; background-size: 10px 7px;
+  }
   /* Native dropdown options can't inherit the app's surface colours, so they
      need explicit values — and they must follow the theme. This was hardcoded
      dark, which made every dropdown unreadable in light mode (dark option
      background under dark option text). */
-  .form-select option { background: ${dark ? "#14141d" : "#ffffff"}; color: var(--text); }
+  .form-select option, .form-select optgroup {
+    background: ${dark ? "#14141d" : "#ffffff"};
+    color: var(--text);
+    /* Chrome on Windows ignores padding here, but Firefox honours it and the
+       list is noticeably easier to read with it. */
+    padding: 8px 10px;
+  }
+  .form-select optgroup {
+    font-weight: 800; font-size: 11px; letter-spacing: 0.5px;
+    color: ${dark ? "#8890ab" : "#6b7290"};
+  }
 
   .page-title { font-family: var(--font-display); font-size: 32px; letter-spacing: 1px; margin-bottom: 4px; }
   .page-sub { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
@@ -451,6 +489,68 @@ export const css = (dark = true) => `
 
   /* Reveal-everyone's-picks (Predictions tab, once a game/pick is decided) */
   .fixture-reveal { padding: 0 18px 12px; }
+  /* ── Pick reveal + consensus ──────────────────────────────────────────── */
+  .reveal-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .consensus { font-size: 11.5px; color: var(--muted); }
+  .consensus.unanimous { color: var(--gold); }
+  .consensus.contrarian { color: var(--accent2); font-weight: 700; }
+  .reveal-note { margin-top: 6px; font-size: 11px; color: var(--muted); font-style: italic; }
+  .reveal-pending { color: var(--text); font-weight: 600; }
+
+  /* ── Live week status ─────────────────────────────────────────────────── */
+  .live-week {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 14px;
+    border-left: 3px solid var(--accent);
+  }
+  .live-week.perfect { border-left-color: var(--gold); background: rgba(245,158,11,0.06); }
+  .live-week-icon { font-size: 26px; line-height: 1; flex-shrink: 0; }
+  .live-week-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .live-week-body b { font-size: 14px; }
+  .live-week-body span { font-size: 12px; color: var(--muted); }
+  .live-week-pts {
+    font-family: var(--font-display); font-size: 22px; color: var(--gold); flex-shrink: 0;
+  }
+
+  /* ── Streak ───────────────────────────────────────────────────────────── */
+  .streak-card {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+    font-size: 13px; color: var(--muted); border-left: 3px solid var(--accent2);
+  }
+  .streak-card b { color: var(--text); }
+  .streak-flame { font-size: 20px; line-height: 1; }
+
+  /* ── "Who hasn't picked" nudge ────────────────────────────────────────── */
+  .nudge-card { margin-bottom: 14px; cursor: pointer; border-left: 3px solid var(--gold); }
+  .nudge-card:hover { border-color: var(--border2); border-left-color: var(--gold); }
+  .nudge-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .nudge-head b { font-size: 13.5px; }
+  .nudge-clock { font-size: 11.5px; color: var(--gold); font-weight: 700; }
+  .nudge-list { display: flex; gap: 6px; flex-wrap: wrap; }
+  .nudge-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 20px; font-size: 11.5px;
+    background: var(--surface2); border: 1px solid var(--border);
+  }
+  .nudge-pill.you { border-color: rgba(245,158,11,0.5); color: var(--gold); font-weight: 700; }
+  .nudge-pill em { font-style: normal; opacity: 0.6; font-size: 10.5px; }
+
+  /* ── Announcement-board reactions ─────────────────────────────────────── */
+  .reaction-bar { display: flex; gap: 6px; margin-top: 8px; }
+  .reaction {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 20px; cursor: pointer;
+    background: transparent; border: 1px solid var(--border);
+    font-size: 12px; line-height: 1.6; transition: all 0.15s;
+    /* Dimmed until used, so an untouched row stays quiet. */
+    opacity: 0.45;
+  }
+  .reaction:hover:not(:disabled) { opacity: 1; border-color: var(--border2); transform: translateY(-1px); }
+  .reaction.has { opacity: 1; background: var(--surface2); }
+  .reaction.mine { border-color: var(--accent); background: rgba(59,130,246,0.14); }
+  .reaction em { font-style: normal; font-size: 10.5px; font-weight: 800; color: var(--muted); }
+  .reaction.mine em { color: var(--accent); }
+  .highlight-row { position: relative; }
+
   .reveal-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
   .reveal-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--border); }
   .reveal-row:last-child { border-bottom: none; }
@@ -715,7 +815,18 @@ export const css = (dark = true) => `
   .profile-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
 
   .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; }
-  .toggle { width: 40px; height: 22px; border-radius: 11px; background: var(--surface3); position: relative; cursor: pointer; transition: background 0.18s; }
+  /* This is a <button> (it has to be, to be reachable by keyboard), so it
+     arrives with a default border and native appearance. The border is the
+     alignment bug: with box-sizing: border-box the 40x22 track included a 2px
+     browser border, and the absolutely-positioned knob is placed against the
+     PADDING box — so it sat 2px in from where it looked like it should, and
+     the "on" travel overshot by the same amount. */
+  .toggle {
+    width: 40px; height: 22px; border-radius: 11px; background: var(--surface3);
+    position: relative; cursor: pointer; transition: background 0.18s;
+    border: none; padding: 0; margin: 0; flex-shrink: 0;
+    appearance: none; -webkit-appearance: none;
+  }
   .toggle.on { background: var(--accent); }
   .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 0.18s; }
   .toggle.on::after { transform: translateX(18px); }

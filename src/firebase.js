@@ -171,6 +171,28 @@ export async function fsRecordLoginAndGetPrevious(uid) {
 // count in the app.
 // ══════════════════════════════════════════════════════════════════════════
 
+// Toggles the caller's reaction on one announcement-board row.
+//
+// Stored on the league doc under `reactions.<rowKey>.<emoji>` as an array of
+// uids, so a row's whole state is one small map and the board can render from
+// the league subscription it already has — no extra collection, no extra read.
+// `rowKey` encodes week + category + subject so it stays stable across
+// re-renders and week switches (see HighlightsCard).
+export async function fsToggleReaction(leagueId, rowKey, emoji, uid) {
+  const ref = doc(db, "leagues", leagueId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const current = snap.data().reactions || {};
+  const forRow = { ...(current[rowKey] || {}) };
+  const list = Array.isArray(forRow[emoji]) ? forRow[emoji] : [];
+  forRow[emoji] = list.includes(uid) ? list.filter(u => u !== uid) : [...list, uid];
+  // Drop empties so the map doesn't accumulate dead keys all season.
+  if (forRow[emoji].length === 0) delete forRow[emoji];
+  await updateDoc(ref, {
+    [`reactions.${rowKey}`]: Object.keys(forRow).length ? forRow : deleteField(),
+  });
+}
+
 // Creates a league under a randomly generated code.
 //
 // The existence check matters: the code IS the document id, so a plain setDoc

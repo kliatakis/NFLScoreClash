@@ -40,7 +40,7 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
           <div className="card-title" style={{ marginBottom: 0 }}>Week {week} Points</div>
           {weeks.length > 1 && (
-            <select className="form-select" style={{ maxWidth: 130, fontSize: 12, padding: "6px 10px" }}
+            <select className="form-select form-select-sm" style={{ maxWidth: 130 }}
               value={week} onChange={e => setPickedWeek(Number(e.target.value))}>
               {weeks.map(w => <option key={w} value={w}>Week {w}</option>)}
             </select>

@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import { calcStandings, getScoringSettings, pickWinner } from "../lib/scoring.js";
+import { calcStandings, getScoringSettings, pickWinner, pickStreaks, liveWeekStatus, pendingPickers } from "../lib/scoring.js";
 import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
 import { teamTint } from "../data/teams.js";
-import { formatKickoff } from "../lib/time.js";
+import { formatKickoff, formatDuration } from "../lib/time.js";
 import { useCountUp } from "../lib/hooks.js";
 import Avatar from "./Avatar.jsx";
 import StandingsCard from "./StandingsCard.jsx";
@@ -95,6 +95,30 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
     return { made, total: weekFixtures.length };
   }, [upcomingWeek, allPredictions, user.uid]);
 
+  // Your run of consecutive correct calls. Median best over a season is
+  // around 10, so this is a number worth watching.
+  const streaks = useMemo(
+    () => pickStreaks(user.uid, allPredictions, results),
+    [allPredictions, results, user.uid]);
+
+  // Mid-week tension: a bonus tier you're still on course for. Only ever
+  // appears while a week is part-played — see liveWeekStatus.
+  const live = useMemo(() => {
+    const weeks = REGULAR_SEASON_FIXTURES.map(f => f.week);
+    for (const w of [...new Set(weeks)].sort((a, b) => a - b)) {
+      const st = liveWeekStatus(user.uid, w, allPredictions, results, scoring);
+      if (st) return st;
+    }
+    return null;
+  }, [allPredictions, results, user.uid, league]);
+
+  // Who still hasn't done their picks. Nagging is the point.
+  const pending = useMemo(
+    () => (league && upcomingWeek != null
+      ? pendingPickers(league, allUsers, allPredictions, upcomingWeek, results)
+      : null),
+    [league, allUsers, allPredictions, upcomingWeek, results]);
+
   // Accuracy = games where you called the winner, out of games that have a
   // result AND a pick. Games you didn't pick aren't held against you — that's
   // a "didn't play" state, not a wrong guess.
@@ -151,6 +175,54 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         onGoToPicks={() => setTab("predictions")}
       />
 
+      {live && (
+        <div className={`glass card live-week ${live.perfect ? "perfect" : ""}`}>
+          <div className="live-week-icon">{live.tier.icon}</div>
+          <div className="live-week-body">
+            <b>{live.tier.label} still alive</b>
+            <span>
+              {live.correct} from {live.played} in Week {live.week}
+              {live.misses > 0 ? ` · ${live.misses} miss${live.misses === 1 ? "" : "es"}` : ""}
+              {" · "}{live.remaining} game{live.remaining === 1 ? "" : "s"} to go
+            </span>
+          </div>
+          <div className="live-week-pts">+{live.points}</div>
+        </div>
+      )}
+
+      {streaks.current >= 3 && (
+        <div className="glass card streak-card">
+          <span className="streak-flame">🔥</span>
+          <span>
+            <b>{streaks.current} in a row</b> — your best this season is {streaks.best}.
+          </span>
+        </div>
+      )}
+
+      {pending && pending.missing.length > 0 && (
+        <div className="glass card nudge-card" role="button" tabIndex={0}
+          aria-label="Go to your predictions"
+          onClick={() => setTab("predictions")}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("predictions"); } }}>
+          <div className="nudge-head">
+            <b>Week {pending.week} picks outstanding</b>
+            {pending.firstKickoffUTC && (
+              <span className="nudge-clock">
+                first lock in {formatDuration(new Date(pending.firstKickoffUTC).getTime() - Date.now() - 15 * 60000)}
+              </span>
+            )}
+          </div>
+          <div className="nudge-list">
+            {pending.missing.map(m => (
+              <span key={m.uid} className={`nudge-pill ${m.uid === user.uid ? "you" : ""}`}>
+                {m.uid === user.uid ? "You" : m.username}
+                <em>{m.made}/{m.total}</em>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {rival && (
         <div className="glass card rival-card" role="button" tabIndex={0} aria-label="View the league standings"
           onClick={() => setTab("leagues")}
@@ -192,7 +264,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         </div>
       )}
 
-      <HighlightsCard league={league} allUsers={allUsers} allPredictions={allPredictions} results={results} />
+      <HighlightsCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} />
 
       <div className="grid-4" style={{ marginBottom: 24 }}>
         <StatCard

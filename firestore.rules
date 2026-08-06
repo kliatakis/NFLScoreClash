@@ -81,7 +81,11 @@ service cloud.firestore {
           request.auth.uid in resource.data.members &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'standingsSnapshot', 'standingsSnapshotVersion',
-            'standingsTrackedSnapshot', 'standingsTrackedVersion'
+            'standingsTrackedSnapshot', 'standingsTrackedVersion',
+            // Announcement-board reactions: any member may add or remove their
+            // own. Scoped to this one field so it can't be used as a way to
+            // edit members, admins or scoring.
+            'reactions'
           ])
         ) ||
 

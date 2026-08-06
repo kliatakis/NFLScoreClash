@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { fsToggleReaction } from "../firebase.js";
 import { computeHighlights, computeWeeklyRecap, getScoringSettings } from "../lib/scoring.js";
 import { TEAMS } from "../data/teams.js";
 import TeamBadge from "./TeamBadge.jsx";
@@ -48,7 +49,42 @@ function badgeShout({ badge, users }, week) {
 // accuracy bonuses, long-shot correct calls, and the rare miss on an
 // "obvious" result. Renders nothing at all if there's no completed week yet, or
 // nothing notable happened (small leagues especially — see computeHighlights).
-export default function HighlightsCard({ league, allUsers, allPredictions, results }) {
+// The reactions people actually reach for on a results board: nice call,
+// clown move, and pure disbelief.
+const REACTIONS = ["🔥", "🤡", "😂"];
+
+// One row's reaction strip. Renders from the league doc, which the parent
+// already subscribes to, so a tap by anyone shows up for everyone live.
+function ReactionBar({ leagueId, rowKey, reactions, uid }) {
+  const [busy, setBusy] = useState("");
+  const forRow = reactions?.[rowKey] || {};
+  const toggle = async (emoji) => {
+    if (!leagueId || busy) return;
+    setBusy(emoji);
+    try { await fsToggleReaction(leagueId, rowKey, emoji, uid); }
+    catch (err) { console.error("Reaction failed", err); }
+    finally { setBusy(""); }
+  };
+  return (
+    <div className="reaction-bar">
+      {REACTIONS.map(emoji => {
+        const who = forRow[emoji] || [];
+        const mine = who.includes(uid);
+        return (
+          <button key={emoji} type="button" disabled={!!busy}
+            className={`reaction ${mine ? "mine" : ""} ${who.length ? "has" : ""}`}
+            aria-pressed={mine} aria-label={`React ${emoji}`}
+            onClick={() => toggle(emoji)}>
+            <span>{emoji}</span>
+            {who.length > 0 && <em>{who.length}</em>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function HighlightsCard({ league, user, allUsers, allPredictions, results }) {
   // null = follow the latest week automatically; a number = the user picked
   // a specific week from the selector.
   const [pickedWeek, setPickedWeek] = useState(null);
@@ -63,6 +99,9 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
     [league, allUsers, allPredictions, results, pickedWeek]
   );
 
+  // Live off the league doc the parent already subscribes to.
+  const reactions = league?.reactions || {};
+
   if (!week) return null;
   const nothingHappened = sweeps.length === 0 && upsets.length === 0 && clowns.length === 0;
   // The card used to hide itself when no callouts fired. It no longer does —
@@ -75,8 +114,8 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
         <div className="card-title" style={{ marginBottom: 0 }}>Week {week} Highlights</div>
         {weeks.length > 1 && (
           <select
-            className="form-select"
-            style={{ maxWidth: 130, fontSize: 12, padding: "6px 10px" }}
+            className="form-select form-select-sm"
+            style={{ maxWidth: 130 }}
             value={week}
             onChange={e => setPickedWeek(Number(e.target.value))}
           >
@@ -158,16 +197,19 @@ export default function HighlightsCard({ league, allUsers, allPredictions, resul
         {sweeps.map(s => (
           <div key={`sweep-${s.badge.id}`} className={`highlight-row badge-shout acc-${s.badge.id}`}>
             <b>{league.name}</b>: {s.badge.icon} {badgeShout(s, week)}
+            <ReactionBar leagueId={league.id} rowKey={`${week}:sweep:${s.badge.id}`} reactions={reactions} uid={user?.uid} />
           </div>
         ))}
         {upsets.map((h, i) => (
-          <div key={`upset-${i}`} className="highlight-row">
+          <div key={`upset-${h.fixture.id}`} className="highlight-row">
             <b>{league.name}</b>: 🔮 <b>{joinNames(h.users)}</b> called the upset in {gameLabel(h.fixture)}!!
+            <ReactionBar leagueId={league.id} rowKey={`${week}:upset:${h.fixture.id}`} reactions={reactions} uid={user?.uid} />
           </div>
         ))}
         {clowns.map((h, i) => (
-          <div key={`clown-${i}`} className="highlight-row">
+          <div key={`clown-${h.fixture.id}`} className="highlight-row">
             <b>{league.name}</b>: 🤡 <b>{joinNames(h.users)}</b> {h.users.length === 1 ? "was the only one" : "were the only ones"} who didn't predict {gameLabel(h.fixture)} correctly. Did you flip a coin or just close your eyes?
+            <ReactionBar leagueId={league.id} rowKey={`${week}:clown:${h.fixture.id}`} reactions={reactions} uid={user?.uid} />
           </div>
         ))}
       </div>

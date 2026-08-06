@@ -51,7 +51,7 @@ export default function HeadToHeadCard({ league, user, allUsers, allPredictions,
       <div className="glass card" style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
           <div className="card-title" style={{ marginBottom: 0 }}>Head to Head</div>
-          <select className="form-select" style={{ maxWidth: 200, fontSize: 12.5, padding: "6px 10px" }}
+          <select className="form-select form-select-sm" style={{ maxWidth: 200 }}
             value={opponentId} onChange={e => setChosenId(e.target.value)}>
             {opponents.map(uid => (
               <option key={uid} value={uid}>vs {allUsers[uid]?.username || "Unknown"}</option>
