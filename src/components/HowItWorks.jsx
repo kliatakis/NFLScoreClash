@@ -37,11 +37,18 @@ export default function HowItWorks({ onClose }) {
         <div className="howto-section">
           <div className="howto-heading">3 · How points work</div>
           <div className="scoring-summary">
-            <div className="scoring-row"><span>Correct winner</span><span className="scoring-pts">{DEFAULT_SCORING.correctPoints} pt</span></div>
-            <div className="scoring-row"><span>🤝 Correctly called a tie</span><span className="scoring-pts">{DEFAULT_SCORING.tiePoints} pts</span></div>
-            <div className="scoring-row"><span>Division winner</span><span className="scoring-pts">{DEFAULT_SCORING.divisionPoints} pts</span></div>
-            <div className="scoring-row"><span>Conference champion</span><span className="scoring-pts">{DEFAULT_SCORING.conferencePoints} pts</span></div>
-            <div className="scoring-row"><span>Super Bowl champion</span><span className="scoring-pts">{DEFAULT_SCORING.superbowlPoints} pts</span></div>
+            {[
+              ["Correct winner", DEFAULT_SCORING.correctPoints],
+              ["🤝 Correctly called a tie", DEFAULT_SCORING.tiePoints],
+              ["Division winner", DEFAULT_SCORING.divisionPoints],
+              ["Conference champion", DEFAULT_SCORING.conferencePoints],
+              ["Super Bowl champion", DEFAULT_SCORING.superbowlPoints],
+            ].map(([label, pts]) => (
+              <div key={label} className="scoring-row">
+                <span>{label}</span>
+                <span className="scoring-pts">{pts} {pts === 1 ? "pt" : "pts"}</span>
+              </div>
+            ))}
           </div>
           <p style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>
             These are the defaults — a league admin can change them. Your league's actual
@@ -59,7 +66,7 @@ export default function HowItWorks({ onClose }) {
             {WEEK_BADGES.map(b => (
               <div key={b.id} className="scoring-row">
                 <span>{b.icon} <b>{b.label}</b> — {b.blurb}</span>
-                <span className="scoring-pts">+{DEFAULT_SCORING[b.bonusKey]}</span>
+                <span className="scoring-pts">{DEFAULT_SCORING[b.bonusKey]} pts</span>
               </div>
             ))}
           </div>

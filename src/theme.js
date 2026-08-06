@@ -573,7 +573,15 @@ export const css = (dark = true) => `
      bold text (bold-on-dark-background didn't read as a "value" clearly). */
   .scoring-summary { display: flex; flex-direction: column; gap: 2px; }
   .scoring-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; font-size: 11px; color: var(--muted); }
-  .scoring-pts { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; padding: 2px 10px; border-radius: 20px; background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); color: var(--accent); font-weight: 700; font-size: 10px; }
+  /* Fixed width, not min-width: the values ranged from "1 pt" to "+10" and
+     each pill sized itself to its own text, so the column edge zig-zagged. */
+  .scoring-pts {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 58px; flex-shrink: 0; padding: 2px 6px; border-radius: 20px;
+    background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3);
+    color: var(--accent); font-weight: 700; font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
 
   /* Notes — card-style rows with a numbered badge instead of a plain "1."
      list marker, and the 4-step tiebreaker order shown as a chip chain
@@ -734,6 +742,18 @@ export const css = (dark = true) => `
 
   /* Shared keyframes used by the animated logo intro (components/Logo.jsx) */
   @keyframes draw-ring { to { stroke-dashoffset: 0; } }
+  /* Boot animation extras — the bolt landing should have a consequence, and
+     the mark should keep breathing while data loads instead of freezing. */
+  @keyframes hex-shock {
+    0%   { opacity: 0.9; transform: scale(1); stroke-width: 3; }
+    100% { opacity: 0; transform: scale(1.9); stroke-width: 0.5; }
+  }
+  @keyframes hex-spin { to { transform: rotate(-360deg); } }
+  @keyframes fade-in-soft { to { opacity: 0.4; } }
+  @keyframes spark-fly {
+    0%   { opacity: 1; transform: rotate(var(--a, 0deg)) translateX(0) scale(1); }
+    100% { opacity: 0; transform: rotate(var(--a, 0deg)) translateX(64px) scale(0.2); }
+  }
   @keyframes bolt-strike { 0% { opacity: 0; transform: scale(0.5) rotate(-8deg); } 60% { opacity: 1; transform: scale(1.15) rotate(3deg); } 100% { opacity: 1; transform: scale(1) rotate(0deg); } }
   @keyframes slide-in-left { to { opacity: 1; transform: translateX(0); } }
   @keyframes slide-in-right { to { opacity: 1; transform: translateX(0); } }

@@ -155,14 +155,24 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
       <div className="standings-legend">
         <div className="standings-legend-title">Scoring</div>
         <div className="scoring-summary">
-          <div className="scoring-row"><span>Correct Winner</span><span className="scoring-pts">{scoring.correctPoints} pt{scoring.correctPoints === 1 ? "" : "s"}</span></div>
-          <div className="scoring-row"><span>🤝 Correctly Called a Tie</span><span className="scoring-pts">{scoring.tiePoints} pt{scoring.tiePoints === 1 ? "" : "s"}</span></div>
-          <div className="scoring-row"><span>🧹 Clean Sweep — whole week correct</span><span className="scoring-pts">+{scoring.sweepBonus}</span></div>
-          <div className="scoring-row"><span>🎯 Near Perfect — one miss</span><span className="scoring-pts">+{scoring.nearPerfectBonus}</span></div>
-          <div className="scoring-row"><span>💎 Sharp Week — two misses</span><span className="scoring-pts">+{scoring.sharpBonus}</span></div>
-          <div className="scoring-row"><span>Division Winner</span><span className="scoring-pts">{scoring.divisionPoints} pt{scoring.divisionPoints === 1 ? "" : "s"}</span></div>
-          <div className="scoring-row"><span>Conference Champion</span><span className="scoring-pts">{scoring.conferencePoints} pt{scoring.conferencePoints === 1 ? "" : "s"}</span></div>
-          <div className="scoring-row"><span>Super Bowl Champion</span><span className="scoring-pts">{scoring.superbowlPoints} pt{scoring.superbowlPoints === 1 ? "" : "s"}</span></div>
+          {[
+            ["Correct Winner", scoring.correctPoints],
+            ["🤝 Correctly Called a Tie", scoring.tiePoints],
+            ["🧹 Clean Sweep — whole week correct", scoring.sweepBonus],
+            ["🎯 Near Perfect — one miss", scoring.nearPerfectBonus],
+            ["💎 Sharp Week — two misses", scoring.sharpBonus],
+            ["Division Winner", scoring.divisionPoints],
+            ["Conference Champion", scoring.conferencePoints],
+            ["Super Bowl Champion", scoring.superbowlPoints],
+          ].map(([label, pts]) => (
+            /* Every line is points, so every line reads the same way. The
+               bonuses used to show "+5" while the rest showed "1 pt", which
+               made them look like a different kind of thing. */
+            <div key={label} className="scoring-row">
+              <span>{label}</span>
+              <span className="scoring-pts">{pts} {pts === 1 ? "pt" : "pts"}</span>
+            </div>
+          ))}
         </div>
       </div>
 

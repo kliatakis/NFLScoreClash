@@ -65,7 +65,7 @@ export function LogoIntro({ name = "SCORECLASH" }) {
         position: "absolute", inset: 0,
         background: "radial-gradient(ellipse at 30% 40%, rgba(59,130,246,0.10) 0%, transparent 55%), radial-gradient(ellipse at 70% 65%, rgba(244,63,94,0.08) 0%, transparent 50%)",
       }} />
-      <svg viewBox="0 0 160 160" width="120" height="120" style={{ overflow: "visible", position: "relative", zIndex: 1 }}>
+      <svg viewBox="0 0 160 160" width="150" height="150" style={{ overflow: "visible", position: "relative", zIndex: 1 }}>
         <defs>
           <filter id="li-soft" x="-40%" y="-40%" width="180%" height="180%">
             <feGaussianBlur stdDeviation="3" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
@@ -77,10 +77,44 @@ export function LogoIntro({ name = "SCORECLASH" }) {
           <linearGradient id="li-blue" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="#3b82f6" /><stop offset="100%" stopColor="#06d6f7" />
           </linearGradient>
+          <linearGradient id="li-red" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#f43f5e" /><stop offset="100%" stopColor="#fb923c" />
+          </linearGradient>
         </defs>
+
+        {/* Shockwave — a hex that expands and fades at the moment the bolt
+            lands, so the strike has consequence instead of just appearing. */}
+        <polygon points="80,20 136,50 136,110 80,140 24,110 24,50" fill="none" stroke="url(#li-red)"
+          strokeWidth="2" strokeLinejoin="round" opacity="0" style={{
+            transformOrigin: "80px 80px",
+            animation: "hex-shock 0.9s cubic-bezier(.2,.7,.3,1) 1.15s forwards",
+          }} />
+
+        {/* Counter-rotating inner ring — slow, continuous, so the mark still
+            feels alive while data loads rather than freezing mid-pose. */}
+        <polygon points="80,42 113,61 113,99 80,118 47,99 47,61" fill="none" stroke="url(#li-blue)"
+          strokeWidth="1" opacity="0" style={{
+            transformOrigin: "80px 80px",
+            animation: "fade-in-soft 0.6s ease 1.3s forwards, hex-spin 14s linear 1.3s infinite",
+          }} />
+
+        {/* Outer ring draws itself in. */}
         <polygon points="80,20 136,50 136,110 80,140 24,110 24,50" fill="none" stroke="url(#li-blue)" strokeWidth="3"
           strokeDasharray="360" strokeDashoffset="360" strokeLinejoin="round" filter="url(#li-soft)"
           style={{ animation: "draw-ring 1.1s cubic-bezier(.4,0,.2,1) forwards" }} />
+
+        {/* Four sparks thrown off the strike. */}
+        {/* The angle rides on a custom property, not on `transform` — the
+            keyframes animate transform, so an inline one would be overwritten
+            the moment the animation started and every spark would fly right. */}
+        {[[30, 0.02], [110, 0.06], [200, 0], [290, 0.09]].map(([deg, delay], i) => (
+          <circle key={i} cx="80" cy="80" r="2.5" fill="url(#li-blue)" opacity="0" style={{
+            transformOrigin: "80px 80px",
+            "--a": `${deg}deg`,
+            animation: `spark-fly 0.7s cubic-bezier(.2,.7,.3,1) ${1.18 + delay}s forwards`,
+          }} />
+        ))}
+
         <path d="M88 46 L64 84 L80 84 L58 122 L104 78 L84 78 Z" fill="url(#li-blue)" filter="url(#li-strong)"
           opacity="0" style={{ animation: "bolt-strike 0.5s cubic-bezier(.2,.8,.3,1.4) 1.05s forwards" }} />
       </svg>

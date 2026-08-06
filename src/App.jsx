@@ -18,7 +18,18 @@ import {
 } from "./firebase.js";
 
 const APP_NAME = "SCORECLASH";
+// Full run of the intro animation, played once per browser session.
 const INTRO_MS = 2600;
+// On a reload the animation is already familiar, so it's cut short — but not
+// arbitrarily. The timeline is: ring draws to 1.1s, bolt strikes 1.05–1.55s,
+// wordmark slides in 1.5–2.0s. Leaving before ~1.8s means exiting on a
+// half-built logo, which is exactly the "something flashed" feeling this is
+// meant to remove. 1.8s is the first moment the composition looks finished.
+const INTRO_REPLAY_MS = 1800;
+// Hard ceiling. If Firestore never answers (offline, blocked, rules broken)
+// the boot screen must still get out of the way and let the app render
+// whatever it has, rather than spinning forever.
+const BOOT_MAX_MS = 6000;
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -26,10 +37,15 @@ export default function App() {
   // The full logo animation is a nice first impression, but a 2.6s wait on
   // every single open gets old fast — especially on a phone. Play it in full
   // once per browser session, then skip straight in on subsequent loads.
-  const [showIntro, setShowIntro] = useState(() => {
+  const [firstRunThisSession] = useState(() => {
     try { return sessionStorage.getItem("sc_introSeen") !== "true"; }
     catch { return true; } // private mode / storage blocked — just play it
   });
+  // Two independent gates, both of which must clear before the app shows:
+  // the animation has had its minimum run, and the first payload of data has
+  // actually arrived.
+  const [introMinDone, setIntroMinDone] = useState(false);
+  const [bootTimedOut, setBootTimedOut] = useState(false);
   const [tab, setTab] = useState("dashboard");
   const [selectedLeagueId, setSelectedLeagueId] = useState(null);
   const [darkMode, setDarkMode] = useState(true);
@@ -48,13 +64,13 @@ export default function App() {
   const [specialResults, setSpecialResults] = useState({});
 
   useEffect(() => {
-    if (!showIntro) return;
-    const id = setTimeout(() => {
-      setShowIntro(false);
+    const hold = setTimeout(() => {
+      setIntroMinDone(true);
       try { sessionStorage.setItem("sc_introSeen", "true"); } catch { /* nothing to do */ }
-    }, INTRO_MS);
-    return () => clearTimeout(id);
-  }, [showIntro]);
+    }, firstRunThisSession ? INTRO_MS : INTRO_REPLAY_MS);
+    const bail = setTimeout(() => setBootTimedOut(true), BOOT_MAX_MS);
+    return () => { clearTimeout(hold); clearTimeout(bail); };
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem("gc_darkMode"); // display preference only — not app data, fine on-device
@@ -170,9 +186,15 @@ export default function App() {
   const handleLogout = async () => { await fbLogout(); };
   const handleProfileUpdate = (updated) => setUser(updated);
 
-  const stillBooting = !authChecked;
+  // The intro used to end on a fixed timer regardless of whether anything was
+  // ready. On a reload that meant: hexagon appears, animation is cut off
+  // part-way, then a skeleton, then the real screen — three states in about a
+  // second. Waiting for the data too means one clean hand-off from the intro
+  // straight to the finished page.
+  const dataReady = authChecked && (!user || leaguesLoaded);
+  const stillBooting = !bootTimedOut && (!introMinDone || !dataReady);
 
-  if (showIntro || stillBooting) {
+  if (stillBooting) {
     return (
       <>
         <style>{css(darkMode)}</style>
