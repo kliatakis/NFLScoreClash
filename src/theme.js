@@ -810,11 +810,19 @@ export const css = (dark = true) => `
      since it sits directly over other real content rather than empty page
      background like other glass cards do. */
   .profile-dropdown.glass { background: var(--surface-solid); }
-  .profile-dropdown .form-select { font-size: 13.5px; padding: 10px 12px; }
+  /* Keeps room for the chevron. A padding SHORTHAND here beats the
+     padding-right on .form-select (higher specificity), so writing
+     "10px 12px" put the arrow straight on top of the timezone name. */
+  .profile-dropdown .form-select { font-size: 13.5px; padding: 10px 30px 10px 12px; }
   @keyframes dropIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
   .profile-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
 
-  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; }
+  /* Keeps .profile-section's 16px horizontal inset. This element carries BOTH
+     classes, and a bare 'padding: 10px 0' here overrode the whole shorthand, so the
+     dark-mode row alone sat flush to the panel edges while every other section
+     was inset, which read as the toggle being misaligned. Only the vertical
+     rhythm is meant to differ. */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; }
   /* This is a <button> (it has to be, to be reachable by keyboard), so it
      arrives with a default border and native appearance. The border is the
      alignment bug: with box-sizing: border-box the 40x22 track included a 2px

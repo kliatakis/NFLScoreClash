@@ -19,6 +19,7 @@ import {
   pickStreaks, liveWeekStatus, pendingPickers,
 } from "../src/lib/scoring.js";
 import { TEAMS, TEAM_CODES, teamsForSpecialPick } from "../src/data/teams.js";
+import { css } from "../src/theme.js";
 
 let failures = 0, total = 0;
 const group = (name) => console.log(`\n── ${name} `.padEnd(64, "─"));
@@ -425,6 +426,62 @@ group("Straggler nudge");
     week(1).some(f => g.results[f.id]));
   t("once the week has started, nagging stops",
     pendingPickers(g.league, g.users, g.preds, 1, g.results) === null);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Theme sheet");
+// theme.js is one large JS template literal, so a stray backtick in a CSS
+// comment silently ends the string and breaks the build. Importing it here
+// means the suite fails loudly instead of the build failing later.
+const cssRules = (sheet) => {
+  const rules = [];
+  const re = /(^|\n)\s*([^{}\n][^{}]*?)\{([^}]*)\}/g;
+  let m;
+  while ((m = re.exec(sheet))) {
+    const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
+    rules.push({ sel: strip(m[2]), body: strip(m[3]) });
+  }
+  return rules;
+};
+
+for (const [mode, dark] of [["dark", true], ["light", false]]) {
+  const out = css(dark);
+  const rules = cssRules(out);
+  t(`${mode}: stylesheet renders`, typeof out === "string" && out.length > 5000, `${out.length} chars`);
+  t(`${mode}: no unresolved template holes`, !out.includes("${"));
+
+  const selectBase = rules.find(r => r.sel === ".form-select");
+  t(`${mode}: selects drop the native OS control`, !!selectBase && selectBase.body.includes("appearance: none"));
+  t(`${mode}: ...and draw their own arrow`, !!selectBase && /background-image: url\("data:image\/svg/.test(selectBase.body));
+  t(`${mode}: ...with a gutter for it`, !!selectBase && /padding-right: \d+px/.test(selectBase.body));
+
+  // THE invariant. A padding shorthand in a select rule that WINS over the
+  // base rule silently overrides that gutter and drops the arrow onto the
+  // text — which is what happened to the profile dropdown and the compact
+  // selects. "Wins" means it comes later in the sheet (equal specificity) or
+  // is a descendant selector (higher specificity), so the base
+  // `.form-input, .form-select` rule above is correctly not flagged.
+  const baseIndex = rules.findIndex(r => r.sel === ".form-select");
+  const clobbering = rules.filter((r, i) => {
+    if (!r.sel.includes("form-select")) return false;
+    if (r.sel.includes("option") || r.sel.includes("optgroup")) return false;
+    const shorthand = r.body.match(/(?:^|;)\s*padding:\s*([^;]+)/)?.[1];
+    if (!shorthand) return false;
+    // Four values set the right padding explicitly, so they're safe.
+    if (shorthand.trim().split(/\s+/).length >= 4) return false;
+    // .trim() matters: splitting "a, .form-select" leaves a leading space,
+    // which the descendant test below would otherwise read as a combinator.
+    const part = (r.sel.split(",").find(x => x.includes("form-select")) || "").trim();
+    const moreSpecific = /\s|\.[a-z-]+\.[a-z-]/i.test(part);
+    return i > baseIndex || moreSpecific;
+  });
+  t(`${mode}: no select rule clobbers the arrow gutter`, clobbering.length === 0,
+    clobbering.map(r => r.sel).join(", ") || "none");
+
+  const toggle = rules.find(r => r.sel === ".toggle");
+  t(`${mode}: toggle resets the button border`, !!toggle && toggle.body.includes("border: none"));
+  const togRow = rules.find(r => r.sel === ".toggle-row");
+  t(`${mode}: toggle row keeps the panel inset`, !!togRow && /padding: 10px 16px/.test(togRow.body));
 }
 
 // ────────────────────────────────────────────────────────────────────────────
