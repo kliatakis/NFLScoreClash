@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, isPlayoffMatchupReady } from "../data/fixtures.js";
-import { TEAMS, TEAM_CODES, teamsByDivision, teamsByConference, teamsForSpecialPick } from "../data/teams.js";
+import { TEAMS, TEAM_CODES, teamsByConference, teamsForSpecialPick } from "../data/teams.js";
 import {
   fsSetResult, fsClearResult, fsSetSpecialResult, fsUpdateLeague, fsDeleteLeague,
   fsAdminOverrideGamePrediction, fsGetPredictions, fsGetAllUsers,

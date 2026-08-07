@@ -58,10 +58,13 @@ const REACTIONS = ["🔥", "🤡", "😂"];
 function ReactionBar({ leagueId, rowKey, reactions, uid }) {
   const [busy, setBusy] = useState("");
   const forRow = reactions?.[rowKey] || {};
-  const toggle = async (emoji) => {
+  // Without a uid there's nobody to attribute a reaction to, and toggling
+  // would push `undefined` into the array.
+  if (!uid) return null;
+  const toggle = async (emoji, isOn) => {
     if (!leagueId || busy) return;
     setBusy(emoji);
-    try { await fsToggleReaction(leagueId, rowKey, emoji, uid); }
+    try { await fsToggleReaction(leagueId, rowKey, emoji, uid, isOn); }
     catch (err) { console.error("Reaction failed", err); }
     finally { setBusy(""); }
   };
@@ -74,7 +77,7 @@ function ReactionBar({ leagueId, rowKey, reactions, uid }) {
           <button key={emoji} type="button" disabled={!!busy}
             className={`reaction ${mine ? "mine" : ""} ${who.length ? "has" : ""}`}
             aria-pressed={mine} aria-label={`React ${emoji}`}
-            onClick={() => toggle(emoji)}>
+            onClick={() => toggle(emoji, mine)}>
             <span>{emoji}</span>
             {who.length > 0 && <em>{who.length}</em>}
           </button>

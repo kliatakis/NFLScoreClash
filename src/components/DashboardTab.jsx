@@ -104,8 +104,10 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
   // Mid-week tension: a bonus tier you're still on course for. Only ever
   // appears while a week is part-played — see liveWeekStatus.
   const live = useMemo(() => {
+    // Newest first: a stale part-played week (a game whose result never
+    // arrived) would otherwise sit there forever and mask the current one.
     const weeks = REGULAR_SEASON_FIXTURES.map(f => f.week);
-    for (const w of [...new Set(weeks)].sort((a, b) => a - b)) {
+    for (const w of [...new Set(weeks)].sort((a, b) => b - a)) {
       const st = liveWeekStatus(user.uid, w, allPredictions, results, scoring);
       if (st) return st;
     }

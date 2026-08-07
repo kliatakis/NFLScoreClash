@@ -312,6 +312,10 @@ function GameRow({
     // Same classifier the standings use, so a pick can never be labelled one
     // way here and counted another way there.
     const kind = classifyPick(mPick, result);
+    // A half-entered result (one score typed, the other still blank) can't be
+    // judged — showing a ❌ for it would accuse someone of a miss that hasn't
+    // happened.
+    if (!kind) return { uid: mUid, label: sideName(side), status: "pending", side };
     return {
       uid: mUid,
       label: `${sideName(side)} ${kind === "correct" ? "✅" : "❌"}`,
@@ -329,7 +333,10 @@ function GameRow({
     const tally = {};
     for (const r of made) tally[r.side] = (tally[r.side] || 0) + 1;
     const [topSide, count] = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
-    const mine = selected;
+    // The stored pick, not the draft — after lock they're the same, but a
+    // week you've never opened has no draft hydrated and would never be
+    // flagged as contrarian.
+    const mine = savedWinner;
     return {
       text: `${count} of ${made.length} backed ${sideName(topSide)}`,
       // Only interesting when you're actually against the grain.

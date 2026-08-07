@@ -2,7 +2,7 @@ import { initializeApp } from "firebase/app";
 import {
   getFirestore,
   doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot,
-  collection, getDocs, query, where, arrayUnion, arrayRemove,
+  collection, getDocs, query, where, arrayUnion, arrayRemove, FieldPath,
 } from "firebase/firestore";
 import {
   getAuth,
@@ -178,19 +178,17 @@ export async function fsRecordLoginAndGetPrevious(uid) {
 // the league subscription it already has — no extra collection, no extra read.
 // `rowKey` encodes week + category + subject so it stays stable across
 // re-renders and week switches (see HighlightsCard).
-export async function fsToggleReaction(leagueId, rowKey, emoji, uid) {
-  const ref = doc(db, "leagues", leagueId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return;
-  const current = snap.data().reactions || {};
-  const forRow = { ...(current[rowKey] || {}) };
-  const list = Array.isArray(forRow[emoji]) ? forRow[emoji] : [];
-  forRow[emoji] = list.includes(uid) ? list.filter(u => u !== uid) : [...list, uid];
-  // Drop empties so the map doesn't accumulate dead keys all season.
-  if (forRow[emoji].length === 0) delete forRow[emoji];
-  await updateDoc(ref, {
-    [`reactions.${rowKey}`]: Object.keys(forRow).length ? forRow : deleteField(),
-  });
+export async function fsToggleReaction(leagueId, rowKey, emoji, uid, isOn) {
+  if (!leagueId || !uid) return;
+  // FieldPath, not a dotted string: `rowKey` contains ":" separators and the
+  // final segment is an emoji, both of which a dotted path would try to parse.
+  // FieldPath takes segments literally.
+  const path = new FieldPath("reactions", rowKey, emoji);
+  // arrayUnion/arrayRemove rather than read-modify-write. Two people reacting
+  // to the same row at the same moment would otherwise race, and whichever
+  // write landed second would erase the other. These are atomic server-side
+  // and need no read at all.
+  await updateDoc(doc(db, "leagues", leagueId), path, isOn ? arrayRemove(uid) : arrayUnion(uid));
 }
 
 // Creates a league under a randomly generated code.

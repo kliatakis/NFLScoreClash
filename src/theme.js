@@ -765,6 +765,13 @@ export const css = (dark = true) => `
   }
   @media (prefers-reduced-motion: reduce) { .saved-flash { animation: none; } }
   @media (max-width: 560px) {
+    /* The live-week card is icon + text + points; on a narrow screen the text
+       gets crushed between the two, so the points drop to their own line. */
+    .live-week { flex-wrap: wrap; }
+    .live-week-body { flex-basis: calc(100% - 44px); }
+    .live-week-pts { width: 100%; text-align: right; font-size: 18px; }
+    /* Long member lists in the nudge shouldn't push the clock off-screen. */
+    .nudge-head { gap: 4px; }
     /* The chip and the dropdown won't sit side by side on a phone. */
     .special-pick-row { flex-wrap: wrap; }
     .special-pick-state { min-width: 0; order: 3; }
