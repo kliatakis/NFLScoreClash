@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { calcStandings, getScoringSettings, pickWinner, pickStreaks, liveWeekStatus, pendingPickers } from "../lib/scoring.js";
-import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
+import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
 import { teamTint } from "../data/teams.js";
 import { formatKickoff, formatDuration } from "../lib/time.js";
 import { useCountUp } from "../lib/hooks.js";
@@ -121,6 +121,37 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
       : null),
     [league, allUsers, allPredictions, upcomingWeek, results]);
 
+  // ── First-run checklist ───────────────────────────────────────────────────
+  // A brand-new member lands on a dashboard with nothing on it and no idea
+  // what to do first. Three concrete steps, each disappearing as it's done,
+  // and the whole card goes once they're all complete.
+  const [checklistHidden, setChecklistHidden] = useState(() => {
+    try { return localStorage.getItem("sc_hideChecklist") === "true"; } catch { return false; }
+  });
+  const hideChecklist = () => {
+    setChecklistHidden(true);
+    try { localStorage.setItem("sc_hideChecklist", "true"); } catch { /* nothing to do */ }
+  };
+  const checklist = useMemo(() => {
+    if (!league) return null;
+    const specials = (allPredictions[user.uid] || {}).specials || {};
+    const seasonMade = SPECIAL_PICK_TYPES.filter(t => specials[t.id]).length;
+    const steps = [
+      { id: "season", label: "Make your season picks",
+        note: `${seasonMade} of ${SPECIAL_PICK_TYPES.length} · they lock at kickoff and never reopen`,
+        done: seasonMade === SPECIAL_PICK_TYPES.length, go: "predictions" },
+      { id: "week", label: `Pick Week ${upcomingWeek ?? ""}`.trim(),
+        note: pickProgress ? `${pickProgress.made} of ${pickProgress.total} games` : "the season hasn't started",
+        done: !!pickProgress && pickProgress.made === pickProgress.total, go: "predictions" },
+      { id: "invite", label: "Invite someone",
+        note: league.members.length > 1
+          ? `${league.members.length} in the league`
+          : "a league of one is just a spreadsheet",
+        done: league.members.length > 1, go: "leagues" },
+    ];
+    return steps.every(s => s.done) ? null : steps;
+  }, [league, allPredictions, user.uid, upcomingWeek, pickProgress]);
+
   // Accuracy = games where you called the winner, out of games that have a
   // result AND a pick. Games you didn't pick aren't held against you — that's
   // a "didn't play" state, not a wrong guess.
@@ -176,6 +207,31 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         user={user} allPredictions={allPredictions} timezone={user.timezone}
         onGoToPicks={() => setTab("predictions")}
       />
+
+      {checklist && !checklistHidden && (
+        <div className="glass card checklist">
+          <div className="checklist-head">
+            <b>Getting started</b>
+            <button type="button" className="link-btn" onClick={hideChecklist}>Hide</button>
+          </div>
+          {checklist.map(step => (
+            <button
+              key={step.id}
+              type="button"
+              className={`checklist-step ${step.done ? "done" : ""}`}
+              onClick={() => setTab(step.go)}
+              disabled={step.done}
+            >
+              <span className="checklist-tick">{step.done ? "✓" : ""}</span>
+              <span className="checklist-text">
+                <b>{step.label}</b>
+                <span>{step.note}</span>
+              </span>
+              {!step.done && <span className="checklist-go">→</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       {live && (
         <div className={`glass card live-week ${live.perfect ? "perfect" : ""}`}>

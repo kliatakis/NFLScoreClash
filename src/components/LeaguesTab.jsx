@@ -12,7 +12,7 @@ import WeeklyStandingsCard from "./WeeklyStandingsCard.jsx";
 import HeadToHeadCard from "./HeadToHeadCard.jsx";
 import SeasonChartCard from "./SeasonChartCard.jsx";
 
-export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, results, specialResults, selectedLeague, onSetLeague, leaguesLoaded = true }) {
+export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, results, specialResults, selectedLeague, onSetLeague, leaguesLoaded = true, inviteCode = null, onInviteHandled }) {
   const [modal, setModal] = useState(null); // "create" | "join"
   const [expandedId, setExpandedId] = useState(null);
   const [expandedPanel, setExpandedPanel] = useState("standings"); // standings | members | admin
@@ -38,6 +38,34 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
     setCopiedId(code);
     setTimeout(() => setCopiedId(null), 1500);
   };
+
+  // A bare 6-character code left the inviter to explain, in WhatsApp, what to
+  // do with it. This hands over a complete message plus a link that opens the
+  // join dialog already filled in.
+  const [sharedId, setSharedId] = useState(null);
+  const inviteText = (league) => {
+    const url = `${window.location.origin}${window.location.pathname}?join=${league.id}`;
+    return `Join my ScoreClash league "${league.name}"\n\nCode: ${league.id}\n${url}`;
+  };
+  const shareInvite = async (league) => {
+    const text = inviteText(league);
+    try {
+      // The native share sheet on a phone is far better than a clipboard copy
+      // — it goes straight to WhatsApp. Desktop browsers mostly lack it.
+      if (navigator.share) {
+        await navigator.share({ title: `ScoreClash — ${league.name}`, text });
+        return;
+      }
+      await navigator.clipboard?.writeText(text);
+      setSharedId(league.id);
+      setTimeout(() => setSharedId(null), 1800);
+    } catch { /* dismissed the share sheet, or clipboard denied — nothing to do */ }
+  };
+
+  // Someone arrived on an invite link for a league they're not in yet.
+  useEffect(() => {
+    if (inviteCode && !myLeagues.some(l => l.id === inviteCode)) setModal("join");
+  }, [inviteCode, myLeagues]);
 
   return (
     <div>
@@ -100,9 +128,14 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
                   {!isSuperAdmin && isAdmin && <span className="chip active">Admin</span>}
                 </div>
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => openLeague(league.id)}>
-                {isExpanded ? "Hide" : "View"}
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); shareInvite(league); }}>
+                  {sharedId === league.id ? "Copied!" : "Invite"}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => openLeague(league.id)}>
+                  {isExpanded ? "Hide" : "View"}
+                </button>
+              </div>
             </div>
 
             {isExpanded && (
@@ -146,7 +179,14 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
       })}
 
       {modal === "create" && <CreateLeagueModal user={user} onClose={() => setModal(null)} onDone={(id) => { onSetLeague(id); setModal(null); }} />}
-      {modal === "join" && <JoinLeagueModal user={user} onClose={() => setModal(null)} onDone={(id) => { onSetLeague(id); setModal(null); }} />}
+      {modal === "join" && (
+        <JoinLeagueModal
+          user={user}
+          initialCode={inviteCode || ""}
+          onClose={() => { setModal(null); onInviteHandled?.(); }}
+          onDone={(id) => { onSetLeague(id); setModal(null); onInviteHandled?.(); }}
+        />
+      )}
     </div>
   );
 }
@@ -290,9 +330,9 @@ function CreateLeagueModal({ user, onClose, onDone }) {
   );
 }
 
-function JoinLeagueModal({ user, onClose, onDone }) {
+function JoinLeagueModal({ user, onClose, onDone, initialCode = "" }) {
   useEscapeKey(onClose);
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(initialCode);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -325,7 +365,11 @@ function JoinLeagueModal({ user, onClose, onDone }) {
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Join league">
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-title">Join League</div>
-        <p className="modal-sub">Enter the 6-character league code shared by the league admin.</p>
+        <p className="modal-sub">
+          {initialCode
+            ? "You've been invited — just confirm to join."
+            : "Enter the 6-character league code shared by the league admin."}
+        </p>
         {error && <div className="error-msg">{error}</div>}
         <div className="form-group">
           <label className="form-label">League Code</label>

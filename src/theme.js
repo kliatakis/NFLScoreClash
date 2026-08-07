@@ -497,6 +497,31 @@ export const css = (dark = true) => `
   .reveal-note { margin-top: 6px; font-size: 11px; color: var(--muted); font-style: italic; }
   .reveal-pending { color: var(--text); font-weight: 600; }
 
+  /* ── First-run checklist ──────────────────────────────────────────────── */
+  .checklist { margin-bottom: 14px; border-left: 3px solid var(--accent); }
+  .checklist-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .checklist-head b { font-size: 13.5px; }
+  .checklist-step {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 10px 12px; margin-bottom: 6px; border-radius: 10px;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--font-body); text-align: left;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .checklist-step:hover:not(:disabled) { border-color: var(--accent); transform: translateX(2px); }
+  .checklist-step:disabled { cursor: default; opacity: 0.6; }
+  .checklist-step.done { background: rgba(34,197,94,0.07); border-color: rgba(34,197,94,0.28); }
+  .checklist-tick {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+    border: 1.5px solid var(--border2); font-size: 11px; font-weight: 900;
+  }
+  .checklist-step.done .checklist-tick { background: var(--green); border-color: var(--green); color: #fff; }
+  .checklist-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .checklist-text b { font-size: 13px; }
+  .checklist-text span { font-size: 11.5px; color: var(--muted); }
+  .checklist-go { color: var(--accent); font-size: 15px; flex-shrink: 0; }
+
   /* ── Live week status ─────────────────────────────────────────────────── */
   .live-week {
     display: flex; align-items: center; gap: 14px; margin-bottom: 14px;

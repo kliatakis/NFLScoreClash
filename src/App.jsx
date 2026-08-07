@@ -18,6 +18,39 @@ import {
 } from "./firebase.js";
 
 const APP_NAME = "SCORECLASH";
+
+// An invite link looks like https://scoreclash.vercel.app/?join=ABC123
+//
+// Read once on boot and immediately stripped from the address bar, so a
+// refresh (or landing back here after sign-up) doesn't re-trigger the join
+// dialog. Parked in sessionStorage because the code has to survive the whole
+// registration flow — someone following an invite usually has no account yet,
+// and losing the code at that point drops them on an empty dashboard, which is
+// exactly the problem the link was meant to solve.
+const JOIN_KEY = "sc_pendingJoin";
+function readInviteCode() {
+  let code = null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("join");
+    if (raw) {
+      // Codes are generated from [A-Z0-9] only, so anything else came from a
+      // mangled link or someone editing the URL. Stripping it keeps junk out
+      // of the Firestore lookup — a "/" in particular would build an invalid
+      // document path and throw rather than simply not matching.
+      code = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+      params.delete("join");
+      const qs = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash);
+    }
+    if (code) sessionStorage.setItem(JOIN_KEY, code);
+    else code = sessionStorage.getItem(JOIN_KEY);
+  } catch { /* private mode, or no history API — just skip the invite flow */ }
+  return code || null;
+}
+function clearInviteCode() {
+  try { sessionStorage.removeItem(JOIN_KEY); } catch { /* nothing to do */ }
+}
 // Full run of the intro animation, played once per browser session.
 const INTRO_MS = 2600;
 // On a reload the animation is already familiar, so it's cut short — but not
@@ -51,6 +84,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [lastLoginPrev, setLastLoginPrev] = useState(null);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [inviteCode, setInviteCode] = useState(() => readInviteCode());
 
   const [allUsers, setAllUsers] = useState({});
   const [myLeagues, setMyLeagues] = useState([]);
@@ -167,6 +201,23 @@ export default function App() {
     });
   }, [user?.uid]);
 
+  // Act on an invite link once we know who the person is and which leagues
+  // they're already in — otherwise someone following a link to a league they
+  // already belong to would be shown a pointless "join" dialog.
+  useEffect(() => {
+    if (!inviteCode || !user || !leaguesLoaded) return;
+    const already = myLeagues.find(l => l.id === inviteCode);
+    if (already) {
+      setSelectedLeagueId(already.id);
+      setInviteCode(null);
+      clearInviteCode();
+      return;
+    }
+    setTab("leagues");
+  }, [inviteCode, user, leaguesLoaded, myLeagues]);
+
+  const handleInviteHandled = () => { setInviteCode(null); clearInviteCode(); };
+
   // Drop a selection that no longer exists — you left the league, an admin
   // kicked you, or the whole league was deleted. Without this the id lingers,
   // `selectedLeague` resolves to null, and the dashboard claims you have no
@@ -264,6 +315,7 @@ export default function App() {
           {tab === "leagues" && (
             <LeaguesTab
               user={user} myLeagues={myLeagues} allUsers={allUsers} leaguesLoaded={leaguesLoaded}
+              inviteCode={inviteCode} onInviteHandled={handleInviteHandled}
               allPredictions={allPredictions} results={results} specialResults={specialResults}
               selectedLeague={selectedLeagueId} onSetLeague={setSelectedLeagueId}
 
