@@ -1,5 +1,5 @@
 import { REGULAR_SEASON_FIXTURES, SEASON, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
-import { useCountdown } from "../lib/hooks.js";
+import { useCountdown, useSeasonPicksLock } from "../lib/hooks.js";
 import { formatKickoff } from "../lib/time.js";
 import TeamBadge from "./TeamBadge.jsx";
 import { teamTint } from "../data/teams.js";
@@ -21,6 +21,11 @@ const PICK_GROUPS = [
 
 export default function SeasonCountdown({ user, allPredictions, timezone, onGoToPicks }) {
   const countdown = useCountdown(SEASON.openerKickoffUTC);
+  // Season picks shut 15 minutes BEFORE kickoff, not at it. The clock below
+  // counts to kickoff because that's what its label says — but for that last
+  // quarter of an hour the picks section must stop inviting you to do
+  // something the Predictions tab will refuse.
+  const picksLocked = useSeasonPicksLock();
   if (!countdown) return null; // season under way (or already done)
 
   const opener = REGULAR_SEASON_FIXTURES.find(f => f.kickoffUTC === SEASON.openerKickoffUTC)
@@ -83,11 +88,15 @@ export default function SeasonCountdown({ user, allPredictions, timezone, onGoTo
           })}
         </div>
 
-        {!allMade && onGoToPicks && (
+        {picksLocked ? (
+          <div style={{ marginTop: 14, fontSize: 12, color: "var(--gold)", fontWeight: 700 }}>
+            🔒 Season picks are locked — {allMade ? "yours are all in." : `you got ${madeCount} of ${totalSpecials} in.`}
+          </div>
+        ) : (!allMade && onGoToPicks && (
           <button className="btn btn-primary btn-sm" style={{ marginTop: 14 }} onClick={onGoToPicks}>
             Make your picks →
           </button>
-        )}
+        ))}
       </div>
     </div>
   );

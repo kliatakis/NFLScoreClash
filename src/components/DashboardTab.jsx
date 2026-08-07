@@ -3,7 +3,7 @@ import { calcStandings, getScoringSettings, pickWinner, pickStreaks, liveWeekSta
 import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
 import { teamTint } from "../data/teams.js";
 import { formatKickoff, formatDuration } from "../lib/time.js";
-import { useCountUp } from "../lib/hooks.js";
+import { useCountUp, useSeasonPicksLock } from "../lib/hooks.js";
 import Avatar from "./Avatar.jsx";
 import StandingsCard from "./StandingsCard.jsx";
 import HighlightsCard from "./HighlightsCard.jsx";
@@ -132,14 +132,20 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
     setChecklistHidden(true);
     try { localStorage.setItem("sc_hideChecklist", "true"); } catch { /* nothing to do */ }
   };
+  const seasonPicksLocked = useSeasonPicksLock();
   const checklist = useMemo(() => {
     if (!league) return null;
     const specials = (allPredictions[user.uid] || {}).specials || {};
     const seasonMade = SPECIAL_PICK_TYPES.filter(t => specials[t.id]).length;
     const steps = [
-      { id: "season", label: "Make your season picks",
+      // Dropped once the deadline passes. Left in, it would nag all season
+      // about something that can no longer be done — the checklist would
+      // never complete and never go away.
+      ...(seasonPicksLocked ? [] : [{
+        id: "season", label: "Make your season picks",
         note: `${seasonMade} of ${SPECIAL_PICK_TYPES.length} · they lock at kickoff and never reopen`,
-        done: seasonMade === SPECIAL_PICK_TYPES.length, go: "predictions" },
+        done: seasonMade === SPECIAL_PICK_TYPES.length, go: "predictions",
+      }]),
       { id: "week", label: `Pick Week ${upcomingWeek ?? ""}`.trim(),
         note: pickProgress ? `${pickProgress.made} of ${pickProgress.total} games` : "the season hasn't started",
         done: !!pickProgress && pickProgress.made === pickProgress.total, go: "predictions" },
@@ -150,7 +156,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         done: league.members.length > 1, go: "leagues" },
     ];
     return steps.every(s => s.done) ? null : steps;
-  }, [league, allPredictions, user.uid, upcomingWeek, pickProgress]);
+  }, [league, allPredictions, user.uid, upcomingWeek, pickProgress, seasonPicksLocked]);
 
   // Accuracy = games where you called the winner, out of games that have a
   // result AND a pick. Games you didn't pick aren't held against you — that's
