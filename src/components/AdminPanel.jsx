@@ -10,8 +10,9 @@ import {
 import { getScoringSettings } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
 import TeamBadge from "./TeamBadge.jsx";
+import BackupPanel from "./BackupPanel.jsx";
 
-const SECTIONS = ["Results", "Playoffs", "Overrides", "Special Picks", "Scoring Settings", "Danger Zone"];
+const SECTIONS = ["Results", "Playoffs", "Overrides", "Special Picks", "Scoring Settings", "Backup", "Danger Zone"];
 
 export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted }) {
   const [section, setSection] = useState("Results");
@@ -57,6 +58,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
       {section === "Overrides" && <OverridesEntry league={league} adminUid={user.uid} />}
       {section === "Special Picks" && <SpecialResultsEntry />}
       {section === "Scoring Settings" && <ScoringSettings league={league} />}
+      {section === "Backup" && <BackupPanel user={user} isSuperAdmin={isSuperAdmin} />}
       {section === "Danger Zone" && isSuperAdmin && <DangerZone league={league} onLeagueDeleted={onLeagueDeleted} />}
     </div>
   );

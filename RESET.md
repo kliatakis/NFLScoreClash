@@ -3,7 +3,11 @@
 Wipes every account, league, prediction and result so the app behaves as if it
 had just been deployed. Takes about five minutes.
 
-**This is irreversible.** There is no undo and no backup unless you make one.
+**This is irreversible.** There is no undo.
+
+Before you start: open any league you administer → **Admin Panel → Backup → Download
+backup**. That gives you a JSON file of every pick and result, which you can restore from
+the same panel if you wipe something you meant to keep.
 
 ---
 

@@ -166,6 +166,93 @@ export async function fsRecordLoginAndGetPrevious(uid) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// BACKUP / RESTORE
+//
+// The decision-making lives in lib/backup.js as pure functions. These two do
+// nothing but read everything, and execute a plan that has already been
+// computed and shown to the person. Keeping them dumb is the point: there is
+// no branch in here that could quietly write something the preview didn't
+// mention.
+// ══════════════════════════════════════════════════════════════════════════
+
+// One full read of everything worth keeping. Used both to build a backup file
+// and to work out what a restore would actually change.
+export async function fsReadEverything() {
+  const [usersSnap, leaguesSnap, predsSnap, resultsSnap] = await Promise.all([
+    getDocs(collection(db, "users")),
+    getDocs(collection(db, "leagues")),
+    getDocs(collection(db, "predictions")),
+    getDoc(doc(db, "results", RESULTS_DOC_ID)),
+  ]);
+  const users = {}; usersSnap.forEach(d => { users[d.id] = d.data(); });
+  const leagues = []; leaguesSnap.forEach(d => leagues.push(d.data()));
+  const predictions = {}; predsSnap.forEach(d => { predictions[d.id] = d.data(); });
+  const raw = resultsSnap.exists() ? resultsSnap.data() : {};
+  return {
+    users, leagues, predictions,
+    results: {
+      scores: raw.scores || {},
+      specials: raw.specials || {},
+      playoffFixtures: raw.playoffFixtures || {},
+    },
+  };
+}
+
+// Applies a plan from planRestore(). Writes are attempted individually and
+// failures are collected rather than thrown, so one rejected document (a
+// permissions edge, say) can't abandon the restore half-done with no report
+// of what did and didn't land.
+export async function fsApplyRestorePlan(plan) {
+  const done = [], failed = [];
+  const run = async (label, fn) => {
+    try { await fn(); done.push(label); }
+    catch (err) { console.error("Restore step failed:", label, err); failed.push({ label, message: err?.message || String(err) }); }
+  };
+
+  if (plan.results) {
+    const ref = doc(db, "results", RESULTS_DOC_ID);
+    await run("results", () => (
+      plan.results.type === "set"
+        ? setDoc(ref, plan.results.doc)
+        // setDoc with merge, not updateDoc: the document may not exist at all
+        // if this is a restore into an empty project, and updateDoc throws in
+        // that case. The keys are dotted field paths either way.
+        : setDoc(ref, dottedToNested(plan.results.doc), { merge: true })
+    ));
+  }
+  for (const item of plan.predictions) {
+    const ref = doc(db, "predictions", item.uid);
+    await run(`predictions/${item.uid}`, () => (
+      item.type === "set" ? setDoc(ref, item.doc) : setDoc(ref, dottedToNested(item.doc), { merge: true })
+    ));
+  }
+  for (const item of plan.leagues) {
+    const ref = doc(db, "leagues", item.id);
+    await run(`leagues/${item.id}`, () => (
+      item.type === "set" ? setDoc(ref, item.doc) : setDoc(ref, item.doc, { merge: true })
+    ));
+  }
+  return { done, failed };
+}
+
+// { "scores.w1_1": v } -> { scores: { w1_1: v } }
+//
+// Needed because the plan speaks in field paths (which is the natural way to
+// express "only touch these keys") while setDoc-with-merge wants a nested
+// object. Splitting on the FIRST dot only: fixture ids never contain one, and
+// a naive full split would mangle any key that did.
+function dottedToNested(fields) {
+  const out = {};
+  for (const [path, value] of Object.entries(fields)) {
+    const i = path.indexOf(".");
+    if (i === -1) { out[path] = value; continue; }
+    const head = path.slice(0, i), tail = path.slice(i + 1);
+    (out[head] ||= {})[tail] = value;
+  }
+  return out;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // LEAGUES — one doc per league (collection, not a single mega-doc). Queried
 // with array-contains so "my leagues" scales independently of total league
 // count in the app.

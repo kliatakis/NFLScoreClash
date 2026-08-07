@@ -20,6 +20,10 @@ import {
 } from "../src/lib/scoring.js";
 import { TEAMS, TEAM_CODES, teamsForSpecialPick } from "../src/data/teams.js";
 import { css } from "../src/theme.js";
+import {
+  buildBackup, validateBackup, planRestore, describePlan, countBackup,
+  backupFilename, BACKUP_VERSION, BACKUP_APP,
+} from "../src/lib/backup.js";
 
 let failures = 0, total = 0;
 const group = (name) => console.log(`\n── ${name} `.padEnd(64, "─"));
@@ -482,6 +486,226 @@ for (const [mode, dark] of [["dark", true], ["light", false]]) {
   t(`${mode}: toggle resets the button border`, !!toggle && toggle.body.includes("border: none"));
   const togRow = rules.find(r => r.sel === ".toggle-row");
   t(`${mode}: toggle row keeps the panel inset`, !!togRow && /padding: 10px 16px/.test(togRow.body));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Backup — build and validate");
+{
+  const made = buildBackup({
+    users: { a: { username: "A" } },
+    leagues: [{ id: "L1", name: "League", members: ["a"], settings: { correctPoints: 2 } }],
+    predictions: { a: { picks: { w1_1: { winner: "H" } }, specials: { superbowl: "KC" } } },
+    results: { scores: { w1_1: { homeScore: 24, awayScore: 10 } }, specials: { superbowl: "KC" }, playoffFixtures: {} },
+    seasonYear: 2026, takenBy: { uid: "a", username: "A" }, now: 1_757_000_000_000,
+  });
+  t("stamped with app and version", made.app === BACKUP_APP && made.version === BACKUP_VERSION);
+  t("season year recorded", made.seasonYear === 2026);
+  t("counts computed", made.counts.players === 1 && made.counts.picks === 1 && made.counts.scores === 1);
+  t("leagues keyed by id", !!made.data.leagues.L1);
+  t("survives a JSON round trip", JSON.stringify(JSON.parse(JSON.stringify(made))) === JSON.stringify(made));
+  t("filename is dated and sortable", /^scoreclash-2026-\d{8}-\d{4}\.json$/.test(backupFilename(made)), backupFilename(made));
+
+  const good = validateBackup(JSON.parse(JSON.stringify(made)), { seasonYear: 2026 });
+  t("a real backup validates", good.ok === true, good.errors.join("; "));
+
+  // Fail-closed cases — each must be REFUSED, not partially applied.
+  const reject = (label, mutate, opts = { seasonYear: 2026 }) => {
+    const copy = JSON.parse(JSON.stringify(made));
+    mutate(copy);
+    const v = validateBackup(copy, opts);
+    t(`refuses ${label}`, v.ok === false, v.errors[0] || "accepted!");
+  };
+  reject("a file from another app", b => { b.app = "something-else"; });
+  reject("a backup from a different season", b => { b.seasonYear = 2025; });
+  reject("a backup from a newer app version", b => { b.version = BACKUP_VERSION + 1; });
+  reject("a file with no data section", b => { delete b.data; });
+  reject("a file with no predictions", b => { delete b.data.predictions; });
+  reject("a file with no results", b => { delete b.data.results; });
+  t("refuses a non-object", validateBackup("not json", { seasonYear: 2026 }).ok === false);
+  t("refuses null", validateBackup(null, { seasonYear: 2026 }).ok === false);
+  {
+    const empty = buildBackup({ seasonYear: 2026 });
+    const v = validateBackup(empty, { seasonYear: 2026 });
+    t("an empty backup validates but warns", v.ok === true && v.warnings.length > 0, v.warnings.join("; "));
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Restore — merge never destroys");
+const backupFixture = buildBackup({
+  users: {},
+  leagues: [{ id: "L1", name: "Old Name", members: ["a", "b"], settings: { correctPoints: 1 } }],
+  predictions: {
+    a: { picks: { w1_1: { winner: "H" }, w1_2: { winner: "A" } }, specials: { superbowl: "KC" } },
+    b: { picks: { w1_1: { winner: "A" } }, specials: {} },
+  },
+  results: {
+    scores: { w1_1: { homeScore: 24, awayScore: 10 }, w1_2: { homeScore: 7, awayScore: 3 } },
+    specials: { superbowl: "KC" },
+    playoffFixtures: { po_wc_afc_1: { home: "KC", away: "BUF", kickoffUTC: "2027-01-10T18:00:00Z" } },
+  },
+  seasonYear: 2026,
+});
+
+{
+  // Live data has DIVERGED: one score differs, one pick differs, and there is
+  // newer data the backup has never seen.
+  const current = {
+    results: { scores: { w1_1: { homeScore: 99, awayScore: 0 }, w3_9: { homeScore: 14, awayScore: 13 } }, specials: {}, playoffFixtures: {} },
+    predictions: { a: { picks: { w1_1: { winner: "T" }, w5_1: { winner: "H" } }, specials: {} } },
+    leagues: { L1: { id: "L1", name: "New Name", members: ["a", "b", "c"], settings: { correctPoints: 3 } } },
+  };
+  const plan = planRestore(backupFixture, current, { mode: "merge" });
+
+  t("does not touch a score that already exists", plan.results.doc["scores.w1_1"] === undefined);
+  t("fills in the score that is missing", !!plan.results.doc["scores.w1_2"]);
+  t("never deletes a newer score", !JSON.stringify(plan.results.doc).includes("w3_9"));
+  t("restores the missing season result", plan.results.doc["specials.superbowl"] === "KC");
+  t("restores the missing playoff matchup", !!plan.results.doc["playoffFixtures.po_wc_afc_1"]);
+
+  const a = plan.predictions.find(p => p.uid === "a");
+  t("does not overwrite an existing pick", a.doc["picks.w1_1"] === undefined);
+  t("fills in the missing pick", !!a.doc["picks.w1_2"]);
+  t("never removes a newer pick", !JSON.stringify(a.doc).includes("w5_1"));
+  t("restores a missing season pick", a.doc["specials.superbowl"] === "KC");
+  const b = plan.predictions.find(p => p.uid === "b");
+  t("a player absent from live data is restored", !!b && !!b.doc["picks.w1_1"]);
+
+  const l = plan.leagues.find(x => x.id === "L1");
+  t("league membership is left completely alone", !("members" in l.doc), JSON.stringify(l.doc));
+  t("league name and settings are restored", l.doc.name === "Old Name" && l.doc.settings.correctPoints === 1);
+  t("every plan entry is an update, not a set", plan.predictions.every(p => p.type === "update") && plan.results.type === "update");
+}
+
+{
+  // Running the same merge twice must be a no-op the second time.
+  const current = { results: backupFixture.data.results, predictions: backupFixture.data.predictions,
+    leagues: { L1: backupFixture.data.leagues.L1 } };
+  const plan = planRestore(backupFixture, current, { mode: "merge" });
+  t("restoring an already-restored backup does nothing", plan.isEmpty === true, JSON.stringify(plan.summary));
+  t("...and says so", /Nothing to restore/.test(describePlan(plan)));
+}
+
+{
+  // A deleted league is a legitimate restore — recreate it in full.
+  const plan = planRestore(backupFixture, { results: {}, predictions: {}, leagues: {} }, { mode: "merge" });
+  const l = plan.leagues.find(x => x.id === "L1");
+  t("a deleted league is recreated whole", l.type === "set" && l.doc.members.length === 2);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Restore — replace, and part selection");
+{
+  const current = {
+    results: { scores: { w9_9: { homeScore: 1, awayScore: 0 } }, specials: {}, playoffFixtures: {} },
+    predictions: { a: { picks: { w9_9: { winner: "H" } }, specials: {} } },
+    leagues: { L1: { id: "L1", name: "New Name", members: ["a", "b", "c"], settings: {} } },
+  };
+  const plan = planRestore(backupFixture, current, { mode: "replace" });
+  t("replace sets the results document outright", plan.results.type === "set");
+  t("...discarding data the backup doesn't have", plan.results.doc.scores.w9_9 === undefined);
+  t("replace sets each prediction document outright", plan.predictions.every(p => p.type === "set"));
+  t("...and reports what it will discard", plan.summary.scoresOverwritten === 1 && plan.summary.picksOverwritten === 1);
+  t("the warning appears in the description", /discard/.test(describePlan(plan)), describePlan(plan));
+  const l = plan.leagues.find(x => x.id === "L1");
+  t("replace does restore membership", l.type === "set" && l.doc.members.length === 2);
+}
+{
+  const current = { results: {}, predictions: {}, leagues: {} };
+  const only = planRestore(backupFixture, current, { mode: "merge", parts: ["results"] });
+  t("selecting only results leaves picks alone", only.predictions.length === 0 && !!only.results);
+  const picksOnly = planRestore(backupFixture, current, { mode: "merge", parts: ["predictions"] });
+  t("selecting only predictions leaves results alone", picksOnly.results === null && picksOnly.predictions.length === 2);
+  const none = planRestore(backupFixture, current, { mode: "merge", parts: [] });
+  t("selecting nothing plans nothing", none.isEmpty === true);
+  const bogus = planRestore(backupFixture, current, { mode: "merge", parts: ["users", "everything"] });
+  t("unknown parts are ignored, not obeyed", bogus.isEmpty === true);
+}
+{
+  // Profiles must never be written — a user doc is writable only by its owner.
+  const withUsers = buildBackup({ users: { a: { username: "A" } }, seasonYear: 2026 });
+  const plan = planRestore(withUsers, { results: {}, predictions: {}, leagues: {} }, { mode: "replace", parts: ["results", "predictions", "leagues", "users"] });
+  t("users are never part of a restore plan", !("users" in plan));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Restore — full round trip");
+// The one that actually matters: back up a live season, wipe everything,
+// restore, and confirm the standings come back byte-identical. Mirrors what
+// firebase.js does when it applies a plan, so the simulation and the real
+// write path stay in step.
+{
+  const dottedToNested = (fields) => {
+    const out = {};
+    for (const [path, v] of Object.entries(fields)) {
+      const i = path.indexOf(".");
+      if (i === -1) { out[path] = v; continue; }
+      const head = path.slice(0, i), tail = path.slice(i + 1);
+      (out[head] ||= {})[tail] = v;
+    }
+    return out;
+  };
+  const deepMerge = (base, patch) => {
+    const out = { ...base };
+    for (const [k, v] of Object.entries(patch)) {
+      out[k] = v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object"
+        ? deepMerge(base[k], v) : v;
+    }
+    return out;
+  };
+
+  const uids = ["u1", "u2", "u3"];
+  const league = { id: "L1", name: "Office Rivals", superAdminId: "u1", adminIds: [], members: uids, settings: { ...SC } };
+  const users = Object.fromEntries(uids.map(u => [u, { username: u.toUpperCase() }]));
+  const predictions = Object.fromEntries(uids.map(u => [u, { picks: {}, specials: {} }]));
+  const scores = {};
+  for (const w of [1, 2, 3]) {
+    week(w).forEach((f, i) => {
+      scores[f.id] = { homeScore: 24, awayScore: 10, enteredAt: 1 };
+      uids.forEach((u, ui) => { predictions[u].picks[f.id] = { winner: i < ui ? "A" : "H" }; });
+    });
+  }
+  predictions.u1.specials[SB.id] = "KC";
+  const specials = { [SB.id]: "KC" };
+  const results = { scores, specials, playoffFixtures: { po_wc_afc_1: { home: "KC", away: "BUF", kickoffUTC: "2027-01-10T18:00:00Z" } } };
+
+  const before = calcStandings(league, users, predictions, scores, specials, SC);
+
+  // Through a real JSON file round trip, not just an in-memory object.
+  const backup = JSON.parse(JSON.stringify(buildBackup({
+    users, leagues: [league], predictions, results,
+    seasonYear: 2026, takenBy: { uid: "u1", username: "U1" },
+  })));
+  t("survives being written and re-read as a file", validateBackup(backup, { seasonYear: 2026 }).ok);
+
+  // Total loss of picks and results.
+  const plan = planRestore(backup, { results: { scores: {}, specials: {}, playoffFixtures: {} }, predictions: {}, leagues: { L1: league } }, { mode: "merge" });
+
+  let liveResults = { scores: {}, specials: {}, playoffFixtures: {} };
+  if (plan.results) {
+    liveResults = plan.results.type === "set" ? plan.results.doc
+      : deepMerge(liveResults, dottedToNested(plan.results.doc));
+  }
+  const livePreds = {};
+  for (const item of plan.predictions) {
+    livePreds[item.uid] = item.type === "set" ? item.doc
+      : deepMerge({ picks: {}, specials: {} }, dottedToNested(item.doc));
+  }
+
+  const after = calcStandings(league, users, livePreds, liveResults.scores, liveResults.specials, SC);
+  t("every score comes back", Object.keys(liveResults.scores).length === Object.keys(scores).length);
+  t("hand-entered season results come back", liveResults.specials[SB.id] === "KC");
+  t("hand-entered playoff matchups come back", !!liveResults.playoffFixtures.po_wc_afc_1);
+  t("every player's picks come back", uids.every(u => Object.keys(livePreds[u].picks).length === Object.keys(predictions[u].picks).length));
+  t("STANDINGS ARE IDENTICAL after restore",
+    JSON.stringify(after.map(r => [r.uid, r.points, r.correct, r.bonusPoints])) ===
+    JSON.stringify(before.map(r => [r.uid, r.points, r.correct, r.bonusPoints])),
+    after.map(r => `${r.username}=${r.points}`).join(" "));
+  t("badges are identical too",
+    JSON.stringify(after.map(r => r.badges.map(b => b.id))) === JSON.stringify(before.map(r => r.badges.map(b => b.id))));
+
+  const again = planRestore(backup, { results: liveResults, predictions: livePreds, leagues: { L1: league } }, { mode: "merge" });
+  t("running the restore a second time changes nothing", again.isEmpty === true);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

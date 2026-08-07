@@ -497,6 +497,35 @@ export const css = (dark = true) => `
   .reveal-note { margin-top: 6px; font-size: 11px; color: var(--muted); font-style: italic; }
   .reveal-pending { color: var(--text); font-weight: 600; }
 
+  /* ── Backup / restore ─────────────────────────────────────────────────── */
+  .backup-block {
+    padding: 14px; margin-bottom: 14px; border-radius: 12px;
+    background: var(--surface2); border: 1px solid var(--border);
+  }
+  .backup-block.danger { border-color: rgba(244,63,94,0.3); }
+  .backup-note { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-bottom: 10px; }
+  .backup-file { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .backup-file-name { font-size: 13px; font-weight: 700; margin-bottom: 4px; word-break: break-all; }
+  .backup-meta { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .backup-warn { font-size: 12px; color: var(--gold); margin-top: 4px; }
+  .backup-opts { margin-top: 4px; }
+  .backup-check {
+    display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px;
+    font-size: 12.5px; color: var(--muted); cursor: pointer; line-height: 1.5;
+  }
+  .backup-check input { margin-top: 2px; flex-shrink: 0; accent-color: var(--accent); }
+  .backup-check b { color: var(--text); }
+  .backup-plan {
+    margin-top: 12px; padding: 12px; border-radius: 10px;
+    background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.3);
+    font-size: 13px; line-height: 1.5;
+  }
+  .backup-plan.replace { background: rgba(244,63,94,0.08); border-color: rgba(244,63,94,0.35); }
+  .backup-plan code {
+    padding: 1px 6px; border-radius: 4px; background: var(--surface3);
+    font-family: var(--font-mono, monospace); font-size: 12px;
+  }
+
   /* ── First-run checklist ──────────────────────────────────────────────── */
   .checklist { margin-bottom: 14px; border-left: 3px solid var(--accent); }
   .checklist-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
