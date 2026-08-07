@@ -138,8 +138,10 @@ export default function BackupPanel({ user, isSuperAdmin }) {
   return (
     <div>
       <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>
-        Picks and results are the only things that can't be recreated — standings, badges and
-        charts are all recomputed from them, so a backup of these two brings everything back.
+        Standings, badges and charts are never stored — they're recalculated from picks and
+        results every time a page loads. Picks and results can't be worked out from anything
+        else, so they're the only things worth copying: put those back and the rest rebuilds
+        itself.
       </p>
 
       {msg && <div className="success-msg">{msg}</div>}
