@@ -239,53 +239,84 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         </div>
       )}
 
-      {live && (
-        <div className={`glass card live-week ${live.perfect ? "perfect" : ""}`}>
-          <div className="live-week-icon">{live.tier.icon}</div>
-          <div className="live-week-body">
-            <b>{live.tier.label} still alive</b>
-            <span>
-              {live.correct} from {live.played} in Week {live.week}
-              {live.misses > 0 ? ` · ${live.misses} miss${live.misses === 1 ? "" : "es"}` : ""}
-              {" · "}{live.remaining} game{live.remaining === 1 ? "" : "s"} to go
-            </span>
-          </div>
-          <div className="live-week-pts">+{live.points}</div>
-        </div>
-      )}
-
-      {streaks.current >= 3 && (
-        <div className="glass card streak-card">
-          <span className="streak-flame">🔥</span>
-          <span>
-            <b>{streaks.current} in a row</b> — your best this season is {streaks.best}.
-          </span>
-        </div>
-      )}
-
-      {pending && pending.missing.length > 0 && (
-        <div className="glass card nudge-card" role="button" tabIndex={0}
-          aria-label="Go to your predictions"
-          onClick={() => setTab("predictions")}
-          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("predictions"); } }}>
-          <div className="nudge-head">
-            <b>Week {pending.week} picks outstanding</b>
-            {pending.firstKickoffUTC && (
-              <span className="nudge-clock">
-                first lock in {formatDuration(new Date(pending.firstKickoffUTC).getTime() - Date.now() - 15 * 60000)}
+      {/* ── Your form: two small facts, one card ───────────────────────────
+          These were separate cards. Mid-season a player could be looking at
+          seven stacked callouts before reaching the standings — on a phone,
+          more than a screen of alerts before any actual content. Both are
+          about how you're going right now, so they share a row. */}
+      {(live || streaks.current >= 3) && (
+        <div className="glass card form-strip">
+          {live && (
+            <div className={`form-item ${live.perfect ? "perfect" : ""}`}>
+              <span className="form-icon">{live.tier.icon}</span>
+              <span className="form-text">
+                <b>{live.tier.label} still alive</b>
+                <span>
+                  {live.correct} from {live.played} in Week {live.week}
+                  {" · "}{live.remaining} to go
+                </span>
               </span>
+              <span className="form-value">+{live.points}</span>
+            </div>
+          )}
+          {streaks.current >= 3 && (
+            <div className="form-item">
+              <span className="form-icon">🔥</span>
+              <span className="form-text">
+                <b>{streaks.current} in a row</b>
+                <span>best this season: {streaks.best}</span>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Outstanding picks — yours and everyone else's, in ONE card ──────
+          There used to be a separate "Week 5 picks 8/16" card as well as this
+          one, both saying the same thing whenever you were the one behind.
+          Your own progress leads; the rest is peer pressure. */}
+      {pending && pending.missing.length > 0 && (() => {
+        const mine = pending.missing.find(m => m.uid === user.uid);
+        const others = pending.missing.filter(m => m.uid !== user.uid);
+        return (
+          <div className="glass card nudge-card" role="button" tabIndex={0}
+            aria-label="Go to your predictions"
+            onClick={() => setTab("predictions")}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("predictions"); } }}>
+            <div className="nudge-head">
+              <b>{mine ? `Your Week ${pending.week} picks` : `Week ${pending.week} picks`}</b>
+              {pending.firstKickoffUTC && (
+                <span className="nudge-clock">
+                  first lock in {formatDuration(new Date(pending.firstKickoffUTC).getTime() - Date.now() - 15 * 60000)}
+                </span>
+              )}
+            </div>
+
+            {mine && (
+              <>
+                <div className="pick-progress-head">
+                  <span>{mine.made === 0 ? "You haven't started" : "You're part way through"}</span>
+                  <b>{mine.made} / {mine.total}</b>
+                </div>
+                <span className="pick-progress-bar">
+                  <span className="pick-progress-fill" style={{ width: `${(mine.made / mine.total) * 100}%` }} />
+                </span>
+              </>
+            )}
+
+            {others.length > 0 && (
+              <div className="nudge-list">
+                <span className="nudge-label">{mine ? "Also waiting on" : "Waiting on"}</span>
+                {others.map(m => (
+                  <span key={m.uid} className="nudge-pill">
+                    {m.username}<em>{m.made}/{m.total}</em>
+                  </span>
+                ))}
+              </div>
             )}
           </div>
-          <div className="nudge-list">
-            {pending.missing.map(m => (
-              <span key={m.uid} className={`nudge-pill ${m.uid === user.uid ? "you" : ""}`}>
-                {m.uid === user.uid ? "You" : m.username}
-                <em>{m.made}/{m.total}</em>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {rival && (
         <div className="glass card rival-card" role="button" tabIndex={0} aria-label="View the league standings"
@@ -305,25 +336,6 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
             <div className={`rival-gap ${rival.ahead ? "behind" : "leading"}`}>
               {rival.gap === 0 ? "=" : rival.ahead ? `−${rival.gap}` : `+${rival.gap}`}
             </div>
-          </div>
-        </div>
-      )}
-
-      {pickProgress && pickProgress.made < pickProgress.total && (
-        <div className="glass card pick-progress" role="button" tabIndex={0} aria-label="Go to your predictions"
-          onClick={() => setTab("predictions")}
-          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("predictions"); } }}>
-          <div className="pick-progress-head">
-            <span>Week {upcomingWeek} picks</span>
-            <b>{pickProgress.made} / {pickProgress.total}</b>
-          </div>
-          <span className="pick-progress-bar">
-            <span className="pick-progress-fill" style={{ width: `${(pickProgress.made / pickProgress.total) * 100}%` }} />
-          </span>
-          <div className="pick-progress-hint">
-            {pickProgress.made === 0
-              ? "You haven't made any picks for this week yet — tap to start."
-              : `${pickProgress.total - pickProgress.made} still to go — tap to finish.`}
           </div>
         </div>
       )}

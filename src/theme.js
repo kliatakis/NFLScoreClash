@@ -551,27 +551,21 @@ export const css = (dark = true) => `
   .checklist-text span { font-size: 11.5px; color: var(--muted); }
   .checklist-go { color: var(--accent); font-size: 15px; flex-shrink: 0; }
 
-  /* ── Live week status ─────────────────────────────────────────────────── */
-  .live-week {
-    display: flex; align-items: center; gap: 14px; margin-bottom: 14px;
+  /* ── Your form: live week + streak, side by side in one card ─────────── */
+  .form-strip { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .form-item {
+    flex: 1 1 220px; min-width: 0;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: 10px;
+    background: var(--surface2); border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
   }
-  .live-week.perfect { border-left-color: var(--gold); background: rgba(245,158,11,0.06); }
-  .live-week-icon { font-size: 26px; line-height: 1; flex-shrink: 0; }
-  .live-week-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .live-week-body b { font-size: 14px; }
-  .live-week-body span { font-size: 12px; color: var(--muted); }
-  .live-week-pts {
-    font-family: var(--font-display); font-size: 22px; color: var(--gold); flex-shrink: 0;
-  }
-
-  /* ── Streak ───────────────────────────────────────────────────────────── */
-  .streak-card {
-    display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
-    font-size: 13px; color: var(--muted); border-left: 3px solid var(--accent2);
-  }
-  .streak-card b { color: var(--text); }
-  .streak-flame { font-size: 20px; line-height: 1; }
+  .form-item.perfect { border-left-color: var(--gold); background: rgba(245,158,11,0.07); }
+  .form-icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
+  .form-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .form-text b { font-size: 13px; }
+  .form-text span { font-size: 11.5px; color: var(--muted); }
+  .form-value { font-family: var(--font-display); font-size: 19px; color: var(--gold); flex-shrink: 0; }
 
   /* ── "Who hasn't picked" nudge ────────────────────────────────────────── */
   .nudge-card { margin-bottom: 14px; cursor: pointer; border-left: 3px solid var(--gold); }
@@ -579,7 +573,8 @@ export const css = (dark = true) => `
   .nudge-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
   .nudge-head b { font-size: 13.5px; }
   .nudge-clock { font-size: 11.5px; color: var(--gold); font-weight: 700; }
-  .nudge-list { display: flex; gap: 6px; flex-wrap: wrap; }
+  .nudge-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .nudge-label { font-size: 11px; color: var(--muted); margin-right: 2px; }
   .nudge-pill {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 3px 10px; border-radius: 20px; font-size: 11.5px;
@@ -656,13 +651,11 @@ export const css = (dark = true) => `
   .countdown-pick-row.done .countdown-pick-fill { background: linear-gradient(90deg, var(--green), #4ade80); }
 
   /* Dashboard "you still have picks to make" nudge */
-  .pick-progress { margin-bottom: 24px; cursor: pointer; border-left: 3px solid var(--gold); }
   .pick-progress:hover { border-color: var(--border2); border-left-color: var(--gold); }
   .pick-progress-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; margin-bottom: 10px; }
   .pick-progress-head b { font-family: var(--font-display); font-size: 17px; letter-spacing: 0.5px; color: var(--gold); }
-  .pick-progress-bar { display: block; height: 6px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
+  .pick-progress-bar { margin-top: 6px; display: block; height: 6px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
   .pick-progress-fill { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold), #fbbf24); transition: width 0.4s ease; }
-  .pick-progress-hint { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
 
   /* Predictions per-week progress */
   .week-progress { display: flex; flex-direction: column; gap: 6px; min-width: 190px; flex: 1; max-width: 300px; }
@@ -819,13 +812,14 @@ export const css = (dark = true) => `
   }
   @media (prefers-reduced-motion: reduce) { .saved-flash { animation: none; } }
   @media (max-width: 560px) {
-    /* The live-week card is icon + text + points; on a narrow screen the text
-       gets crushed between the two, so the points drop to their own line. */
-    .live-week { flex-wrap: wrap; }
-    .live-week-body { flex-basis: calc(100% - 44px); }
-    .live-week-pts { width: 100%; text-align: right; font-size: 18px; }
+    /* One per row rather than two squeezed side by side. */
+    .form-item { flex-basis: 100%; }
     /* Long member lists in the nudge shouldn't push the clock off-screen. */
     .nudge-head { gap: 4px; }
+    /* The restore confirmation is an input beside a button; on a phone the
+       input would otherwise shrink to nothing. */
+    .backup-plan input { flex-basis: 100%; max-width: none !important; }
+    .checklist-text b { font-size: 12.5px; }
     /* The chip and the dropdown won't sit side by side on a phone. */
     .special-pick-row { flex-wrap: wrap; }
     .special-pick-state { min-width: 0; order: 3; }
