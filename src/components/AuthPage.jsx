@@ -30,17 +30,33 @@ export default function AuthPage({ onLogin }) {
         // (correctly) forbidden and used to fail the whole sign-up.
         if (await fsIsUsernameTaken(username.trim(), null)) { setError("That username is taken — pick another."); return; }
         const user = await fbRegister(email, password);
-        // Now authenticated, so the claim can actually be written. Non-fatal:
-        // losing a race for the name shouldn't strand someone with an auth
-        // account and no profile.
-        try { await fsClaimUsername(user.uid, username.trim()); } catch { /* keep going */ }
-        await fsWriteUser(user.uid, {
-          username: username.trim(), email, avatar: null, lastLoginAt: Date.now(),
-          // Seeded from the browser rather than defaulting everyone to Athens.
-          timezone: detectTimezone(),
-        });
+
+        // ⚠️ The account EXISTS from this line onwards.
+        //
+        // Nothing after it may be reported as "registration failed". The
+        // profile write used to be unguarded, so a dropped connection at this
+        // moment showed a sign-up error to somebody who now had a perfectly
+        // good account — and retrying told them "that email is already
+        // registered", with no way forward. Every step here is therefore
+        // best-effort, and we sign them in regardless; the profile repairs
+        // itself from the live subscription in App.jsx.
+        try { await fsClaimUsername(user.uid, username.trim()); } catch (err) {
+          console.error("Couldn't claim the username", err);
+        }
+        try {
+          await fsWriteUser(user.uid, {
+            username: username.trim(), email, avatar: null, lastLoginAt: Date.now(),
+            // Seeded from the browser rather than defaulting everyone to Athens.
+            timezone: detectTimezone(),
+          });
+        } catch (err) {
+          console.error("Couldn't write the profile after sign-up", err);
+        }
         try { await fbSendVerificationEmail(); } catch { /* non-fatal — the in-app banner offers a retry */ }
-        onLogin({ uid: user.uid, username: username.trim(), email, emailVerified: user.emailVerified });
+        onLogin({
+          uid: user.uid, username: username.trim(), email,
+          emailVerified: user.emailVerified, timezone: detectTimezone(),
+        });
         return;
       }
       const user = await fbLogin(email, password);

@@ -127,7 +127,16 @@ export default function App() {
       // flash you'd see on every reload. Now the boot screen stays up until
       // there's either a full user or a definite no.
       if (!fbUser) {
+        // Reset everything the previous session left behind. `leaguesLoaded`
+        // is the one that bites: left true, the next person to sign in on this
+        // browser gets "No league yet" during the gap before their own leagues
+        // arrive — the exact flash the flag exists to prevent. The invite code
+        // matters too, or a pending invite would follow them into a different
+        // account.
         setUser(null); setSelectedLeagueId(null); setTab("dashboard");
+        setMyLeagues([]); setLeaguesLoaded(false);
+        setAllPredictions({}); setLastLoginPrev(null);
+        setInviteCode(null); clearInviteCode();
         setAuthChecked(true);
         return;
       }
@@ -233,7 +242,11 @@ export default function App() {
     setSelectedLeagueId(myLeagues[0].id);
   }, [user, myLeagues, selectedLeagueId]);
 
-  const handleLogin = (u) => setUser(u);
+  // Merged, not replaced. The auth listener and this callback both fire around
+  // sign-in and either can land second; a plain replace meant whichever came
+  // last could drop fields the other had already resolved (timezone in
+  // particular, which silently reverted everyone to Athens).
+  const handleLogin = (u) => setUser(prev => ({ ...prev, ...u }));
   const handleLogout = async () => { await fbLogout(); };
   const handleProfileUpdate = (updated) => setUser(updated);
 

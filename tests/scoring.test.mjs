@@ -24,6 +24,8 @@ import {
   buildBackup, validateBackup, planRestore, describePlan, countBackup,
   backupFilename, BACKUP_VERSION, BACKUP_APP,
 } from "../src/lib/backup.js";
+import { planResultWrites, findFixture } from "../src/lib/resultsMatching.js";
+import { espnDateRange } from "../src/lib/resultsProviders.js";
 
 let failures = 0, total = 0;
 const group = (name) => console.log(`\n── ${name} `.padEnd(64, "─"));
@@ -706,6 +708,76 @@ group("Restore — full round trip");
 
   const again = planRestore(backup, { results: liveResults, predictions: livePreds, leagues: { L1: league } }, { mode: "merge" });
   t("running the restore a second time changes nothing", again.isEmpty === true);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Results fetch — the date window asked of ESPN");
+{
+  const r = espnDateRange(new Date("2026-09-13T06:00:00Z"), 1, 3);
+  t("is a hyphenated range, not a comma list", /^\d{8}-\d{8}$/.test(r), r);
+  t("starts the day before", r.startsWith("20260912"), r);
+  t("ends three days after", r.endsWith("20260916"), r);
+  t("crosses a month boundary correctly", espnDateRange(new Date("2026-10-01T06:00:00Z"), 1, 3) === "20260930-20261004");
+  t("crosses a year boundary correctly", espnDateRange(new Date("2027-01-01T06:00:00Z"), 1, 3) === "20261231-20270104");
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Results fetch — what gets written and what gets refused");
+{
+  const real = REGULAR_SEASON_FIXTURES[0];
+  const base = {
+    homeAbbr: real.home, awayAbbr: real.away, homeScore: 24, awayScore: 10,
+    completed: true, isRegularSeason: true, seasonYear: 2026, week: real.week,
+  };
+  const run = (games, currentScores = {}) => planResultWrites({ games, currentScores, seasonYear: 2026 });
+
+  t("a completed regular-season game is written", run([base]).updatedCount === 1);
+  t("...to the right fixture", Object.keys(run([base]).writes)[0] === `scores.${real.id}`);
+
+  // Every one of these must be REFUSED. Each is a way a wrong score could end
+  // up against a real fixture.
+  const refuses = [
+    ["a game still in progress", { ...base, completed: false }, "not_completed"],
+    ["a preseason game", { ...base, isRegularSeason: false }, "not_regular_season"],
+    ["a game whose type is unknown", { ...base, isRegularSeason: null }, "not_regular_season"],
+    ["last season's game", { ...base, seasonYear: 2025 }, "wrong_season_year"],
+    ["a game with no scores", { ...base, homeScore: null, awayScore: null }, "missing_scores"],
+    ["a game with only one score", { ...base, awayScore: null }, "missing_scores"],
+    ["a game with no team codes", { ...base, homeAbbr: null }, "unmapped_team"],
+    ["a team code we don't recognise", { ...base, homeAbbr: "WSH" }, "unknown_team_code"],
+    ["a fixture that isn't in our schedule", { ...base, homeAbbr: "KC", awayAbbr: "KC" }, "no_matching_fixture"],
+  ];
+  for (const [label, game, reason] of refuses) {
+    const out = run([game]);
+    t(`refuses ${label}`, out.updatedCount === 0 && out.skipped[reason] === 1,
+      JSON.stringify(out.skipped));
+  }
+
+  t("an unrecognised code is named in the report",
+    run([{ ...base, homeAbbr: "WSH" }]).details[0].unknown?.[0] === "WSH");
+
+  // Never overwrite: the single most important guarantee in the fetcher.
+  const existing = { [real.id]: { homeScore: 3, awayScore: 0 } };
+  const out = run([base], existing);
+  t("never overwrites a score that already exists", out.updatedCount === 0 && out.skipped.already_exists === 1);
+  t("...and the stored score is untouched", Object.keys(out.writes).length === 0);
+
+  // A provider that disagrees with our schedule on the week number should
+  // still match on the teams, and say that it did.
+  const drift = { ...base, week: 99 };
+  const d = run([drift]);
+  t("a week-number disagreement still matches on teams", d.updatedCount === 1);
+  t("...and is reported as such", d.details[0].matchedBy === "teams_only");
+  t("an exact match is reported as exact", run([base]).details[0].matchedBy === "teams_and_week");
+
+  // Home/away is not symmetric — a reversed fixture must not match.
+  const reversed = { ...base, homeAbbr: real.away, awayAbbr: real.home };
+  const rv = findFixture(reversed);
+  t("a home/away swap doesn't match the same fixture", rv.fixture?.id !== real.id);
+
+  // A batch mixing good and bad writes only the good.
+  const mixed = run([base, { ...base, completed: false }, { ...base, isRegularSeason: false }]);
+  t("a mixed batch writes only the valid game", mixed.updatedCount === 1);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

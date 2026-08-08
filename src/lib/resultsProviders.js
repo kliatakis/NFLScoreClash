@@ -70,6 +70,23 @@ function normalizeEspnEvent(event) {
   };
 }
 
+// The window to ask ESPN for, as YYYYMMDD-YYYYMMDD.
+//
+// This used to send a COMMA-SEPARATED list of dates. ESPN's scoreboard
+// documents a single date or a hyphenated range; a comma list is not a format
+// it advertises, and an unparseable `dates` value makes it quietly fall back
+// to the current day rather than erroring. That failure mode is the worst
+// kind: the fetch "succeeds", writes whatever it found today, and silently
+// misses every game outside it — all season, with nothing to indicate it.
+// The range form is unambiguous and covers exactly the same days.
+export function espnDateRange(from, daysBack = 1, daysForward = 3) {
+  const stamp = (offset) => {
+    const d = new Date(from.getTime() + offset * 86400000);
+    return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+  };
+  return `${stamp(-Math.abs(daysBack))}-${stamp(Math.abs(daysForward))}`;
+}
+
 export const espnProvider = {
   name: "ESPN",
 
@@ -78,15 +95,7 @@ export const espnProvider = {
   // Wed/Fri/Sat special, and a cron that only ever looked at today would miss
   // anything that finished late relative to the server's clock.
   async fetchRecentGames({ daysBack = 1, daysForward = 3 } = {}) {
-    const today = new Date();
-    const offsets = [];
-    for (let d = -Math.abs(daysBack); d <= Math.abs(daysForward); d++) offsets.push(d);
-
-    const dateParam = offsets.map(offset => {
-      const d = new Date(today.getTime() + offset * 86400000);
-      return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
-    }).join(",");
-
+    const dateParam = espnDateRange(new Date(), daysBack, daysForward);
     const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${dateParam}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`ESPN responded ${response.status}`);

@@ -24,13 +24,27 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
     try {
       const res = await fetch("/api/fetch-results?manual=true");
       const data = await res.json();
-      setFetchMsg(data.success ? `✅ ${data.updated || 0} new result(s) added.` : `⚠️ ${data.error || "Something went wrong."}`);
+      if (!data.success) {
+        setFetchMsg(`⚠️ ${data.error || "Something went wrong."}`);
+      } else {
+        // Reporting only "0 added" hides the difference between "nothing has
+        // been played" and "the feed changed and nothing matches any more" —
+        // which is the failure that would quietly cost a season.
+        const skipped = data.skipped || {};
+        const notable = ["unknown_team_code", "no_matching_fixture", "wrong_season_year"]
+          .filter(k => skipped[k])
+          .map(k => `${skipped[k]} ${k.replace(/_/g, " ")}`);
+        setFetchMsg(
+          `✅ ${data.updated || 0} new result(s) from ${data.checked || 0} game(s) checked.`
+          + (notable.length ? `  ⚠️ ${notable.join(", ")} — check the feed.` : "")
+        );
+      }
 
     } catch {
       setFetchMsg("⚠️ Could not reach the results service.");
     } finally {
       setFetching(false);
-      setTimeout(() => setFetchMsg(""), 5000);
+      setTimeout(() => setFetchMsg(""), 12000);
     }
   };
 

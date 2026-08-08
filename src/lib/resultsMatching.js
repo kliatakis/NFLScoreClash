@@ -13,6 +13,7 @@
 // written into a regular-season fixture's slot.
 
 import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
+import { TEAMS } from "../data/teams.js";
 
 // Prefers an exact match on teams AND week, falling back to teams-only.
 //
@@ -71,6 +72,16 @@ export function planResultWrites({ games, currentScores = {}, seasonYear, fixtur
     }
     if (!game.homeAbbr || !game.awayAbbr) {
       skip("unmapped_team", { game: label });
+      continue;
+    }
+    // Name the offending code rather than letting it fall through to
+    // "no_matching_fixture". A provider renaming one team (ESPN has used both
+    // JAC and JAX, and LA before LAR) would otherwise drop that team's games
+    // for the rest of the season while the run still reported success — the
+    // report would say "no matching fixture" and give no clue why.
+    const unknown = [game.homeAbbr, game.awayAbbr].filter(a => !TEAMS[a]);
+    if (unknown.length) {
+      skip("unknown_team_code", { game: label, unknown });
       continue;
     }
 
