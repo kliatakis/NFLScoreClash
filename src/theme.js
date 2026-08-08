@@ -149,6 +149,12 @@ export const css = (dark = true) => `
     border-bottom: 1px solid var(--border);
   }
   .nav::-webkit-scrollbar { display: none; }
+  /* Sub-tab strips inside a page (Predictions, and the league views). Wraps
+     rather than scrolling, so nothing is hidden off-screen — the trade is that
+     longer labels take an extra row on a narrow phone, which is why the tabs
+     tighten up below. */
+  .subtab-row { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+
   .nav-tab {
     background: transparent; border: 1px solid transparent; color: var(--muted);
     font-family: var(--font-body); font-size: 13px; font-weight: 600; padding: 8px 18px;
@@ -812,6 +818,11 @@ export const css = (dark = true) => `
   }
   @media (prefers-reduced-motion: reduce) { .saved-flash { animation: none; } }
   @media (max-width: 560px) {
+    /* "Conference Winners" is a wide label; trimming the padding and a little
+       letter-spacing keeps the Predictions strip to two rows instead of three
+       without abbreviating anything. */
+    .subtab-row { gap: 6px; }
+    .subtab-row .nav-tab { padding: 7px 12px; font-size: 12px; }
     /* One per row rather than two squeezed side by side. */
     .form-item { flex-basis: 100%; }
     /* Long member lists in the nudge shouldn't push the clock off-screen. */

@@ -20,12 +20,17 @@ import TeamBadge from "./TeamBadge.jsx";
 // "reveal everyone's picks" feature below IS league-scoped though — it needs
 // a specific member list, so it uses whichever league is currently selected
 // (same one shown on the Dashboard) and simply doesn't render if none is.
+// "Game Scores" was a leftover from when this tab took exact scorelines —
+// there are no scores here any more, only a winner, and "Regular Season" also
+// pairs properly with "Playoffs". The three season picks say "Winners"
+// because "Division" alone doesn't tell you what you're being asked for, and
+// these are the picks people most often don't realise exist until they lock.
 const PREDICTIONS_TABS = [
-  { key: "games", label: "Game Scores" },
+  { key: "games", label: "Regular Season" },
   { key: "playoffs", label: "Playoffs" },
-  { key: "division", label: "Division" },
-  { key: "conference", label: "Conference" },
-  { key: "superbowl", label: "Super Bowl" },
+  { key: "division", label: "Division Winners" },
+  { key: "conference", label: "Conference Winners" },
+  { key: "superbowl", label: "Super Bowl Winner" },
 ];
 
 // Preseason picks lock 15 minutes before the season opener — computed once
@@ -144,7 +149,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
       <div className="page-title">Predictions</div>
       <div className="page-sub">Your picks are shared across every league you're in — enter once.</div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+      <div className="subtab-row">
         {PREDICTIONS_TABS.map(t => (
           <button key={t.key} className={`nav-tab ${view === t.key ? "active" : ""}`} onClick={() => setView(t.key)}>{t.label}</button>
         ))}
