@@ -27,6 +27,10 @@ import {
 import { planResultWrites, findFixture } from "../src/lib/resultsMatching.js";
 import { espnDateRange } from "../src/lib/resultsProviders.js";
 import {
+  SOLO_MISS, GROUP_MISS, LONE_CALL, SWEEP_LINES, NEAR_LINES, SHARP_LINES,
+} from "../src/data/roasts.js";
+import { hashSeed, pickLine, templateParts, fillTemplate, usablePool } from "../src/lib/shoutouts.js";
+import {
   AUDIT_VERSION, AUDIT_KINDS, AUDIT_GROUPS, makeEntry, isValidEntry, entryVisibleTo,
   filterEntries, groupByDay, dayLabel, resultKind, resultSummary, fixtureText, scoreText,
   pickSideText, overrideSummary, scoringDiff, scoringSummary,
@@ -927,6 +931,86 @@ group("Backups carry the change history");
   const plan = planRestore(b, { results: {}, predictions: {}, leagues: {} }, { mode: "replace" });
   t("...and a full replace plan contains no history writes",
     !("auditLog" in plan) && JSON.stringify(plan).indexOf("auditLog") === -1);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Shoutout lines");
+{
+  const ALL = [
+    ["SOLO_MISS", SOLO_MISS], ["GROUP_MISS", GROUP_MISS], ["LONE_CALL", LONE_CALL],
+    ["SWEEP_LINES", SWEEP_LINES], ["NEAR_LINES", NEAR_LINES], ["SHARP_LINES", SHARP_LINES],
+  ];
+  const KNOWN = new Set(["name", "game", "winner", "loser", "score", "week", "games", "correct", "points"]);
+
+  t("the miss pool is big enough not to repeat within a season", SOLO_MISS.length >= 100, `${SOLO_MISS.length} lines`);
+  t("the upset pool is substantial too", LONE_CALL.length >= 40, `${LONE_CALL.length} lines`);
+
+  for (const [label, pool] of ALL) {
+    t(`${label}: no duplicate lines`, new Set(pool).size === pool.length,
+      `${pool.length - new Set(pool).size} dupes`);
+    const bad = pool.filter(l => (l.match(/\{([a-z]+)\}/g) || [])
+      .some(tok => !KNOWN.has(tok.slice(1, -1))));
+    t(`${label}: no unknown placeholders`, bad.length === 0, bad[0] || "");
+    // A shoutout that never says who it's about is just a sentence.
+    t(`${label}: every line names somebody`, pool.every(l => l.includes("{name}")));
+    t(`${label}: nothing left unterminated`, pool.every(l => !/\{[^}]*$/.test(l)));
+  }
+
+  // Determinism is the whole design — see the header of lib/shoutouts.js.
+  const seed = "ABC123:1:clown:w1_3:Jack";
+  t("the same row always draws the same line",
+    pickLine(SOLO_MISS, seed) === pickLine(SOLO_MISS, seed));
+  t("a different row draws a different line",
+    pickLine(SOLO_MISS, seed) !== pickLine(SOLO_MISS, "ABC123:1:clown:w1_9:Jack"));
+  t("hashSeed spreads near-identical seeds",
+    new Set(["w1_1", "w1_2", "w1_3", "w1_4", "w1_5"].map(s => hashSeed(s) % SOLO_MISS.length)).size >= 4);
+
+  // Two rows in one week must never land on the same joke.
+  {
+    const used = new Set();
+    const picks = ["w1_1", "w1_2", "w1_3", "w1_4", "w1_5", "w1_6"]
+      .map(id => pickLine(SOLO_MISS, `L:1:clown:${id}:Jack`, used));
+    t("de-duplication holds across a week's rows", new Set(picks).size === picks.length);
+  }
+  {
+    // Forced collision: a two-line pool asked for three lines still can't
+    // crash or return undefined.
+    const used = new Set();
+    const tiny = ["{name} a", "{name} b"];
+    const out = [1, 2, 3].map(i => pickLine(tiny, `s${i}`, used));
+    t("an exhausted pool still returns a real line", out.every(x => typeof x === "string" && x.length > 0));
+  }
+
+  // Placeholder filling
+  const vars = { name: "Jack", game: "Bears @ Panthers", winner: "Panthers", loser: "Bears", score: "24-17" };
+  t("placeholders are substituted",
+    fillTemplate("{name} backed {loser} in {game}.", vars) === "Jack backed Bears in Bears @ Panthers.");
+  t("the name is marked so it can be bolded",
+    templateParts("hi {name}", vars).some(p => p.key === "name" && p.value === "Jack"));
+  t("a filled line never leaves braces behind",
+    !/[{}]/.test(SOLO_MISS.map(l => fillTemplate(l, { ...vars, week: 1, games: 16, correct: 15, points: 3 })).join(" ")));
+
+  // A tied game has no winner or loser — lines naming one must be filtered
+  // out rather than rendered with a hole in them.
+  {
+    const tieVars = { name: "Jack", game: "Bears @ Panthers", score: "20-20" };
+    const pool = usablePool(SOLO_MISS, tieVars);
+    t("lines needing a winner are dropped when there isn't one",
+      pool.length > 0 && pool.every(l => !l.includes("{winner}") && !l.includes("{loser}")));
+    t("...and what's left still fills cleanly",
+      !/[{}]/.test(pool.map(l => fillTemplate(l, tieVars)).join(" ")));
+    t("usablePool never returns nothing", usablePool(SOLO_MISS, {}).length > 0);
+  }
+
+  // Badge lines need the week-bonus numbers, which come from weekAccuracyBadge.
+  {
+    const g = scenario({ a: { 1: 1 } });
+    const badge = weekAccuracyBadge("a", 1, g.preds, g.results, SC);
+    const filled = fillTemplate(NEAR_LINES[0], {
+      name: "A", week: 1, games: badge.games, correct: badge.games - badge.misses, points: badge.points,
+    });
+    t("a badge line fills from the real badge object", !/[{}]/.test(filled) && filled.includes("+5"));
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────────────

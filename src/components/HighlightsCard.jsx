@@ -1,13 +1,30 @@
 import { useMemo, useState } from "react";
 import { fsToggleReaction } from "../firebase.js";
-import { computeHighlights, computeWeeklyRecap, getScoringSettings } from "../lib/scoring.js";
+import { computeHighlights, computeWeeklyRecap, getScoringSettings, resultWinner } from "../lib/scoring.js";
 import { TEAMS } from "../data/teams.js";
+import { pickLine, templateParts, usablePool } from "../lib/shoutouts.js";
+import {
+  SOLO_MISS, GROUP_MISS, LONE_CALL, SWEEP_LINES, NEAR_LINES, SHARP_LINES,
+} from "../data/roasts.js";
 import TeamBadge from "./TeamBadge.jsx";
 
-const gameLabel = (fixture) => {
-  const away = TEAMS[fixture.away], home = TEAMS[fixture.home];
-  return `${away ? `${away.city} ${away.name}` : fixture.away} @ ${home ? `${home.city} ${home.name}` : fixture.home}`;
-};
+const teamName = (code) => (TEAMS[code] ? `${TEAMS[code].city} ${TEAMS[code].name}` : code);
+
+const gameLabel = (fixture) => `${teamName(fixture.away)} @ ${teamName(fixture.home)}`;
+
+// Who actually won, for the lines that name the teams. A tie has no winner,
+// so those placeholders fall back to literal text rather than inventing one.
+function gameVars(fixture, result) {
+  const side = result ? resultWinner(result) : null;
+  const vars = {
+    game: gameLabel(fixture),
+    score: result && result.awayScore != null && result.homeScore != null
+      ? `${result.awayScore}-${result.homeScore}` : null,
+  };
+  if (side === "H") { vars.winner = teamName(fixture.home); vars.loser = teamName(fixture.away); }
+  else if (side === "A") { vars.winner = teamName(fixture.away); vars.loser = teamName(fixture.home); }
+  return vars;
+}
 
 const joinNames = (names) => {
   if (names.length === 1) return names[0];
@@ -15,35 +32,22 @@ const joinNames = (names) => {
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 };
 
-// Tier-specific wording. A Clean Sweep should read like an event; a Sharp Week
-// like a solid nod. Same template for all three would flatten the difference.
-function badgeShout({ badge, users }, week) {
-  const who = <b>{joinNames(users)}</b>;
-  const many = users.length > 1;
-  const pts = <> <b>+{badge.points}</b> points.</>;
-  if (badge.id === "sweep") {
-    return (
-      <>
-        {who} went a <b>perfect {badge.games} from {badge.games}</b> in Week {week}
-        {many ? " — they both swept it" : " — a Clean Sweep"}!!{pts}
-      </>
-    );
-  }
-  if (badge.id === "near") {
-    return (
-      <>
-        {who} {many ? "were" : "was"} one game away from perfection in Week {week} —
-        {" "}<b>Near Perfect</b>, {badge.games - 1} from {badge.games}.{pts}
-      </>
-    );
-  }
+// Renders one line from a pool, with {name} in bold and everything else
+// plain — matching how these read before, when they were hardcoded.
+function Shout({ template, vars }) {
   return (
     <>
-      {who} dropped only two all week — <b>Sharp Week</b> in Week {week},
-      {" "}{badge.games - 2} from {badge.games}.{pts}
+      {templateParts(template, vars).map((p, i) =>
+        p.key === "name" ? <b key={i}>{p.value}</b> : <span key={i}>{p.key ? p.value : p.text}</span>
+      )}
     </>
   );
 }
+
+// Which pool a week bonus draws from. Kept tier-specific: a Clean Sweep
+// should read like an event and a Sharp Week like a solid nod, and one shared
+// pool would flatten the difference.
+const BADGE_POOLS = { sweep: SWEEP_LINES, near: NEAR_LINES, sharp: SHARP_LINES };
 
 // A fun "announcement board" for the most recently completed week — week
 // accuracy bonuses, long-shot correct calls, and the rare miss on an
@@ -107,6 +111,16 @@ export default function HighlightsCard({ league, user, allUsers, allPredictions,
 
   if (!week) return null;
   const nothingHappened = sweeps.length === 0 && upsets.length === 0 && clowns.length === 0;
+
+  // Draws a line for one row, remembering what this week already used so two
+  // rows can't land on the same joke — which is the whole reason the pools
+  // exist. Rebuilt on every render, but the result is identical every time:
+  // the pick is a hash of the row, and rows render in a fixed order.
+  const usedPerPool = new Map();
+  const draw = (poolKey, pool, seed) => {
+    if (!usedPerPool.has(poolKey)) usedPerPool.set(poolKey, new Set());
+    return pickLine(pool, seed, usedPerPool.get(poolKey));
+  };
   // The card used to hide itself when no callouts fired. It no longer does —
   // the recap always has something to say about a completed week, even a
   // quiet one.
@@ -208,22 +222,48 @@ export default function HighlightsCard({ league, user, allUsers, allPredictions,
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {sweeps.map(s => (
           <div key={`sweep-${s.badge.id}`} className={`highlight-row badge-shout acc-${s.badge.id}`}>
-            <b>{league.name}</b>: {s.badge.icon} {badgeShout(s, week)}
+            <b>{league.name}</b>: {s.badge.icon}{" "}
+            <Shout
+              template={draw(`badge:${s.badge.id}`, BADGE_POOLS[s.badge.id] || SHARP_LINES,
+                `${league.id}:${week}:${s.badge.id}:${s.users.join("|")}`)}
+              vars={{
+                name: joinNames(s.users), week,
+                games: s.badge.games, correct: s.badge.games - s.badge.misses,
+                points: s.badge.points,
+              }}
+            />
             <ReactionBar leagueId={league.id} rowKey={`${week}:sweep:${s.badge.id}`} reactions={reactions} uid={user?.uid} />
           </div>
         ))}
-        {upsets.map((h, i) => (
-          <div key={`upset-${h.fixture.id}`} className="highlight-row">
-            <b>{league.name}</b>: 🔮 <b>{joinNames(h.users)}</b> called the upset in {gameLabel(h.fixture)}!!
-            <ReactionBar leagueId={league.id} rowKey={`${week}:upset:${h.fixture.id}`} reactions={reactions} uid={user?.uid} />
-          </div>
-        ))}
-        {clowns.map((h, i) => (
-          <div key={`clown-${h.fixture.id}`} className="highlight-row">
-            <b>{league.name}</b>: 🤡 <b>{joinNames(h.users)}</b> {h.users.length === 1 ? "was the only one" : "were the only ones"} who didn't predict {gameLabel(h.fixture)} correctly. Did you flip a coin or just close your eyes?
-            <ReactionBar leagueId={league.id} rowKey={`${week}:clown:${h.fixture.id}`} reactions={reactions} uid={user?.uid} />
-          </div>
-        ))}
+        {upsets.map(h => {
+          const vars = { name: joinNames(h.users), ...gameVars(h.fixture, results[h.fixture.id]) };
+          return (
+            <div key={`upset-${h.fixture.id}`} className="highlight-row">
+              <b>{league.name}</b>: 🔮{" "}
+              <Shout
+                template={draw("lone", usablePool(LONE_CALL, vars),
+                  `${league.id}:${week}:upset:${h.fixture.id}:${h.users.join("|")}`)}
+                vars={vars}
+              />
+              <ReactionBar leagueId={league.id} rowKey={`${week}:upset:${h.fixture.id}`} reactions={reactions} uid={user?.uid} />
+            </div>
+          );
+        })}
+        {clowns.map(h => {
+          const vars = { name: joinNames(h.users), ...gameVars(h.fixture, results[h.fixture.id]) };
+          const pool = h.users.length === 1 ? SOLO_MISS : GROUP_MISS;
+          return (
+            <div key={`clown-${h.fixture.id}`} className="highlight-row">
+              <b>{league.name}</b>: 🤡{" "}
+              <Shout
+                template={draw("miss", usablePool(pool, vars),
+                  `${league.id}:${week}:clown:${h.fixture.id}:${h.users.join("|")}`)}
+                vars={vars}
+              />
+              <ReactionBar leagueId={league.id} rowKey={`${week}:clown:${h.fixture.id}`} reactions={reactions} uid={user?.uid} />
+            </div>
+          );
+        })}
       </div>
       {hiddenCount > 0 && (
         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 10, textAlign: "center" }}>
