@@ -823,6 +823,26 @@ export const css = (dark = true) => `
        without abbreviating anything. */
     .subtab-row { gap: 6px; }
     .subtab-row .nav-tab { padding: 7px 12px; font-size: 12px; }
+    /* ── Pick buttons: stack the team name instead of truncating it ──────
+       Side by side, each option gets about 119px on a 360px screen, and the
+       badge icon plus padding takes 50 of it. "Jacksonville Jaguars" needs
+       roughly 132px, so it was being cut to "Jackso…" — on the one screen
+       where knowing which team you're tapping matters most.
+       Stacking the badge vertically hands the full width back to the text and
+       puts the city over the nickname, which is how every sports app does it
+       and how people read the names anyway. */
+    .pick-row { grid-template-columns: 1fr 44px 1fr; gap: 6px; padding: 4px 10px 12px; }
+    .pick-option { min-height: 66px; padding: 8px 4px; }
+    .pick-option .team-badge { flex-direction: column; gap: 4px; padding: 0; width: 100%; }
+    .pick-option .team-badge-icon { width: 22px; height: 22px; font-size: 12px; }
+    .pick-option .team-badge-label {
+      white-space: normal; text-overflow: clip; text-align: center;
+      display: flex; flex-direction: column; line-height: 1.2; width: 100%;
+    }
+    .pick-option .team-badge-city { font-size: 11px; font-weight: 600; opacity: 0.85; }
+    .pick-option .team-badge-nick { font-size: 12.5px; font-weight: 800; }
+    .pick-option-tie { font-size: 9.5px; letter-spacing: 0.5px; }
+
     /* One per row rather than two squeezed side by side. */
     .form-item { flex-basis: 100%; }
     /* Long member lists in the nudge shouldn't push the clock off-screen. */

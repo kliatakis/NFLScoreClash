@@ -30,7 +30,14 @@ export default function TeamBadge({ code, size = 26, showName = false }) {
       </span>
       {/* In a span so it can truncate — "Jacksonville Jaguars" next to a
           progress bar and a W-L record overflows a narrow phone otherwise. */}
-      <span className="team-badge-label">{showName ? `${t.city} ${t.name}` : t.abbr}</span>
+      {/* City and nickname are separate spans so a narrow layout can stack
+          them onto two lines. Inline (the default) they render exactly as one
+          string with a space, so every existing use looks unchanged. */}
+      <span className="team-badge-label">
+        {showName
+          ? <><span className="team-badge-city">{t.city}</span>{" "}<span className="team-badge-nick">{t.name}</span></>
+          : t.abbr}
+      </span>
     </span>
   );
 }
