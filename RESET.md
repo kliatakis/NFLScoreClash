@@ -23,6 +23,7 @@ part that catches people out.
 | **Firestore** — `leagues` | Leagues, members, scoring settings, standings snapshots | Delete collection |
 | **Firestore** — `predictions` | One doc per user: every game pick and season pick | Delete collection |
 | **Firestore** — `results` | One doc, `results_2026`: all scores, special results, playoff matchups | Delete collection |
+| **Firestore** — `auditLog` | The change history shown in Admin Panel → History | Delete collection |
 | **Authentication** | The actual login accounts (email + password) | Delete users |
 
 Firestore holds the *data*; Authentication holds the *logins*. Clearing only
@@ -34,13 +35,19 @@ will look broken for them rather than fresh.
 ## Step 1 — Firestore
 
 1. [Firebase Console](https://console.firebase.google.com/) → your project → **Firestore Database**
-2. For each of the five collections above:
+2. For each of the six collections above:
    - Click the collection name in the left column
    - Click the **⋮** menu next to the collection name
    - **Delete collection**
    - Type the collection name to confirm
 
-Delete all five: `users`, `usernames`, `leagues`, `predictions`, `results`.
+Delete all six: `users`, `usernames`, `leagues`, `predictions`, `results`, `auditLog`.
+
+`auditLog` won't exist yet if no admin has changed anything — skip it if it's
+not listed. Note that the app itself can never delete from it (the rules allow
+create only), so the console is the only way to clear it. Take a backup first
+if you want to keep the record: **Admin Panel → Backup → Download backup**
+includes every history entry.
 
 The console deletes in batches and may need a moment on `predictions` if you've
 had a few testers. If a collection reappears looking half-empty, refresh — it's
@@ -61,14 +68,17 @@ and re-register.
 Deleting collections doesn't touch security rules, but this is a good moment to
 confirm the `usernames` rule is live, since registration fails without it:
 
-Firestore → **Rules** tab → confirm you can see:
+Firestore → **Rules** tab → confirm you can see **both** of these:
 
 ```
 match /usernames/{name} {
+match /auditLog/{entryId} {
 ```
 
-If it isn't there, paste in the contents of `firestore.rules` from this project
-and click **Publish**.
+If either is missing, paste in the whole contents of `firestore.rules` from this
+project and click **Publish**. Without the first, registration fails. Without the
+second, Admin Panel → History can't be read and nothing gets recorded — the app
+carries on working, but silently keeps no record of admin changes.
 
 ## Step 4 — Verify
 

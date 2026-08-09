@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { useEscapeKey } from "../lib/hooks.js";
 import {
   fsCreateLeague, fsGetLeague, fsAddLeagueMember, fsRemoveLeagueMember,
-  fsSetLeagueAdmins, fsDeleteLeague, fsGetAllUsers, fsLeaveLeague,
+  fsSetLeagueAdmins, fsLeaveLeague, fsLogChange,
 } from "../firebase.js";
+import { makeEntry } from "../lib/auditLog.js";
 import { generateCode, DEFAULT_SCORING } from "../lib/scoring.js";
 import Avatar from "./Avatar.jsx";
 import AdminPanel from "./AdminPanel.jsx";
@@ -196,16 +197,36 @@ function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, onLeft }) 
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
+  // Recorded in the league's History (Admin Panel → History). Membership and
+  // admin rights decide who can change scores and scoring, so they belong in
+  // the same record as the scores themselves. `global: false` — these are
+  // about this league only, unlike a result, which lands in every league.
+  const log = (kind, summary, detail) => {
+    try {
+      fsLogChange(makeEntry({
+        kind, actorUid: user.uid, actorName: user.username || "Admin",
+        leagueId: league.id, global: false, summary, detail, now: Date.now(),
+      }));
+    } catch (err) { console.error("Couldn't build a history entry", err); }
+  };
+
+  const nameOf = (uid) => allUsers[uid]?.username || uid;
+
   // No manual refresh needed anywhere in here — every league doc is live via
   // fsSubscribeMyLeagues, so these writes flow back on their own.
   const toggleAdmin = async (uid) => {
     const current = league.adminIds || [];
-    const next = current.includes(uid) ? current.filter(a => a !== uid) : [...current, uid];
+    const promoting = !current.includes(uid);
+    const next = promoting ? [...current, uid] : current.filter(a => a !== uid);
     await fsSetLeagueAdmins(league.id, next);
+    log("admins_changed",
+      `${nameOf(uid)} ${promoting ? "made an admin" : "had admin rights revoked"}`,
+      { targetUid: uid, promoted: promoting });
   };
 
   const kick = async (uid) => {
     await fsRemoveLeagueMember(league.id, uid);
+    log("member_removed", `${nameOf(uid)} removed from ${league.name}`, { targetUid: uid });
     setConfirmKick(null);
   };
 

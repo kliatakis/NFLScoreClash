@@ -136,5 +136,41 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isSignedIn();
     }
+
+    // ── auditLog/{entryId} — the change history, APPEND-ONLY ──────────────
+    //
+    // The single most important line here is the absence of `update` and
+    // `delete`. Once an entry exists, nothing the app can do will alter or
+    // remove it — that is the entire value of the collection. Firestore
+    // denies anything not explicitly allowed, so leaving them out is the
+    // enforcement; do not "tidy up" by adding a write rule.
+    //
+    // On create we pin two things:
+    //   * actorUid must be the caller. You cannot log a change as someone
+    //     else, so the log can't be used to frame another admin.
+    //   * `at` must be within 15 minutes of the server's clock, so an entry
+    //     can't be backdated to hide when something happened, or future-dated
+    //     to sit permanently at the top of the list. The window is generous
+    //     on purpose: `at` comes from the browser, and a laptop whose clock
+    //     has drifted a few minutes is common — rejecting those would lose
+    //     honest entries to defend against a threat the console already
+    //     bypasses anyway.
+    //
+    // Read is open to any signed-in user. The app only surfaces the history
+    // to admins, but this is a record of admin actions among friends, not a
+    // secret — and a rule that could truly enforce "admin of this league"
+    // needs a cross-document lookup per row, which Firestore can't do
+    // cheaply on a list query.
+    match /auditLog/{entryId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.at is number
+        && request.resource.data.at > request.time.toMillis() - 900000
+        && request.resource.data.at < request.time.toMillis() + 900000
+        && request.resource.data.kind is string
+        && request.resource.data.summary is string
+        && request.resource.data.summary.size() <= 300;
+    }
   }
 }

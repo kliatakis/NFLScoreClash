@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, isPlayoffMatchupReady } from "../data/fixtures.js";
 import { TEAMS, TEAM_CODES, teamsByConference, teamsForSpecialPick } from "../data/teams.js";
 import {
@@ -6,18 +6,69 @@ import {
   fsAdminOverrideGamePrediction, fsGetPredictions, fsGetAllUsers,
   fsSubscribeResults, fsSubscribeSpecialResults,
   fsSetPlayoffFixture, fsClearPlayoffFixture, fsSubscribePlayoffFixtures,
+  fsLogChange,
 } from "../firebase.js";
 import { getScoringSettings } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
+import {
+  makeEntry, resultKind, resultSummary, fixtureText, scoreText,
+  overrideSummary, pickSideText, scoringDiff, scoringSummary,
+  playoffSummary, specialSummary,
+} from "../lib/auditLog.js";
 import TeamBadge from "./TeamBadge.jsx";
 import BackupPanel from "./BackupPanel.jsx";
+import ConfirmDialog from "./ConfirmDialog.jsx";
+import HistoryPanel from "./HistoryPanel.jsx";
 
-const SECTIONS = ["Results", "Playoffs", "Overrides", "Special Picks", "Scoring Settings", "Backup", "Danger Zone"];
+const SECTIONS = ["Results", "Playoffs", "Overrides", "Special Picks", "Scoring Settings", "History", "Backup", "Danger Zone"];
+
+// Plain names for the history line. The on-screen labels carry emoji and
+// dashes ("🧹 Clean Sweep — no misses") which read badly in a one-line summary.
+const SCORING_LABELS = {
+  correctPoints: "Correct Winner",
+  tiePoints: "Called a Tie",
+  sweepBonus: "Clean Sweep",
+  nearPerfectBonus: "Near Perfect",
+  sharpBonus: "Sharp Week",
+  divisionPoints: "Division Winner",
+  conferencePoints: "AFC/NFC Champion",
+  superbowlPoints: "Super Bowl Winner",
+};
 
 export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted }) {
   const [section, setSection] = useState("Results");
   const [fetchMsg, setFetchMsg] = useState("");
   const [fetching, setFetching] = useState(false);
+
+  // Every admin action funnels through here.
+  //
+  // `global` is the important flag. Scores, season winners and playoff
+  // matchups live in ONE document shared by the whole app, so changing one
+  // moves the standings in every league — those are logged as global and
+  // shown in every league's history. Scoring values and membership belong to
+  // this league alone.
+  //
+  // Never awaited by callers: see fsLogChange in firebase.js for why a
+  // logging failure must not look like a save failure.
+  const logChange = useCallback((kind, { summary, target, detail, global = true } = {}) => {
+    try {
+      fsLogChange(makeEntry({
+        kind,
+        actorUid: user.uid,
+        actorName: user.username || user.email || "Admin",
+        leagueId: league?.id || null,
+        global,
+        target,
+        summary,
+        detail,
+        now: Date.now(),
+      }));
+    } catch (err) {
+      // makeEntry throws on a programming error (unknown kind). Shouldn't
+      // reach a user, and definitely shouldn't take the panel down with it.
+      console.error("Couldn't build a history entry", err);
+    }
+  }, [user.uid, user.username, user.email, league?.id]);
 
   const fetchLatest = async () => {
     setFetching(true); setFetchMsg("");
@@ -46,6 +97,8 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
       setFetching(false);
       setTimeout(() => setFetchMsg(""), 12000);
     }
+    // No log call here — the endpoint writes its own entry server-side, which
+    // is the only place that knows what actually landed.
   };
 
   return (
@@ -64,21 +117,22 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
             </button>
             {fetchMsg && <span style={{ fontSize: 14, color: "var(--muted)" }}>{fetchMsg}</span>}
           </div>
-          <ResultsEntry timezone={user.timezone} />
+          <ResultsEntry timezone={user.timezone} logChange={logChange} />
         </div>
       )}
 
-      {section === "Playoffs" && <PlayoffEntry timezone={user.timezone} />}
-      {section === "Overrides" && <OverridesEntry league={league} adminUid={user.uid} />}
-      {section === "Special Picks" && <SpecialResultsEntry />}
-      {section === "Scoring Settings" && <ScoringSettings league={league} />}
-      {section === "Backup" && <BackupPanel user={user} isSuperAdmin={isSuperAdmin} />}
+      {section === "Playoffs" && <PlayoffEntry timezone={user.timezone} logChange={logChange} />}
+      {section === "Overrides" && <OverridesEntry league={league} adminUid={user.uid} logChange={logChange} />}
+      {section === "Special Picks" && <SpecialResultsEntry logChange={logChange} />}
+      {section === "Scoring Settings" && <ScoringSettings league={league} logChange={logChange} />}
+      {section === "History" && <HistoryPanel league={league} timezone={user.timezone} />}
+      {section === "Backup" && <BackupPanel user={user} isSuperAdmin={isSuperAdmin} logChange={logChange} />}
       {section === "Danger Zone" && isSuperAdmin && <DangerZone league={league} onLeagueDeleted={onLeagueDeleted} />}
     </div>
   );
 }
 
-function ResultsEntry({ timezone }) {
+function ResultsEntry({ timezone, logChange }) {
   // A "period" is either a regular-season week number or a playoff round id,
   // so playoff scores are entered in the same place as everything else.
   const [period, setPeriod] = useState("1");
@@ -137,7 +191,7 @@ function ResultsEntry({ timezone }) {
       )}
 
       {fixtures.map(f => (
-        <ResultRow key={f.id} fixture={f} result={results[f.id]} timezone={timezone} />
+        <ResultRow key={f.id} fixture={f} result={results[f.id]} timezone={timezone} logChange={logChange} />
       ))}
     </div>
   );
@@ -146,11 +200,14 @@ function ResultsEntry({ timezone }) {
 // One row per game, with its own local input state seeded from the stored
 // result — so existing scores are visible and editable, and "Clear" only
 // appears when there's actually something to clear.
-function ResultRow({ fixture, result, timezone }) {
+function ResultRow({ fixture, result, timezone, logChange }) {
   const [away, setAway] = useState(result?.awayScore ?? "");
   const [home, setHome] = useState(result?.homeScore ?? "");
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  // null | "update" | "clear"
+  const [confirming, setConfirming] = useState(null);
 
   // Re-sync whenever the stored result changes underneath us (another admin
   // saving, or the daily fetch landing while this panel is open).
@@ -161,26 +218,64 @@ function ResultRow({ fixture, result, timezone }) {
   }, [result?.awayScore, result?.homeScore]);
 
   const hasResult = !!result;
+  const before = hasResult ? { homeScore: result.homeScore, awayScore: result.awayScore } : null;
+  const after = { homeScore: Number(home), awayScore: Number(away) };
 
-  const save = async () => {
-    if (away === "" || home === "") return;
+  const doSave = async () => {
+    setError("");
     setBusy(true);
-    await fsSetResult(fixture.id, home, away);
-    setBusy(false);
-    setDirty(false);
+    try {
+      await fsSetResult(fixture.id, home, away);
+      logChange(resultKind(before, after), {
+        target: fixture.id,
+        summary: resultSummary(fixture, before, after),
+        detail: { before, after },
+      });
+      setDirty(false);
+      setConfirming(null);
+    } catch (err) {
+      console.error("Couldn't save the result", err);
+      setError("Couldn't save — check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const clear = async () => {
+  // Entering a score for the first time is the ordinary action — it happens
+  // ~285 times a season and destroys nothing, so it goes straight through.
+  // Overwriting one that's already there is the one that silently moves
+  // everyone's points, so that stops for a nod.
+  const save = () => {
+    if (away === "" || home === "") return;
+    if (hasResult) { setConfirming("update"); return; }
+    doSave();
+  };
+
+  const doClear = async () => {
+    setError("");
     setBusy(true);
-    await fsClearResult(fixture.id);
-    setBusy(false);
+    try {
+      await fsClearResult(fixture.id);
+      logChange("result_cleared", {
+        target: fixture.id,
+        summary: resultSummary(fixture, before, null),
+        detail: { before },
+      });
+      setConfirming(null);
+    } catch (err) {
+      console.error("Couldn't clear the result", err);
+      setError("Couldn't clear — check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div className="standings-row" style={{ flexWrap: "wrap" }}>
-      <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {formatKickoff(fixture.kickoffUTC, timezone)}
         {hasResult && <span className="chip active">Entered</span>}
+        {error && <span style={{ color: "var(--accent2)" }}>{error}</span>}
       </span>
       <span style={{ flex: 1, fontSize: 15 }}><TeamBadge code={fixture.away} /> @ <TeamBadge code={fixture.home} /></span>
       <input className="score-input" placeholder="A" value={away}
@@ -193,7 +288,32 @@ function ResultRow({ fixture, result, timezone }) {
       <button className="btn btn-primary btn-sm" disabled={!dirty || busy} onClick={save}>
         {hasResult ? "Update" : "Save"}
       </button>
-      {hasResult && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={clear}>Clear</button>}
+      {hasResult && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setConfirming("clear")}>Clear</button>}
+
+      {confirming === "update" && (
+        <ConfirmDialog
+          tone="warn"
+          title="Change a score that's already saved?"
+          lines={[fixtureText(fixture), `${scoreText(before)}  →  ${scoreText(after)}`]}
+          note="Points, week bonuses and medals are recalculated from scores every time anyone opens the app, so this changes the standings for everyone immediately. It's recorded in History."
+          confirmLabel="Change the score"
+          busy={busy}
+          onConfirm={doSave}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+      {confirming === "clear" && (
+        <ConfirmDialog
+          tone="danger"
+          title="Clear this result?"
+          lines={[fixtureText(fixture), `${scoreText(before)}  →  no score`]}
+          note="Everyone loses the points they earned from this game, and any Clean Sweep / Near Perfect / Sharp Week bonus for this week disappears until a score is entered again."
+          confirmLabel="Clear the score"
+          busy={busy}
+          onConfirm={doClear}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
     </div>
   );
 }
@@ -201,7 +321,7 @@ function ResultRow({ fixture, result, timezone }) {
 // Attaches real teams and kickoff times to the placeholder playoff fixtures.
 // Everyone's picks and the scoring already key off those permanent IDs, so
 // filling these in is purely a matter of saying who's playing and when.
-function PlayoffEntry({ timezone }) {
+function PlayoffEntry({ timezone, logChange }) {
   const [matchups, setMatchups] = useState({});
   const [results, setResults] = useState({});
   useEffect(() => fsSubscribePlayoffFixtures(setMatchups), []);
@@ -225,7 +345,8 @@ function PlayoffEntry({ timezone }) {
           <div key={round.id} style={{ marginBottom: 18 }}>
             <div className="form-label" style={{ marginBottom: 8 }}>{round.label}</div>
             {fixtures.map(f => (
-              <PlayoffRow key={f.id} fixture={f} matchup={matchups[f.id]} result={results[f.id]} timezone={timezone} />
+              <PlayoffRow key={f.id} fixture={f} matchup={matchups[f.id]} result={results[f.id]}
+                timezone={timezone} logChange={logChange} />
             ))}
           </div>
         );
@@ -234,12 +355,13 @@ function PlayoffEntry({ timezone }) {
   );
 }
 
-function PlayoffRow({ fixture, matchup, result, timezone }) {
+function PlayoffRow({ fixture, matchup, result, timezone, logChange }) {
   const [away, setAway] = useState(matchup?.away || "");
   const [home, setHome] = useState(matchup?.home || "");
   const [when, setWhen] = useState(toLocalInput(matchup?.kickoffUTC));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [confirming, setConfirming] = useState(null);   // null | "update" | "clear"
 
   useEffect(() => {
     setAway(matchup?.away || "");
@@ -253,18 +375,20 @@ function PlayoffRow({ fixture, matchup, result, timezone }) {
 
   const [error, setError] = useState("");
 
-  const save = async () => {
-    setError("");
-    if (!away || !home || away === home) return;
-    // A kickoff time is mandatory: it's the only thing that can lock this game,
-    // so saving without one would open it for picks that never close.
-    if (!when) { setError("Set a kickoff time — without one this game would never lock."); return; }
+  const doSave = async () => {
     const kickoff = new Date(when);
-    if (isNaN(kickoff)) { setError("That kickoff time isn't valid."); return; }
     setBusy(true);
     try {
-      await fsSetPlayoffFixture(fixture.id, { away, home, kickoffUTC: kickoff.toISOString() });
+      const next = { away, home, kickoffUTC: kickoff.toISOString() };
+      const previous = isSet ? { away: matchup.away, home: matchup.home, kickoffUTC: matchup.kickoffUTC } : null;
+      await fsSetPlayoffFixture(fixture.id, next);
+      logChange(previous ? "playoff_changed" : "playoff_set", {
+        target: fixture.id,
+        summary: playoffSummary(fixture, previous, next),
+        detail: { before: previous, after: next },
+      });
       setSaved(true);
+      setConfirming(null);
       setTimeout(() => setSaved(false), 1800);
     } catch (err) {
       console.error("Failed to save playoff matchup", err);
@@ -274,11 +398,36 @@ function PlayoffRow({ fixture, matchup, result, timezone }) {
     }
   };
 
-  const clear = async () => {
+  const save = () => {
+    setError("");
+    if (!away || !home || away === home) return;
+    // A kickoff time is mandatory: it's the only thing that can lock this game,
+    // so saving without one would open it for picks that never close.
+    if (!when) { setError("Set a kickoff time — without one this game would never lock."); return; }
+    if (isNaN(new Date(when))) { setError("That kickoff time isn't valid."); return; }
+    // Replacing a matchup that people may already have picked is the risky
+    // one — their picks stay attached to the fixture id while the teams under
+    // it change. Setting an empty one for the first time is harmless.
+    if (isSet) { setConfirming("update"); return; }
+    doSave();
+  };
+
+  const doClear = async () => {
     setBusy(true);
-    try { await fsClearPlayoffFixture(fixture.id); }
-    catch (err) { console.error("Failed to clear playoff matchup", err); setError("Couldn't clear that matchup."); }
-    finally { setBusy(false); }
+    try {
+      await fsClearPlayoffFixture(fixture.id);
+      logChange("playoff_cleared", {
+        target: fixture.id,
+        summary: playoffSummary(fixture, { away: matchup?.away, home: matchup?.home }, null),
+        detail: { before: { away: matchup?.away, home: matchup?.home, kickoffUTC: matchup?.kickoffUTC } },
+      });
+      setConfirming(null);
+    } catch (err) {
+      console.error("Failed to clear playoff matchup", err);
+      setError("Couldn't clear that matchup.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -313,7 +462,35 @@ function PlayoffRow({ fixture, matchup, result, timezone }) {
         onClick={save}>
         {busy ? "Saving…" : saved ? "Saved ✓" : isSet ? "Update" : "Set"}
       </button>
-      {isSet && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={clear}>Clear</button>}
+      {isSet && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setConfirming("clear")}>Clear</button>}
+
+      {confirming === "update" && (
+        <ConfirmDialog
+          tone="warn"
+          title="Change who's playing in this game?"
+          lines={[
+            fixture.label,
+            `${matchup?.away || "?"} @ ${matchup?.home || "?"}  →  ${away} @ ${home}`,
+          ]}
+          note="Picks are stored against the game, not the teams — anyone who already picked this game keeps their pick, and it now applies to the new matchup. Tell them if this isn't a simple correction."
+          confirmLabel="Change the matchup"
+          busy={busy}
+          onConfirm={doSave}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+      {confirming === "clear" && (
+        <ConfirmDialog
+          tone="danger"
+          title="Clear this matchup?"
+          lines={[fixture.label, `${matchup?.away || "?"} @ ${matchup?.home || "?"}  →  not set`]}
+          note="The game closes for predictions again. Picks already made are kept but score nothing until teams and a kickoff time are set."
+          confirmLabel="Clear the matchup"
+          busy={busy}
+          onConfirm={doClear}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
     </div>
   );
 }
@@ -327,12 +504,16 @@ function toLocalInput(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function OverridesEntry({ league, adminUid }) {
+function OverridesEntry({ league, adminUid, logChange }) {
   const [targetUid, setTargetUid] = useState("");
   const [fixtureId, setFixtureId] = useState("");
   const [winner, setWinner] = useState("");
   const [users, setUsers] = useState(null);
+  const [targetPicks, setTargetPicks] = useState(null);
   const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const fixture = REGULAR_SEASON_FIXTURES.find(f => f.id === fixtureId) || null;
 
   // Loaded in an effect, not during render — kicking off a fetch from the
@@ -344,12 +525,42 @@ function OverridesEntry({ league, adminUid }) {
     return () => { alive = false; };
   }, []);
 
-  const save = async () => {
-    if (!targetUid || !fixtureId || !winner) return;
-    await fsAdminOverrideGamePrediction(targetUid, fixtureId, winner, adminUid);
-    setMsg("Prediction overridden — the user will see a note that it was corrected.");
-    setWinner("");
-    setTimeout(() => setMsg(""), 4000);
+  // The member's CURRENT picks, so the confirmation can show what's actually
+  // being replaced. Overwriting a pick blind — with no idea whether you're
+  // fixing a typo or wiping a correct answer — is the thing to avoid here.
+  useEffect(() => {
+    let alive = true;
+    setTargetPicks(null);
+    if (!targetUid) return;
+    fsGetPredictions(targetUid).then(p => { if (alive) setTargetPicks(p?.picks || {}); });
+    return () => { alive = false; };
+  }, [targetUid]);
+
+  const currentSide = fixtureId && targetPicks ? (targetPicks[fixtureId]?.winner ?? null) : null;
+  const username = users?.[targetUid]?.username || targetUid;
+
+  const doSave = async () => {
+    setBusy(true); setError("");
+    try {
+      await fsAdminOverrideGamePrediction(targetUid, fixtureId, winner, adminUid);
+      logChange("pick_override", {
+        target: `${targetUid}:${fixtureId}`,
+        summary: overrideSummary(username, fixture, currentSide, winner),
+        detail: { targetUid, username, fixtureId, before: currentSide, after: winner },
+      });
+      setMsg("Prediction overridden — the user will see a note that it was corrected.");
+      setWinner("");
+      setConfirming(false);
+      // Keep the local copy honest so a second override in a row shows the
+      // right "before".
+      setTargetPicks(p => ({ ...(p || {}), [fixtureId]: { winner } }));
+      setTimeout(() => setMsg(""), 4000);
+    } catch (err) {
+      console.error("Couldn't override the prediction", err);
+      setError("Couldn't save that override — check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (users === null) return <div style={{ color: "var(--muted)" }}>Loading…</div>;
@@ -357,9 +568,11 @@ function OverridesEntry({ league, adminUid }) {
   return (
     <div>
       <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>
-        Correct a member's prediction if they made an entry error. They'll see an asterisk marking it as admin-corrected.
+        Correct a member's prediction if they made an entry error. They'll see an asterisk marking it as
+        admin-corrected, and it's recorded in History with your name on it.
       </p>
       {msg && <div className="success-msg">{msg}</div>}
+      {error && <div className="error-msg">{error}</div>}
       <div className="form-group">
         <label className="form-label">Member</label>
         <select className="form-select" value={targetUid} onChange={e => setTargetUid(e.target.value)}>
@@ -375,6 +588,17 @@ function OverridesEntry({ league, adminUid }) {
           {REGULAR_SEASON_FIXTURES.map(f => <option key={f.id} value={f.id}>Wk{f.week}: {f.away} @ {f.home}</option>)}
         </select>
       </div>
+
+      {/* Shown before you commit, not after: replacing a pick you can't see is
+          how a correct answer gets overwritten by mistake. */}
+      {fixture && targetUid && (
+        <div className="override-current">
+          {targetPicks === null
+            ? "Reading their current pick…"
+            : <>Currently picked: <b>{pickSideText(currentSide, fixture)}</b></>}
+        </div>
+      )}
+
       {/* Named sides rather than two score boxes — the game is winner-only, so
           there is no scoreline to correct. Disabled until a game is chosen,
           because the options are that game's teams. */}
@@ -388,26 +612,67 @@ function OverridesEntry({ league, adminUid }) {
           {fixture && <option value="T">Tie</option>}
         </select>
       </div>
-      <button className="btn btn-primary" onClick={save} disabled={!targetUid || !fixture || !winner}>
+      <button className="btn btn-primary" onClick={() => setConfirming(true)} disabled={!targetUid || !fixture || !winner || busy}>
         Save Override
       </button>
+
+      {confirming && (
+        <ConfirmDialog
+          tone="danger"
+          title={`Change ${username}'s pick?`}
+          lines={[
+            fixtureText(fixture),
+            `${pickSideText(currentSide, fixture)}  →  ${pickSideText(winner, fixture)}`,
+          ]}
+          note="This is someone else's answer. It changes their points immediately, they'll see a *corrected mark on it, and the change is recorded in History under your name."
+          confirmLabel="Change their pick"
+          busy={busy}
+          onConfirm={doSave}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
     </div>
   );
 }
 
-function SpecialResultsEntry() {
+function SpecialResultsEntry({ logChange }) {
   const [saved, setSaved] = useState({});
   // Live, and CONTROLLED — these dropdowns used to be uncontrolled with a
   // hardcoded empty default, so they always read "Not decided yet" even for
   // winners that had already been set. The admin had no way to see or verify
   // existing entries.
   const [specials, setSpecials] = useState({});
+  const [confirming, setConfirming] = useState(null);  // { type, next }
+  const [busy, setBusy] = useState(false);
   useEffect(() => fsSubscribeSpecialResults(setSpecials), []);
 
-  const set = async (typeId, team) => {
-    await fsSetSpecialResult(typeId, team);
-    setSaved(s => ({ ...s, [typeId]: true }));
-    setTimeout(() => setSaved(s => ({ ...s, [typeId]: false })), 2000);
+  const teamName = (code) => (code && TEAMS[code] ? `${TEAMS[code].city} ${TEAMS[code].name}` : "");
+
+  const apply = async (type, team) => {
+    const previous = specials[type.id] || "";
+    setBusy(true);
+    try {
+      await fsSetSpecialResult(type.id, team);
+      logChange(team ? (previous ? "special_changed" : "special_set") : "special_cleared", {
+        target: type.id,
+        summary: specialSummary(type.label, teamName(previous), teamName(team)),
+        detail: { before: previous || null, after: team || null },
+      });
+      setSaved(s => ({ ...s, [type.id]: true }));
+      setConfirming(null);
+      setTimeout(() => setSaved(s => ({ ...s, [type.id]: false })), 2000);
+    } catch (err) {
+      console.error("Couldn't save the season result", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Setting a winner for the first time goes straight through. Replacing one
+  // that's already decided rescores everybody's season pick, so it stops.
+  const change = (type, team) => {
+    if (specials[type.id]) { setConfirming({ type, next: team }); return; }
+    apply(type, team);
   };
 
   const decidedCount = SPECIAL_PICK_TYPES.filter(t => specials[t.id]).length;
@@ -425,7 +690,9 @@ function SpecialResultsEntry() {
         return (
           <div key={type.id} className="standings-row">
             <span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{type.label}</span>
-            <select className="form-select" style={{ maxWidth: 200 }} value={specials[type.id] || ""} onChange={e => set(type.id, e.target.value)}>
+            <select className="form-select" style={{ maxWidth: 200 }} value={specials[type.id] || ""}
+              disabled={busy}
+              onChange={e => change(type, e.target.value)}>
               <option value="">Not decided yet</option>
               {options.map(code => <option key={code} value={code}>{TEAMS[code].city} {TEAMS[code].name}</option>)}
             </select>
@@ -433,6 +700,22 @@ function SpecialResultsEntry() {
           </div>
         );
       })}
+
+      {confirming && (
+        <ConfirmDialog
+          tone={confirming.next ? "warn" : "danger"}
+          title={confirming.next ? "Change a winner that's already decided?" : "Clear this winner?"}
+          lines={[
+            confirming.type.label,
+            `${teamName(specials[confirming.type.id]) || "not set"}  →  ${teamName(confirming.next) || "not decided"}`,
+          ]}
+          note="Season picks are worth several times a normal game, and this applies to every league in the app — not just this one."
+          confirmLabel={confirming.next ? "Change the winner" : "Clear it"}
+          busy={busy}
+          onConfirm={() => apply(confirming.type, confirming.next)}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
     </div>
   );
 }
@@ -444,56 +727,83 @@ function SpecialResultsEntry() {
 // independently).
 const POINT_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1);
 
-function ScoringSettings({ league }) {
+function ScoringSettings({ league, logChange }) {
   const current = getScoringSettings(league);
   const [draft, setDraft] = useState({ ...current });
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
-  const save = async () => {
-    setError("");
-    const { correctPoints, tiePoints, sweepBonus, nearPerfectBonus, sharpBonus,
-            divisionPoints, conferencePoints, superbowlPoints } = draft;
-    const all = [correctPoints, tiePoints, sweepBonus, nearPerfectBonus, sharpBonus,
-                 divisionPoints, conferencePoints, superbowlPoints];
-    if (all.some(v => !Number.isFinite(Number(v)) || Number(v) < 1 || Number(v) > 20)) {
-      return setError("Every value must be between 1 and 20 points.");
+  const next = useMemo(() => ({
+    correctPoints: Number(draft.correctPoints),
+    tiePoints: Number(draft.tiePoints),
+    sweepBonus: Number(draft.sweepBonus),
+    nearPerfectBonus: Number(draft.nearPerfectBonus),
+    sharpBonus: Number(draft.sharpBonus),
+    divisionPoints: Number(draft.divisionPoints),
+    conferencePoints: Number(draft.conferencePoints),
+    superbowlPoints: Number(draft.superbowlPoints),
+  }), [draft]);
+
+  const diff = useMemo(() => scoringDiff(current, next, SCORING_LABELS), [current, next]);
+
+  const validate = () => {
+    const all = Object.values(next);
+    if (all.some(v => !Number.isFinite(v) || v < 1 || v > 20)) {
+      return "Every value must be between 1 and 20 points.";
     }
     // The bonus tiers have to descend, or a worse week would pay more.
-    if (Number(sweepBonus) <= Number(nearPerfectBonus)) return setError("Clean Sweep must be worth more than Near Perfect.");
-    if (Number(nearPerfectBonus) <= Number(sharpBonus)) return setError("Near Perfect must be worth more than Sharp Week.");
-    if (Number(conferencePoints) <= Number(divisionPoints)) return setError("Conference champion points should be greater than division winner points.");
-    if (Number(superbowlPoints) <= Number(conferencePoints)) return setError("Super Bowl points should be greater than conference champion points.");
-    await fsUpdateLeague(league.id, {
-      settings: {
-        correctPoints: Number(correctPoints),
-        tiePoints: Number(tiePoints),
-        sweepBonus: Number(sweepBonus),
-        nearPerfectBonus: Number(nearPerfectBonus),
-        sharpBonus: Number(sharpBonus),
-        divisionPoints: Number(divisionPoints),
-        conferencePoints: Number(conferencePoints),
-        superbowlPoints: Number(superbowlPoints),
-      },
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (next.sweepBonus <= next.nearPerfectBonus) return "Clean Sweep must be worth more than Near Perfect.";
+    if (next.nearPerfectBonus <= next.sharpBonus) return "Near Perfect must be worth more than Sharp Week.";
+    if (next.conferencePoints <= next.divisionPoints) return "Conference champion points should be greater than division winner points.";
+    if (next.superbowlPoints <= next.conferencePoints) return "Super Bowl points should be greater than conference champion points.";
+    return "";
+  };
+
+  const doSave = async () => {
+    setBusy(true);
+    try {
+      await fsUpdateLeague(league.id, { settings: next });
+      logChange("scoring_changed", {
+        global: false,               // scoring belongs to this league alone
+        target: league.id,
+        summary: scoringSummary(diff),
+        detail: { before: current, after: next },
+      });
+      setSaved(true);
+      setConfirming(false);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error("Couldn't save the scoring settings", err);
+      setError("Couldn't save — check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = () => {
+    const problem = validate();
+    setError(problem);
+    if (problem) return;
+    if (diff.length === 0) { setError("Nothing has changed."); return; }
+    setConfirming(true);
   };
 
   const field = (key, label) => {
-    const current = Number(draft[key]);
+    const value = Number(draft[key]);
     // A league configured before this was a dropdown could hold a value
     // outside 1–20 — including the 0 that used to make wrong picks count as
     // correct ones in the stats columns. Surface that value as an extra
     // option rather than rendering a blank select, so the admin can see what
     // it actually is and pick a valid replacement.
-    const options = POINT_OPTIONS.includes(current) ? POINT_OPTIONS : [current, ...POINT_OPTIONS];
+    const options = POINT_OPTIONS.includes(value) ? POINT_OPTIONS : [value, ...POINT_OPTIONS];
     return (
       <div className="form-group">
         <label className="form-label">{label}</label>
         <select
           className="form-select"
-          value={current}
+          value={value}
           onChange={e => setDraft(d => ({ ...d, [key]: Number(e.target.value) }))}
         >
           {options.map(n => (
@@ -528,29 +838,54 @@ function ScoringSettings({ league }) {
       {field("divisionPoints", "Division Winner")}
       {field("conferencePoints", "AFC/NFC Champion")}
       {field("superbowlPoints", "Super Bowl Winner")}
-      <button className="btn btn-primary" onClick={save}>Save Scoring</button>
+      <button className="btn btn-primary" onClick={save} disabled={busy}>Save Scoring</button>
+
+      {confirming && (
+        <ConfirmDialog
+          tone="warn"
+          title="Change how this league scores?"
+          lines={diff.map(d => `${d.label}:  ${d.from == null ? "—" : d.from}  →  ${d.to}`)}
+          note="Scoring is applied to the whole season every time the standings are drawn, so this re-scores games that have already been played — not just future ones. Positions can change straight away."
+          confirmLabel="Apply new scoring"
+          busy={busy}
+          onConfirm={doSave}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
     </div>
   );
 }
 
 function DangerZone({ league, onLeagueDeleted }) {
   const [confirming, setConfirming] = useState(false);
-  const del = async () => { await fsDeleteLeague(league.id); onLeagueDeleted(); };
+  const [busy, setBusy] = useState(false);
+  const del = async () => {
+    setBusy(true);
+    try {
+      await fsDeleteLeague(league.id);
+      onLeagueDeleted();
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div>
       <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>
         Deleting a league removes it for everyone. Only the super admin (league creator) can do this.
       </p>
-      {!confirming ? (
-        <button className="btn btn-danger" onClick={() => setConfirming(true)}>Delete League</button>
-      ) : (
-        <div>
-          <div className="error-msg">This can't be undone. Delete "{league.name}" for all {league.members.length} members?</div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="btn btn-danger" onClick={del}>Yes, Delete Permanently</button>
-            <button className="btn btn-ghost" onClick={() => setConfirming(false)}>Cancel</button>
-          </div>
-        </div>
+      <button className="btn btn-danger" onClick={() => setConfirming(true)}>Delete League</button>
+
+      {confirming && (
+        <ConfirmDialog
+          tone="danger"
+          title="Delete this league permanently?"
+          lines={[`"${league.name}"  ·  code ${league.id}`, `${league.members.length} member${league.members.length === 1 ? "" : "s"}`]}
+          note="This can't be undone from inside the app. Everyone's picks survive (they're stored per person, not per league) but the league, its scoring settings and its history are gone. Take a backup first if you're not certain."
+          confirmLabel="Delete permanently"
+          busy={busy}
+          onConfirm={del}
+          onCancel={() => setConfirming(false)}
+        />
       )}
     </div>
   );

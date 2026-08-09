@@ -114,7 +114,16 @@ export default function HighlightsCard({ league, user, allUsers, allPredictions,
   return (
     <div className="glass card" style={{ marginBottom: 24 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div className="card-title" style={{ marginBottom: 0 }}>Week {week} Highlights</div>
+        {/* The title said "Week 5 Highlights" while a week selector sat right
+            next to it saying "Week 5" — the same fact twice, and neither of
+            them said what the section actually is. The name is fixed now and
+            the selector carries the week. */}
+        <div>
+          <div className="card-title" style={{ marginBottom: 0 }}>Announcement Board</div>
+          {/* The week still has to be stated when there's only one and the
+              selector is hidden. */}
+          <div className="board-sub">Week {week} · shoutouts and the week in numbers</div>
+        </div>
         {weeks.length > 1 && (
           <select
             className="form-select form-select-sm"

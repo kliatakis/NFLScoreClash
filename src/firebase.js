@@ -2,7 +2,8 @@ import { initializeApp } from "firebase/app";
 import {
   getFirestore,
   doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot,
-  collection, getDocs, query, where, arrayUnion, arrayRemove, FieldPath,
+  collection, getDocs, query, where, orderBy, limit, addDoc,
+  arrayUnion, arrayRemove, FieldPath,
 } from "firebase/firestore";
 import {
   getAuth,
@@ -177,19 +178,31 @@ export async function fsRecordLoginAndGetPrevious(uid) {
 
 // One full read of everything worth keeping. Used both to build a backup file
 // and to work out what a restore would actually change.
-export async function fsReadEverything() {
-  const [usersSnap, leaguesSnap, predsSnap, resultsSnap] = await Promise.all([
+//
+// `includeHistory` is off by default and on only when building a file to
+// download. The restore PREVIEW calls this too, and the change history has no
+// bearing on what a restore would write — reading a few hundred extra
+// documents every time someone re-previews would be pure waste.
+export async function fsReadEverything({ includeHistory = false } = {}) {
+  const [usersSnap, leaguesSnap, predsSnap, resultsSnap, auditLog] = await Promise.all([
     getDocs(collection(db, "users")),
     getDocs(collection(db, "leagues")),
     getDocs(collection(db, "predictions")),
     getDoc(doc(db, "results", RESULTS_DOC_ID)),
+    // Never fatal: a project whose rules haven't been republished yet would
+    // reject this read, and a backup without the history is far better than
+    // no backup at all.
+    includeHistory ? fsGetAuditLog().catch(err => {
+      console.error("Couldn't include the change history in this backup", err);
+      return [];
+    }) : Promise.resolve([]),
   ]);
   const users = {}; usersSnap.forEach(d => { users[d.id] = d.data(); });
   const leagues = []; leaguesSnap.forEach(d => leagues.push(d.data()));
   const predictions = {}; predsSnap.forEach(d => { predictions[d.id] = d.data(); });
   const raw = resultsSnap.exists() ? resultsSnap.data() : {};
   return {
-    users, leagues, predictions,
+    users, leagues, predictions, auditLog,
     results: {
       scores: raw.scores || {},
       specials: raw.specials || {},
@@ -533,6 +546,64 @@ export function fsSubscribeSpecialResults(callback) {
   return onSnapshot(doc(db, "results", RESULTS_DOC_ID), (snap) =>
     callback(snap.exists() ? snap.data().specials || {} : {})
   );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// AUDIT LOG — one doc per change, append-only.
+//
+// A collection rather than an array on the league doc: an array would be a
+// read-modify-write (two admins working the same evening would overwrite each
+// other) and would eventually push the league document past Firestore's 1MB
+// limit. Separate documents are atomic, cheap, and orderable server-side.
+//
+// The rules allow create and nothing else — no update, no delete — so the app
+// itself can never rewrite history. See the note at the top of lib/auditLog.js
+// about what that does and does not protect against.
+// ══════════════════════════════════════════════════════════════════════════
+
+const AUDIT_COLLECTION = "auditLog";
+
+// Best-effort by design, and it is CRITICAL that it stays that way.
+//
+// The change is written first; this runs after. If logging were awaited as
+// part of the same operation, a hiccup writing the log would surface as
+// "couldn't save the score" for a score that had, in fact, already saved —
+// and the admin would type it again. A missing log line is a much smaller
+// problem than a phantom failure, so this swallows its own errors.
+export async function fsLogChange(entry) {
+  try {
+    await addDoc(collection(db, AUDIT_COLLECTION), entry);
+    return true;
+  } catch (err) {
+    console.error("Couldn't write the history entry (the change itself was saved)", err);
+    return false;
+  }
+}
+
+// Newest first, capped. `max` exists so opening the tab can't turn into a
+// thousand-document read late in the season.
+export function fsSubscribeAuditLog(callback, max = 400) {
+  const q = query(collection(db, AUDIT_COLLECTION), orderBy("at", "desc"), limit(max));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const entries = [];
+      snap.forEach(d => entries.push({ id: d.id, ...d.data() }));
+      callback(entries, null);
+    },
+    (err) => {
+      console.error("Couldn't read the change history", err);
+      callback([], err);
+    }
+  );
+}
+
+export async function fsGetAuditLog(max = 2000) {
+  const q = query(collection(db, AUDIT_COLLECTION), orderBy("at", "desc"), limit(max));
+  const snap = await getDocs(q);
+  const entries = [];
+  snap.forEach(d => entries.push({ id: d.id, ...d.data() }));
+  return entries;
 }
 
 // ══════════════════════════════════════════════════════════════════════════

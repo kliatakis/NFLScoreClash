@@ -22,10 +22,15 @@ import { TEAMS, TEAM_CODES, teamsForSpecialPick } from "../src/data/teams.js";
 import { css } from "../src/theme.js";
 import {
   buildBackup, validateBackup, planRestore, describePlan, countBackup,
-  backupFilename, BACKUP_VERSION, BACKUP_APP,
+  backupFilename, BACKUP_VERSION, BACKUP_APP, RESTORABLE,
 } from "../src/lib/backup.js";
 import { planResultWrites, findFixture } from "../src/lib/resultsMatching.js";
 import { espnDateRange } from "../src/lib/resultsProviders.js";
+import {
+  AUDIT_VERSION, AUDIT_KINDS, AUDIT_GROUPS, makeEntry, isValidEntry, entryVisibleTo,
+  filterEntries, groupByDay, dayLabel, resultKind, resultSummary, fixtureText, scoreText,
+  pickSideText, overrideSummary, scoringDiff, scoringSummary,
+} from "../src/lib/auditLog.js";
 
 let failures = 0, total = 0;
 const group = (name) => console.log(`\n── ${name} `.padEnd(64, "─"));
@@ -488,6 +493,28 @@ for (const [mode, dark] of [["dark", true], ["light", false]]) {
   t(`${mode}: toggle resets the button border`, !!toggle && toggle.body.includes("border: none"));
   const togRow = rules.find(r => r.sel === ".toggle-row");
   t(`${mode}: toggle row keeps the panel inset`, !!togRow && /padding: 10px 16px/.test(togRow.body));
+
+  // --font-mono was referenced in three places and never declared, so every
+  // one of them fell back to the browser default.
+  t(`${mode}: --font-mono is actually declared`, /--font-mono:\s*[^;]+;/.test(out));
+  const declared = new Set((out.match(/--[a-z0-9-]+(?=\s*:)/g) || []));
+  const referenced = new Set((out.match(/var\(\s*(--[a-z0-9-]+)/g) || []).map(s => s.replace(/var\(\s*/, "")));
+  const undeclared = [...referenced].filter(v => !declared.has(v)
+    // A var with a fallback is a deliberate choice, not a mistake.
+    && !new RegExp(`var\\(\\s*${v}\\s*,`).test(out));
+  t(`${mode}: every CSS variable used is defined`, undeclared.length === 0, undeclared.join(", ") || "none");
+
+  // The two new surfaces. A missing class here means a dialog or a history
+  // row renders as unstyled text, which is easy to miss in a build that
+  // otherwise succeeds.
+  for (const sel of [".confirm-lines", ".confirm-lines.danger", ".confirm-line", ".confirm-note",
+                     ".history-row", ".history-row.danger", ".history-date", ".history-summary",
+                     // Dashboard headings and the rival/streak pair. A missing
+                     // one here means a card loses its title or its layout.
+                     ".mini-label", ".dash-pair", ".streak-card", ".streak-icon",
+                     ".streak-sub", ".board-sub", ".form-card"]) {
+    t(`${mode}: ${sel} is styled`, rules.some(r => r.sel.split(",").some(s => s.trim() === sel)));
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -778,6 +805,128 @@ group("Results fetch — what gets written and what gets refused");
   // A batch mixing good and bad writes only the good.
   const mixed = run([base, { ...base, completed: false }, { ...base, isRegularSeason: false }]);
   t("a mixed batch writes only the valid game", mixed.updatedCount === 1);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Change history (audit log)");
+{
+  const actor = { actorUid: "u1", actorName: "Kostas" };
+
+  // Shape and defences
+  const e = makeEntry({ kind: "result_changed", ...actor, leagueId: "ABC123", global: true,
+    summary: "Wk 1 · SEA @ NE · 21–17 → 24–17", now: 1000 });
+  t("an entry carries its version, time, kind and actor",
+    e.v === AUDIT_VERSION && e.at === 1000 && e.kind === "result_changed" && e.actorUid === "u1");
+  t("an unknown kind is refused outright", (() => {
+    try { makeEntry({ kind: "nope", ...actor }); return false; } catch { return true; }
+  })());
+  t("an entry without an actor is refused", (() => {
+    try { makeEntry({ kind: "result_set", actorName: "X" }); return false; } catch { return true; }
+  })());
+  t("summary is capped so it can't exceed the rule's limit",
+    makeEntry({ kind: "result_set", ...actor, summary: "x".repeat(500) }).summary.length === 300);
+  t("undefined values are stripped from detail (Firestore rejects them)", (() => {
+    const d = makeEntry({ kind: "result_set", ...actor, detail: { a: 1, b: undefined } }).detail;
+    return d.a === 1 && !("b" in d);
+  })());
+  t("an all-undefined detail is dropped entirely",
+    makeEntry({ kind: "result_set", ...actor, detail: { b: undefined } }).detail === undefined);
+  t("every kind has a label, icon and tone",
+    Object.values(AUDIT_KINDS).every(k => k.label && k.icon && ["neutral", "warn", "danger"].includes(k.tone)));
+  t("every filter group references only real kinds",
+    AUDIT_GROUPS.every(g => g.kinds.every(k => !!AUDIT_KINDS[k])));
+
+  // Validation fails closed
+  t("a malformed entry is not rendered", !isValidEntry({ kind: "result_set" })
+    && !isValidEntry({ at: 1, kind: "made_up", actorUid: "u" })
+    && !isValidEntry(null));
+  t("a well-formed entry is rendered", isValidEntry(e));
+
+  // Visibility: results are shared by every league, scoring is not
+  const mine = makeEntry({ kind: "scoring_changed", ...actor, leagueId: "ABC123", global: false, summary: "x" });
+  const theirs = makeEntry({ kind: "scoring_changed", ...actor, leagueId: "OTHER1", global: false, summary: "y" });
+  t("a global change shows in every league", entryVisibleTo(e, "ABC123") && entryVisibleTo(e, "OTHER1"));
+  t("a league-scoped change shows only in its own league",
+    entryVisibleTo(mine, "ABC123") && !entryVisibleTo(theirs, "ABC123"));
+
+  // Filtering + ordering
+  const rows = [
+    { ...makeEntry({ kind: "result_set", ...actor, global: true, summary: "old one" }), at: 100 },
+    { ...makeEntry({ kind: "pick_override", ...actor, global: true, summary: "BOB · SEA → NE" }), at: 300 },
+    { ...makeEntry({ kind: "scoring_changed", ...actor, leagueId: "ABC123", summary: "Clean Sweep 8 → 9" }), at: 200 },
+    { at: 400, kind: "garbage" },   // must be dropped, not rendered blank
+  ];
+  const all = filterEntries(rows, { leagueId: "ABC123" });
+  t("invalid rows are dropped", all.length === 3);
+  t("newest first, always", all[0].at === 300 && all[2].at === 100);
+  t("a group filter narrows to its kinds",
+    filterEntries(rows, { leagueId: "ABC123", group: "picks" }).length === 1);
+  t("'overwrites only' hides routine new entries",
+    filterEntries(rows, { leagueId: "ABC123", group: "changes" }).every(r => AUDIT_KINDS[r.kind].tone !== "neutral"));
+  t("search matches the summary text",
+    filterEntries(rows, { leagueId: "ABC123", search: "clean sweep" }).length === 1);
+  t("search is case-insensitive and matches the actor",
+    filterEntries(rows, { leagueId: "ABC123", search: "KOSTAS" }).length === 3);
+
+  // Day grouping uses the VIEWER's timezone, not UTC
+  const lateNight = Date.UTC(2026, 8, 14, 2, 30);   // 02:30 UTC Monday
+  t("a 2:30am UTC entry is Sunday in New York",
+    dayLabel(lateNight, "America/New_York").includes("Sun"));
+  t("...and Monday in Athens", dayLabel(lateNight, "Europe/Athens").includes("Mon"));
+  t("a nonsense timezone doesn't throw", typeof dayLabel(lateNight, "Not/AZone") === "string");
+  const grouped = groupByDay(
+    [{ at: lateNight }, { at: lateNight + 1000 }, { at: lateNight - 86400000 }],
+    "Europe/Athens");
+  t("entries on the same day share one heading", grouped.length === 2 && grouped[0].entries.length === 2);
+
+  // Summary builders — these are the whole point of the tab
+  const f = REGULAR_SEASON_FIXTURES[0];
+  t("a new result reads as just the score",
+    resultSummary(f, null, { homeScore: 24, awayScore: 17 }) === `${fixtureText(f)} · 17–24`);
+  t("a changed result shows both scores",
+    resultSummary(f, { homeScore: 21, awayScore: 17 }, { homeScore: 24, awayScore: 17 })
+      === `${fixtureText(f)} · 17–21 → 17–24`);
+  t("a cleared result says so",
+    resultSummary(f, { homeScore: 21, awayScore: 17 }, null).endsWith("· 17–21 → cleared"));
+  t("resultKind distinguishes set / changed / cleared",
+    resultKind(null, { homeScore: 1, awayScore: 0 }) === "result_set"
+    && resultKind({ homeScore: 1, awayScore: 0 }, { homeScore: 2, awayScore: 0 }) === "result_changed"
+    && resultKind({ homeScore: 1, awayScore: 0 }, null) === "result_cleared");
+  t("a half-entered score reads as 'no score'", scoreText({ homeScore: 7 }) === "no score");
+  t("pick sides are named, not lettered",
+    pickSideText("H", f) === f.home && pickSideText("A", f) === f.away
+    && pickSideText("T", f) === "Tie" && pickSideText(null, f) === "no pick");
+  t("an override names the member and both picks",
+    overrideSummary("BOB", f, "A", "H") === `BOB · ${fixtureText(f)} · ${f.away} → ${f.home}`);
+
+  // Scoring diff — only what moved
+  const beforeS = { correctPoints: 1, sweepBonus: 8, tiePoints: 5 };
+  const afterS = { correctPoints: 1, sweepBonus: 9, tiePoints: 5 };
+  const sd = scoringDiff(beforeS, afterS, { sweepBonus: "Clean Sweep" });
+  t("unchanged values are left out of the diff", sd.length === 1 && sd[0].key === "sweepBonus");
+  t("the diff reads as from → to", scoringSummary(sd) === "Clean Sweep 8 → 9");
+  t("a value that didn't exist before shows as —",
+    scoringSummary(scoringDiff({}, { tiePoints: 5 }, { tiePoints: "Tie" })) === "Tie — → 5");
+  t("no changes is stated, not empty", scoringSummary([]) === "No values changed");
+}
+
+group("Backups carry the change history");
+{
+  const b = buildBackup({
+    users: {}, leagues: [], predictions: {}, results: {},
+    auditLog: [{ at: 1, kind: "result_set", actorUid: "u1", summary: "x" }],
+    seasonYear: 2026, now: 5000,
+  });
+  t("the history is in the file", b.data.auditLog.length === 1);
+  t("...and counted for the admin to see", b.counts.historyEntries === 1);
+  t("a backup taken without it still validates",
+    validateBackup(buildBackup({ seasonYear: 2026, now: 5000 }), { seasonYear: 2026, now: 6000 }).ok);
+  // The critical one: restore must never write history back. An append-only
+  // log that a restore can rewrite is not append-only.
+  t("history is not a restorable part", !RESTORABLE.includes("auditLog"));
+  const plan = planRestore(b, { results: {}, predictions: {}, leagues: {} }, { mode: "replace" });
+  t("...and a full replace plan contains no history writes",
+    !("auditLog" in plan) && JSON.stringify(plan).indexOf("auditLog") === -1);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

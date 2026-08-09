@@ -71,6 +71,32 @@ export default async function handler(req, res) {
         }
         await resultsDocRef.set({ scores: seed }, { merge: true });
       }
+
+      // One history entry per RUN, not per game. A daily cron across a season
+      // is ~150 runs; logging each individual score would drown the handful of
+      // entries a human made, which are the ones anyone ever goes looking for.
+      //
+      // Best-effort, and after the write: the scores are already saved, and a
+      // failure to log must never turn a successful fetch into a 500 that the
+      // cron then reports as broken.
+      try {
+        const added = details.filter(d => d.status === "added");
+        await db.collection("auditLog").add({
+          v: 1,
+          at: Date.now(),
+          kind: "fetch_results",
+          actorUid: "system",
+          actorName: isCronRequest ? "Daily auto-fetch" : "Manual fetch",
+          leagueId: null,
+          global: true,
+          summary: `${updatedCount} result${updatedCount === 1 ? "" : "s"} added from ${fetchedCount} checked · `
+            + added.slice(0, 6).map(d => `${d.game} ${d.score}`).join(", ")
+            + (added.length > 6 ? `, +${added.length - 6} more` : ""),
+          detail: { added: added.map(d => ({ fixtureId: d.fixtureId, game: d.game, score: d.score, matchedBy: d.matchedBy })) },
+        });
+      } catch (logErr) {
+        console.error("Couldn't write the history entry for this fetch", logErr);
+      }
     }
 
     return res.status(200).json({

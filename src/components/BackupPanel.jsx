@@ -35,7 +35,7 @@ function download(obj, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function BackupPanel({ user, isSuperAdmin }) {
+export default function BackupPanel({ user, isSuperAdmin, logChange }) {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
@@ -50,7 +50,10 @@ export default function BackupPanel({ user, isSuperAdmin }) {
   const fileInput = useRef(null);
 
   const snapshot = async () => {
-    const all = await fsReadEverything();
+    // includeHistory: a backup taken before a wipe is the only copy of the
+    // change history that survives it — the auditLog collection is append-only
+    // in the app but a Firestore console wipe clears it like anything else.
+    const all = await fsReadEverything({ includeHistory: true });
     return buildBackup({
       ...all,
       seasonYear: SEASON.year,
@@ -64,7 +67,8 @@ export default function BackupPanel({ user, isSuperAdmin }) {
       const backup = await snapshot();
       download(backup, backupFilename(backup));
       const c = backup.counts;
-      setMsg(`Saved — ${c.players} player${c.players === 1 ? "" : "s"}, ${c.picks} picks, ${c.scores} results.`);
+      setMsg(`Saved — ${c.players} player${c.players === 1 ? "" : "s"}, ${c.picks} picks, ${c.scores} results`
+        + `, ${c.historyEntries} history entr${c.historyEntries === 1 ? "y" : "ies"}.`);
     } catch (err) {
       console.error("Backup failed", err);
       setError("Couldn't read the data to back up. Check your connection and try again.");
@@ -118,6 +122,20 @@ export default function BackupPanel({ user, isSuperAdmin }) {
       const before = await snapshot();
       download(before, `BEFORE-RESTORE-${backupFilename(before)}`);
       const result = await fsApplyRestorePlan(plan);
+      // A restore is the single largest change anyone can make from inside
+      // the app. It goes in the history with the file it came from, so
+      // "everything looks different since Tuesday" has an answer.
+      logChange?.("restore", {
+        summary: `${mode === "merge" ? "Merged" : "Replaced from"} ${file?.name || "a backup file"}`
+          + ` · ${result.done.length} document(s) written`
+          + (result.failed.length ? `, ${result.failed.length} failed` : ""),
+        detail: {
+          file: file?.name || null,
+          backupTakenAt: file?.backup?.takenAtISO || null,
+          mode, parts,
+          written: result.done, failed: result.failed,
+        },
+      });
       setReport(result);
       setPlan(null);
       setConfirmText("");

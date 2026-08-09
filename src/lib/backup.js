@@ -19,6 +19,11 @@
 //                is writable solely by its owner, so a restore run from one
 //                admin's browser cannot write anyone else's profile. They
 //                repair themselves next time each person signs in.
+//   auditLog     The change history. Included for reference only, and NEVER
+//                restored — the whole point of that collection is that it is
+//                append-only, and a restore that could rewrite it would hand
+//                back exactly the power the rules take away. It's in the file
+//                so a wipe doesn't destroy the record of what happened.
 //
 // Standings are NOT in here because they are never stored — points, ranks and
 // badges are all recomputed from predictions + results + the league's scoring
@@ -32,7 +37,7 @@ export const RESTORABLE = ["results", "predictions", "leagues"];
 
 // ─── BUILD ──────────────────────────────────────────────────────────────────
 
-export function buildBackup({ users = {}, leagues = [], predictions = {}, results = {}, seasonYear, takenBy = null, now = Date.now() }) {
+export function buildBackup({ users = {}, leagues = [], predictions = {}, results = {}, auditLog = [], seasonYear, takenBy = null, now = Date.now() }) {
   const leaguesById = {};
   for (const l of leagues) if (l?.id) leaguesById[l.id] = l;
 
@@ -47,6 +52,7 @@ export function buildBackup({ users = {}, leagues = [], predictions = {}, result
     predictions,
     leagues: leaguesById,
     users,
+    auditLog,
   };
 
   return {
@@ -77,6 +83,7 @@ export function countBackup(data) {
     playoffMatchups: Object.keys(data?.results?.playoffFixtures || {}).length,
     leagues: Object.keys(data?.leagues || {}).length,
     users: Object.keys(data?.users || {}).length,
+    historyEntries: Array.isArray(data?.auditLog) ? data.auditLog.length : 0,
   };
 }
 

@@ -121,9 +121,9 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
       : null),
     [league, allUsers, allPredictions, upcomingWeek, results]);
 
-  // ── First-run checklist ───────────────────────────────────────────────────
+  // ── To-do list ────────────────────────────────────────────────────────────
   // A brand-new member lands on a dashboard with nothing on it and no idea
-  // what to do first. Three concrete steps, each disappearing as it's done,
+  // what to do first. Three concrete steps, each ticking off as it's done,
   // and the whole card goes once they're all complete.
   const [checklistHidden, setChecklistHidden] = useState(() => {
     try { return localStorage.getItem("sc_hideChecklist") === "true"; } catch { return false; }
@@ -205,7 +205,8 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
 
       {newResultsCount > 0 && (
         <div className="glass card" style={{ marginBottom: 18, borderLeft: "3px solid var(--accent)" }}>
-          🏈 {newResultsCount} new result{newResultsCount > 1 ? "s" : ""} since you last logged in.
+          <div className="mini-label">Since your last visit</div>
+          🏈 {newResultsCount} new result{newResultsCount > 1 ? "s have" : " has"} come in.
         </div>
       )}
 
@@ -216,9 +217,19 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
 
       {checklist && !checklistHidden && (
         <div className="glass card checklist">
+          {/* Labelled as a to-do list, not "Getting started" — by the time
+              you're on Week 2 the card is no longer about getting started,
+              it's about what you still owe. The count is always ≥ 1: the
+              whole card is dropped once every step is done. */}
           <div className="checklist-head">
-            <b>Getting started</b>
-            <button type="button" className="link-btn" onClick={hideChecklist}>Hide</button>
+            <span className="checklist-title">
+              <span className="mini-label inline">Your to-do list</span>
+              <span className="checklist-count">{checklist.filter(s => !s.done).length} left</span>
+            </span>
+            <button
+              type="button" className="link-btn" onClick={hideChecklist}
+              title="Hide for good — everything here is still reachable from the tabs above"
+            >Hide</button>
           </div>
           {checklist.map(step => (
             <button
@@ -244,9 +255,15 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
           seven stacked callouts before reaching the standings — on a phone,
           more than a screen of alerts before any actual content. Both are
           about how you're going right now, so they share a row. */}
-      {(live || streaks.current >= 3) && (
-        <div className="glass card form-strip">
-          {live && (
+      {/* ── This week so far ───────────────────────────────────────────────
+          Only ever appears mid-week, while a bonus tier is still reachable.
+          It used to share a card with the streak, but the two answer
+          different questions — "what's still on the table right now" versus
+          "how am I doing overall" — and one card can only carry one title. */}
+      {live && (
+        <div className="glass card form-card">
+          <div className="mini-label">This week so far</div>
+          <div className="form-strip">
             <div className={`form-item ${live.perfect ? "perfect" : ""}`}>
               <span className="form-icon">{live.tier.icon}</span>
               <span className="form-text">
@@ -258,16 +275,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
               </span>
               <span className="form-value">+{live.points}</span>
             </div>
-          )}
-          {streaks.current >= 3 && (
-            <div className="form-item">
-              <span className="form-icon">🔥</span>
-              <span className="form-text">
-                <b>{streaks.current} in a row</b>
-                <span>best this season: {streaks.best}</span>
-              </span>
-            </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -284,7 +292,9 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
             onClick={() => setTab("predictions")}
             onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("predictions"); } }}>
             <div className="nudge-head">
-              <b>{mine ? `Your Week ${pending.week} picks` : `Week ${pending.week} picks`}</b>
+              <span className="mini-label inline">
+                {mine ? `Your Week ${pending.week} picks` : `Week ${pending.week} picks`}
+              </span>
               {pending.firstKickoffUTC && (
                 <span className="nudge-clock">
                   first lock in {formatDuration(new Date(pending.firstKickoffUTC).getTime() - Date.now() - 15 * 60000)}
@@ -318,30 +328,59 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         );
       })()}
 
-      {rival && (
-        <div className="glass card rival-card" role="button" tabIndex={0} aria-label="View the league standings"
-          onClick={() => setTab("leagues")}
-          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("leagues"); } }}>
-          <div className="rival-label">Closest rival</div>
-          <div className="rival-body">
-            <Avatar user={allUsers[rival.entry.uid]} size={40} />
-            <div className="rival-text">
-              <b>{rival.entry.username}</b>
-              {rival.gap === 0
-                ? " is level with you on points."
-                : rival.ahead
-                  ? ` is ${rival.gap} point${rival.gap === 1 ? "" : "s"} ahead of you.`
-                  : ` is ${rival.gap} point${rival.gap === 1 ? "" : "s"} behind you.`}
+      {/* ── Where you stand: rival and streak, side by side ────────────────
+          Both answer "how am I doing", one against the league and one
+          against yourself, so they read as a pair. They wrap onto separate
+          rows below ~620px. */}
+      {(rival || streaks.current >= 3) && (
+        <div className="dash-pair">
+          {rival && (
+            <div className="glass card rival-card" role="button" tabIndex={0} aria-label="View the league standings"
+              onClick={() => setTab("leagues")}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("leagues"); } }}>
+              <div className="mini-label">Closest rival</div>
+              <div className="rival-body">
+                <Avatar user={allUsers[rival.entry.uid]} size={40} />
+                <div className="rival-text">
+                  <b>{rival.entry.username}</b>
+                  {rival.gap === 0
+                    ? " is level with you on points."
+                    : rival.ahead
+                      ? ` is ${rival.gap} point${rival.gap === 1 ? "" : "s"} ahead of you.`
+                      : ` is ${rival.gap} point${rival.gap === 1 ? "" : "s"} behind you.`}
+                </div>
+                <div className={`rival-gap ${rival.ahead ? "behind" : "leading"}`}>
+                  {rival.gap === 0 ? "=" : rival.ahead ? `−${rival.gap}` : `+${rival.gap}`}
+                </div>
+              </div>
             </div>
-            <div className={`rival-gap ${rival.ahead ? "behind" : "leading"}`}>
-              {rival.gap === 0 ? "=" : rival.ahead ? `−${rival.gap}` : `+${rival.gap}`}
+          )}
+
+          {/* The old version said only "6 in a row" — a number with no noun,
+              in a card with no title. Both are named now. The tooltip covers
+              the one rule that isn't obvious: a game you skipped doesn't end
+              a run, only a wrong call does. */}
+          {streaks.current >= 3 && (
+            <div
+              className="glass card streak-card"
+              title="Correct winner picks in a row, in the order the games were played. A game you didn't pick is skipped, not counted as a miss — only a wrong call ends the run."
+            >
+              <div className="mini-label">Winning streak</div>
+              <div className="rival-body">
+                <span className="streak-icon" aria-hidden="true">🔥</span>
+                <div className="rival-text">
+                  You've called <b>{streaks.current} winners in a row</b>.
+                  <span className="streak-sub">Best run this season: {streaks.best}</span>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
       <HighlightsCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} />
 
+      <div className="card-title">Your season so far</div>
       <div className="grid-4" style={{ marginBottom: 24 }}>
         <StatCard
           value={myRank} label="Your Rank" emptyLabel="N/A" primary

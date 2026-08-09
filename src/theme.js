@@ -25,6 +25,12 @@ export const css = (dark = true) => `
     --green:     #22c55e;
     --font-display: 'Anton', 'Arial Black', Impact, sans-serif;
     --font-body: 'Inter', sans-serif;
+    /* Referenced in a few places as var(--font-mono, monospace) but never
+       actually declared, so every one of them silently fell back to the
+       browser default. Declared here so league codes, the confirmation
+       dialog and the change history all line their characters up the same
+       way — which is the entire reason those places asked for mono. */
+    --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
     --r: 12px;
     --r2: 18px;
     --blur: 18px;
@@ -284,6 +290,7 @@ export const css = (dark = true) => `
 
   .card { border-radius: var(--r2); padding: 22px; }
   .card-title { font-family: var(--font-display); font-size: 15px; letter-spacing: 1px; color: var(--muted); margin-bottom: 16px; }
+  .board-sub { font-size: 11.5px; color: var(--muted); opacity: 0.8; margin-top: 3px; }
 
   .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
   .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
@@ -469,15 +476,38 @@ export const css = (dark = true) => `
   .recap-game-tag.easy { background: rgba(34,197,94,0.14); color: var(--green); }
   .recap-game-note { margin-left: auto; font-size: 11px; }
 
+  /* ── Small card heading ────────────────────────────────────────────────
+     One shared style so every callout on the dashboard names itself the
+     same way. Several used to open straight into their content with no
+     heading at all, which left a bare number on screen and nothing to say
+     what it was counting. */
+  .mini-label, .rival-label {
+    font-size: 10px; font-weight: 800; letter-spacing: 1.4px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+  }
+  /* For heads that sit in a flex row next to a chip or a button, where the
+     row already provides the spacing. */
+  .mini-label.inline { margin-bottom: 0; }
+
+  /* Two callouts side by side; they stack below ~620px on their own. */
+  .dash-pair { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 24px; }
+  .dash-pair > .card { flex: 1 1 300px; min-width: 0; margin-bottom: 0; }
+
   /* Closest-rival callout */
   .rival-card { margin-bottom: 24px; cursor: pointer; border-left: 3px solid var(--accent2); }
   .rival-card:hover { border-color: var(--border2); border-left-color: var(--accent2); }
-  .rival-label { font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
   .rival-body { display: flex; align-items: center; gap: 12px; }
   .rival-text { flex: 1; font-size: 13px; line-height: 1.45; min-width: 0; }
   .rival-gap { font-family: var(--font-display); font-size: 24px; letter-spacing: 0.5px; flex-shrink: 0; }
   .rival-gap.leading { color: var(--green); }
   .rival-gap.behind { color: var(--accent2); }
+
+  /* Winning streak — deliberately built from the rival card's parts so the
+     two sit side by side as a matched pair. Flame edge rather than gold: a
+     streak scores nothing, and gold means points everywhere else. */
+  .streak-card { border-left: 3px solid #fb923c; }
+  .streak-icon { font-size: 28px; line-height: 1; flex-shrink: 0; width: 40px; text-align: center; }
+  .streak-sub { display: block; font-size: 11.5px; color: var(--muted); margin-top: 3px; }
   .fixture-meta { padding: 10px 18px 0; font-size: 11px; color: var(--text); opacity: 0.7; letter-spacing: 0.2px; }
   .fixture-body { display: flex; align-items: center; gap: 14px; padding: 10px 18px 14px; flex-wrap: wrap; }
   .fixture-teams { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -532,10 +562,16 @@ export const css = (dark = true) => `
     font-family: var(--font-mono, monospace); font-size: 12px;
   }
 
-  /* ── First-run checklist ──────────────────────────────────────────────── */
+  /* ── To-do list ───────────────────────────────────────────────────────── */
   .checklist { margin-bottom: 14px; border-left: 3px solid var(--accent); }
-  .checklist-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .checklist-head b { font-size: 13.5px; }
+  .checklist-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .checklist-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .checklist-count {
+    padding: 2px 8px; border-radius: 20px; flex-shrink: 0;
+    font-size: 10px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase;
+    color: var(--accent); background: rgba(59,130,246,0.14);
+    border: 1px solid rgba(59,130,246,0.32);
+  }
   .checklist-step {
     display: flex; align-items: center; gap: 12px; width: 100%;
     padding: 10px 12px; margin-bottom: 6px; border-radius: 10px;
@@ -557,8 +593,9 @@ export const css = (dark = true) => `
   .checklist-text span { font-size: 11.5px; color: var(--muted); }
   .checklist-go { color: var(--accent); font-size: 15px; flex-shrink: 0; }
 
-  /* ── Your form: live week + streak, side by side in one card ─────────── */
-  .form-strip { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  /* ── "This week so far": the live bonus tier still in reach ──────────── */
+  .form-card { margin-bottom: 14px; }
+  .form-strip { display: flex; gap: 10px; flex-wrap: wrap; }
   .form-item {
     flex: 1 1 220px; min-width: 0;
     display: flex; align-items: center; gap: 12px;
@@ -577,7 +614,6 @@ export const css = (dark = true) => `
   .nudge-card { margin-bottom: 14px; cursor: pointer; border-left: 3px solid var(--gold); }
   .nudge-card:hover { border-color: var(--border2); border-left-color: var(--gold); }
   .nudge-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-  .nudge-head b { font-size: 13.5px; }
   .nudge-clock { font-size: 11.5px; color: var(--gold); font-weight: 700; }
   .nudge-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
   .nudge-label { font-size: 11px; color: var(--muted); margin-right: 2px; }
@@ -883,6 +919,62 @@ export const css = (dark = true) => `
   .modal-title { font-family: var(--font-display); font-size: 22px; letter-spacing: 1px; margin-bottom: 6px; }
   .modal-sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+
+  /* ── Confirmation dialog ──────────────────────────────────────────────── */
+  /* The change itself is the headline, in a monospaced block so "21-17 ->
+     24-17" lines up and is read rather than skimmed past. */
+  .confirm-modal .modal-title { margin-bottom: 14px; }
+  .confirm-lines {
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+    border: 1px solid var(--border2); background: var(--surface2);
+  }
+  .confirm-lines.warn { border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.08); }
+  .confirm-lines.danger { border-color: rgba(244,63,94,0.4); background: rgba(244,63,94,0.08); }
+  .confirm-line {
+    font-family: var(--font-mono); font-size: 13px; line-height: 1.6;
+    color: var(--text); word-break: break-word;
+  }
+  .confirm-line + .confirm-line { margin-top: 2px; }
+  .confirm-note { font-size: 13px; color: var(--muted); line-height: 1.55; margin-bottom: 18px; }
+
+  /* ── Change history ───────────────────────────────────────────────────── */
+  .history-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .history-day { margin-bottom: 16px; }
+  .history-date {
+    font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase;
+    color: var(--muted); padding-bottom: 6px; margin-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .history-row {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 9px 12px; margin-bottom: 6px; border-radius: 10px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-left-width: 3px;
+  }
+  .history-row.neutral { border-left-color: var(--border2); }
+  .history-row.warn { border-left-color: var(--gold); }
+  .history-row.danger { border-left-color: var(--accent2); }
+  .history-icon { font-size: 15px; line-height: 1.4; flex-shrink: 0; }
+  .history-body { flex: 1; min-width: 0; }
+  .history-kind {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 12.5px; font-weight: 800;
+  }
+  .history-summary {
+    font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5;
+    color: var(--text); margin-top: 2px; word-break: break-word;
+  }
+  .history-meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .history-detail {
+    margin-top: 8px; padding: 10px; border-radius: 8px; overflow-x: auto;
+    background: var(--surface3); border: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--muted);
+  }
+  .override-current {
+    font-size: 13px; color: var(--muted); margin: -6px 0 14px;
+    padding: 8px 12px; border-radius: 8px;
+    background: var(--surface2); border: 1px solid var(--border);
+  }
 
   /* AVATAR */
   .avatar { border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-weight: 800; user-select: none; background: var(--surface3); border: 1.5px solid var(--border2); }
