@@ -512,6 +512,21 @@ for (const [mode, dark] of [["dark", true], ["light", false]]) {
   // The two new surfaces. A missing class here means a dialog or a history
   // row renders as unstyled text, which is easy to miss in a build that
   // otherwise succeeds.
+  // ── Mobile ────────────────────────────────────────────────────────────
+  // The @media block is where regressions hide: everything looks right on a
+  // desktop and nobody notices until they open it on a phone.
+  const mobile = out.slice(out.indexOf("@media (max-width: 560px)"));
+  t(`${mode}: a dialog taller than the screen can scroll`,
+    /\.modal \{[^}]*overflow-y: auto/s.test(out) && /\.modal \{[^}]*max-height/s.test(out));
+  t(`${mode}: ...and so can the overlay behind it`,
+    /\.modal-overlay \{[^}]*overflow-y: auto/s.test(out));
+  // 118 avatars at seven across is a 36px tap target inside a 320px dropdown.
+  t(`${mode}: the avatar grid drops to 5 columns on a phone`,
+    mobile.includes("repeat(5, 1fr)"));
+  t(`${mode}: history filter chips are shrunk from the admin-panel default`,
+    mobile.includes(".history-filters .chip"));
+  t(`${mode}: dialog buttons stack`, mobile.includes("column-reverse"));
+
   for (const sel of [".confirm-lines", ".confirm-lines.danger", ".confirm-line", ".confirm-note",
                      ".history-row", ".history-row.danger", ".history-date", ".history-summary",
                      // Dashboard headings and the rival/streak pair. A missing

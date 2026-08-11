@@ -31,7 +31,7 @@ const firebaseConfig = {
   projectId: "nflscoreclash",
   storageBucket: "nflscoreclash.firebasestorage.app",
   messagingSenderId: "950705116363",
-  appId: "1:950705116363:web:3b159e3353b820ba4e374e",
+  appId: "1:950705116363:web:3b159e3353b820ba4e374e",s
 };
 
 const app = initializeApp(firebaseConfig);

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fsWriteUser, fsIsUsernameTaken, fsClaimUsername, fbChangePassword, fbChangeEmail, fbDeleteAccountCascade, validateUsername, USERNAME_MAX } from "../firebase.js";
-import Avatar, { AVATAR_GROUPS } from "./Avatar.jsx";
+import Avatar, { AVATAR_GROUPS, PRESET_AVATARS } from "./Avatar.jsx";
 import { COMMON_TIMEZONES, DEFAULT_TIMEZONE } from "../lib/time.js";
 
 export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, onToggleDark }) {
@@ -12,6 +12,11 @@ export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, on
   // main | password | email | delete — swaps the bottom of the dropdown
   // into a small inline form instead of opening a separate modal.
   const [accountView, setAccountView] = useState("main");
+  const [avatarsOpen, setAvatarsOpen] = useState(false);
+
+  const currentAvatarLabel = user.avatar?.type === "emoji"
+    ? (PRESET_AVATARS.find(a => a.emoji === user.avatar.value)?.label || "Custom")
+    : "Your initials";
 
   const pickAvatar = async (emoji) => {
     const avatar = { type: "emoji", value: emoji };
@@ -69,33 +74,53 @@ export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, on
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>{user.email}</div>
               </div>
             </div>
-            {/* Grouped, and buttons rather than divs. One flat grid of a
-                hundred-plus tiles was a wall to scroll, and as plain divs
-                none of them could be reached by keyboard at all. */}
+            {/* COLLAPSED BY DEFAULT — this is not cosmetic.
+                118 avatars at seven across is roughly 810px of grid inside a
+                dropdown capped at about 650px on a phone. Left open, it
+                buried the username field, the timezone picker, the account
+                actions and Sign Out under a wall of emoji you had to scroll
+                past every single time you opened the menu.
+                Buttons rather than divs, too: as plain divs not one tile
+                could be reached by keyboard. */}
             <div className="profile-section">
-              <div className="form-label">Avatar</div>
-              {AVATAR_GROUPS.map(group => (
-                <div key={group.id} className="avatar-group">
-                  <div className="avatar-group-label">{group.label}</div>
-                  <div className="avatar-grid">
-                    {group.avatars.map(a => (
-                      <button
-                        key={a.id}
-                        type="button"
-                        onClick={() => pickAvatar(a.emoji)}
-                        // Every tile looked identical before, so there was no
-                        // way to tell which avatar you were currently using.
-                        className={`avatar-option ${user.avatar?.value === a.emoji ? "selected" : ""}`}
-                        title={a.label}
-                        aria-label={a.label}
-                        aria-pressed={user.avatar?.value === a.emoji}
-                      >
-                        {a.emoji}
-                      </button>
-                    ))}
+              <div className="avatar-head">
+                <span className="form-label" style={{ marginBottom: 0 }}>Avatar</span>
+                <button type="button" className="link-btn"
+                  aria-expanded={avatarsOpen}
+                  onClick={() => setAvatarsOpen(o => !o)}>
+                  {avatarsOpen ? "Done" : "Change"}
+                </button>
+              </div>
+
+              {avatarsOpen ? (
+                AVATAR_GROUPS.map(group => (
+                  <div key={group.id} className="avatar-group">
+                    <div className="avatar-group-label">{group.label}</div>
+                    <div className="avatar-grid">
+                      {group.avatars.map(a => (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => pickAvatar(a.emoji)}
+                          // Every tile looked identical before, so there was
+                          // no way to tell which avatar you were using.
+                          className={`avatar-option ${user.avatar?.value === a.emoji ? "selected" : ""}`}
+                          title={a.label}
+                          aria-label={a.label}
+                          aria-pressed={user.avatar?.value === a.emoji}
+                        >
+                          {a.emoji}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                ))
+              ) : (
+                <div className="avatar-current">
+                  <Avatar user={user} size={38} />
+                  <span>{currentAvatarLabel}</span>
                 </div>
-              ))}
+              )}
             </div>
             <div className="profile-section" style={{ display: "flex", gap: 8 }}>
               <input className="form-input" value={username} maxLength={USERNAME_MAX}

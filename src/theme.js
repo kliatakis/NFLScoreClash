@@ -218,6 +218,8 @@ export const css = (dark = true) => `
 
   /* Avatar picker — there was previously no way to tell which one you'd
      chosen; every tile looked identical. */
+  .avatar-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .avatar-current { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
   .avatar-group { margin-bottom: 10px; }
   .avatar-group:last-child { margin-bottom: 0; }
   .avatar-group-label {
@@ -899,6 +901,34 @@ export const css = (dark = true) => `
     .special-pick-row { flex-wrap: wrap; }
     .special-pick-state { min-width: 0; order: 3; }
     .special-pick-row .form-select { flex: 1; }
+
+    /* ── Avatar picker ────────────────────────────────────────────────────
+       Seven across inside a 320px dropdown is a 36px tile — under the 44px
+       minimum, and these are the fiddliest targets in the app. Five across
+       gives 53px on a 360px phone and 45px on a 320px one. */
+    .avatar-grid { grid-template-columns: repeat(5, 1fr); }
+
+    /* ── Change history ───────────────────────────────────────────────────
+       .admin-panel .chip bumps every chip to 13.5px/16px padding for the
+       section tabs, which turns six filter chips into four stacked rows
+       before you reach a single entry. */
+    .admin-panel .history-filters .chip { font-size: 11px; padding: 5px 10px; font-weight: 700; }
+    .history-filters { gap: 5px; }
+    .history-row { padding: 8px 10px; gap: 8px; }
+    .history-summary { font-size: 11.5px; }
+    /* Long ESPN fetch summaries and JSON detail must not widen the page. */
+    .history-summary, .history-kind { overflow-wrap: anywhere; }
+
+    /* Two confirmation lines side by side would wrap mid-score. */
+    .confirm-line { font-size: 12px; }
+    .confirm-note { font-size: 12.5px; }
+    /* Full-width buttons beat two cramped ones on a phone. column-reverse
+       flips the DOM order [Cancel, Confirm] to [Confirm, Cancel] on screen,
+       which puts CANCEL nearest the thumb — the deliberate choice for a
+       dialog whose other button deletes a week of picks. Every dialog in the
+       app lists Cancel first, so this holds for all of them. */
+    .modal-actions { flex-direction: column-reverse; }
+    .modal-actions .btn { width: 100%; justify-content: center; }
   }
   /* Mobile-only: the ⓘ tooltip needs a hover, which a phone doesn't have, so
      the breakdown is printed under the name instead. */
@@ -917,12 +947,21 @@ export const css = (dark = true) => `
     backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
     display: flex; align-items: center; justify-content: center; z-index: 500; padding: 20px;
     animation: overlay-in 0.18s ease both;
+    overflow-y: auto;
   }
   .modal {
     background: ${dark ? "#14141d" : "#ffffff"}; border: 1px solid var(--border2);
     border-radius: var(--r2); padding: 28px; width: 100%; max-width: 420px;
     box-shadow: 0 24px 70px rgba(0,0,0,${dark ? 0.6 : 0.18});
     animation: modal-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+    /* A dialog taller than the screen used to overflow with nothing able to
+       scroll — the overlay centres its child, so the top and bottom both went
+       off-screen and the buttons became unreachable. A landscape phone is
+       under 400px tall, and the scoring-change dialog lists every value that
+       moved. dvh where supported so an iOS address bar can't eat the actions. */
+    max-height: calc(100vh - 40px);
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto;
   }
   .modal-title { font-family: var(--font-display); font-size: 22px; letter-spacing: 1px; margin-bottom: 6px; }
   .modal-sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
