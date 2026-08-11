@@ -44,6 +44,7 @@ export default function HistoryPanel({ league, timezone }) {
       </div>
       <input
         className="form-input" style={{ marginBottom: 14 }}
+        type="search" aria-label="Search the change history"
         placeholder="Search a team, a name, a week…"
         value={search} onChange={e => setSearch(e.target.value)}
       />

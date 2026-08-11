@@ -79,6 +79,18 @@ export default function HowItWorks({ onClose }) {
           </p>
         </div>
 
+        {/* The streak rule was hover-only on the dashboard card, which means
+            it did not exist on a phone. Rules belong here. */}
+        <div className="howto-section">
+          <div className="howto-heading">4b · Winning streaks</div>
+          <p>
+            Your dashboard tracks how many games in a row you've called correctly, across weeks
+            and into the playoffs. A game you <b>didn't pick</b> is skipped rather than counted as
+            a miss, so taking a week off doesn't end a run — only a wrong call does. It's for
+            bragging rights: streaks score no points.
+          </p>
+        </div>
+
         <div className="howto-section">
           <div className="howto-heading">5 · Season picks are worth the most</div>
           <p>

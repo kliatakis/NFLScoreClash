@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useEscapeKey } from "../lib/hooks.js";
+import { useEscapeKey, useFocusTrap } from "../lib/hooks.js";
 
 // A confirmation step for admin actions that move points.
 //
@@ -28,6 +28,10 @@ export default function ConfirmDialog({
   const cancelRef = useRef(null);
   const [working, setWorking] = useState(false);
   useEscapeKey(working ? null : onCancel);
+  // Tab stays inside the dialog. Without it you can tab straight through to
+  // the admin panel behind — which is still fully operable by keyboard while
+  // a dialog asks whether you're sure about destroying a result.
+  const dialogRef = useFocusTrap(true);
 
   useEffect(() => { cancelRef.current?.focus(); }, []);
 
@@ -45,7 +49,7 @@ export default function ConfirmDialog({
       className="modal-overlay" role="dialog" aria-modal="true" aria-label={title}
       onClick={() => !disabled && onCancel()}
     >
-      <div className="modal confirm-modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+      <div ref={dialogRef} className="modal confirm-modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
         <div className="modal-title" style={{ fontSize: 19 }}>{title}</div>
 
         {lines.length > 0 && (

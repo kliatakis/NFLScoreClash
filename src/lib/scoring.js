@@ -794,7 +794,7 @@ function calloutLimit(totalPickers) {
 // (nothing to say) or a near-even split, so callouts would be either silent
 // or relentless — and "you were the only one who got it wrong" lands very
 // differently when "everyone else" means one other person.
-const MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS = 5;
+export const MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS = 5;
 
 // Safety valve, not a normal constraint. Simulating thousands of weeks against
 // realistic pick behaviour puts a typical week at roughly 2–4 callouts per
@@ -833,6 +833,21 @@ export function hasCompletedWeek(results) {
 export function completedWeeks(results) {
   const weeks = new Set(REGULAR_SEASON_FIXTURES.filter(f => results[f.id]).map(f => f.week));
   return [...weeks].sort((a, b) => b - a);
+}
+
+// The earliest week that still has a game without a result — i.e. the week
+// people actually need to be looking at. Null once the regular season is done.
+//
+// Shared by the dashboard and the Predictions week selector so the two can't
+// disagree: the dashboard used to say "Pick Week 6" and then send you to a
+// Predictions tab sitting on Week 1.
+export function nextOpenWeek(results) {
+  let earliest = null;
+  for (const f of REGULAR_SEASON_FIXTURES) {
+    if (results[f.id]) continue;
+    if (earliest == null || f.week < earliest) earliest = f.week;
+  }
+  return earliest;
 }
 
 // Weeks where EVERY game has a result. Stricter, and used only for the week

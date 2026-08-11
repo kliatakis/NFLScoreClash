@@ -153,3 +153,53 @@ export function useEscapeKey(onEscape) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onEscape]);
 }
+
+// Keeps Tab inside an open dialog, and puts focus back where it came from on
+// close.
+//
+// Without this, tabbing out of a confirmation lands you on the page behind it
+// — still visible through the backdrop, still clickable by keyboard — so you
+// can end up operating the admin panel through a dialog asking whether you're
+// sure. That matters most on exactly the screens this app uses dialogs for.
+//
+// Returns a ref to put on the dialog element.
+export function useFocusTrap(active = true) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!active) return;
+    const node = ref.current;
+    if (!node) return;
+    const previouslyFocused = document.activeElement;
+
+    const focusable = () => Array.from(node.querySelectorAll(
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter(el => el.offsetParent !== null);
+
+    const onKey = (e) => {
+      if (e.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) { e.preventDefault(); return; }
+      const first = items[0], last = items[items.length - 1];
+      // Focus sitting outside the dialog entirely (first Tab after opening,
+      // or a stray click on the backdrop) gets pulled back in.
+      if (!node.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+        return;
+      }
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      // Only restore if the old element is still on the page — a dialog that
+      // deleted what opened it would otherwise throw.
+      if (previouslyFocused && document.contains(previouslyFocused)) {
+        try { previouslyFocused.focus(); } catch { /* not focusable any more */ }
+      }
+    };
+  }, [active]);
+  return ref;
+}

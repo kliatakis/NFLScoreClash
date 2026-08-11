@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import { fsToggleReaction } from "../firebase.js";
-import { computeHighlights, computeWeeklyRecap, getScoringSettings, resultWinner } from "../lib/scoring.js";
+import {
+  computeHighlights, computeWeeklyRecap, getScoringSettings, resultWinner,
+  MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS,
+} from "../lib/scoring.js";
 import { TEAMS } from "../data/teams.js";
 import { pickLine, templateParts, usablePool } from "../lib/shoutouts.js";
 import {
@@ -217,6 +220,14 @@ export default function HighlightsCard({ league, user, allUsers, allPredictions,
       {nothingHappened && (
         <div style={{ fontSize: 13, color: "var(--muted)" }}>
           Nobody earned a week bonus in Week {week} — three or more misses across the board.
+          {/* The upset and clown callouts need a crowd to mean anything, so
+              they're gated on league size. Without this line a four-person
+              league just sees them stop appearing and has no idea why —
+              which reads like the feature is broken. */}
+          {(league?.members?.length || 0) < MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS && (
+            <> Upset and clown shoutouts need at least {MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS} people in
+              the league — you have {league?.members?.length || 0}.</>
+          )}
         </div>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

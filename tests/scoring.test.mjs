@@ -16,7 +16,7 @@ import {
   calcMatchScore, weekAccuracyBadge, calcStandings, calcWeeklyStandings,
   computeWeeklyRecap, computeHighlights, headToHead, weeklyWinTally,
   calcSeasonProgression, explainTiebreak, finishedWeeks, completedWeeks, describeBonuses,
-  pickStreaks, liveWeekStatus, pendingPickers,
+  pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek, MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS,
 } from "../src/lib/scoring.js";
 import { TEAMS, TEAM_CODES, teamsForSpecialPick } from "../src/data/teams.js";
 import { css } from "../src/theme.js";
@@ -931,6 +931,41 @@ group("Backups carry the change history");
   const plan = planRestore(b, { results: {}, predictions: {}, leagues: {} }, { mode: "replace" });
   t("...and a full replace plan contains no history writes",
     !("auditLog" in plan) && JSON.stringify(plan).indexOf("auditLog") === -1);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Which week is 'now'");
+{
+  // REGRESSION: the Predictions week selector was hardcoded to 1, so from
+  // Week 2 onwards every visit opened on a week already played — and the
+  // dashboard's "Pick Week 6" button led straight to a screen showing Week 1.
+  // Both now derive the week from the same function.
+  t("with nothing played, the season opens on Week 1", nextOpenWeek({}) === 1);
+
+  const played = {};
+  for (const f of REGULAR_SEASON_FIXTURES.filter(x => x.week <= 5)) played[f.id] = { homeScore: 24, awayScore: 10 };
+  t("five finished weeks means Week 6 is live", nextOpenWeek(played) === 6);
+
+  // A week that's part-played is still the live week — Thursday's game being
+  // in doesn't mean Sunday's picks are done.
+  const partial = { ...played };
+  const wk6 = REGULAR_SEASON_FIXTURES.filter(x => x.week === 6);
+  partial[wk6[0].id] = { homeScore: 20, awayScore: 17 };
+  t("a part-played week is still the live one", nextOpenWeek(partial) === 6);
+
+  // A stray later result must not drag the answer forward past unplayed games.
+  const stray = { ...played };
+  const wk12 = REGULAR_SEASON_FIXTURES.find(x => x.week === 12);
+  stray[wk12.id] = { homeScore: 31, awayScore: 3 };
+  t("a result entered out of order doesn't skip weeks", nextOpenWeek(stray) === 6);
+
+  const all = {};
+  for (const f of REGULAR_SEASON_FIXTURES) all[f.id] = { homeScore: 24, awayScore: 10 };
+  // REGRESSION: with no open week the dashboard checklist used to render
+  // "Pick Week" with the note "the season hasn't started" and could never be
+  // completed, so it nagged through the entire playoffs.
+  t("once the regular season is done there is no open week", nextOpenWeek(all) === null);
+  t("...and every week counts as finished", finishedWeeks(all).length === 18);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

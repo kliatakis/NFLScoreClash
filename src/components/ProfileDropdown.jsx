@@ -168,8 +168,8 @@ function ChangePasswordForm({ onClose }) {
       ) : (
         <>
           {error && <div className="error-msg">{error}</div>}
-          <input className="form-input" type="password" placeholder="Current password" value={current} onChange={e => setCurrent(e.target.value)} style={{ marginBottom: 8 }} />
-          <input className="form-input" type="password" placeholder="New password" value={next} onChange={e => setNext(e.target.value)} style={{ marginBottom: 8 }} />
+          <input className="form-input" type="password" aria-label="Current password" autoComplete="current-password" placeholder="Current password" value={current} onChange={e => setCurrent(e.target.value)} style={{ marginBottom: 8 }} />
+          <input className="form-input" type="password" aria-label="New password" autoComplete="new-password" placeholder="New password" value={next} onChange={e => setNext(e.target.value)} style={{ marginBottom: 8 }} />
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-primary btn-sm" disabled={busy} onClick={submit}>{busy ? "Saving…" : "Save"}</button>
             <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
@@ -211,8 +211,8 @@ function ChangeEmailForm({ user, onUpdate, onClose }) {
       ) : (
         <>
           {error && <div className="error-msg">{error}</div>}
-          <input className="form-input" type="password" placeholder="Current password" value={current} onChange={e => setCurrent(e.target.value)} style={{ marginBottom: 8 }} />
-          <input className="form-input" type="email" placeholder="New email" value={newEmail} onChange={e => setNewEmail(e.target.value)} style={{ marginBottom: 8 }} />
+          <input className="form-input" type="password" aria-label="Current password" autoComplete="current-password" placeholder="Current password" value={current} onChange={e => setCurrent(e.target.value)} style={{ marginBottom: 8 }} />
+          <input className="form-input" type="email" aria-label="New email" autoComplete="email" placeholder="New email" value={newEmail} onChange={e => setNewEmail(e.target.value)} style={{ marginBottom: 8 }} />
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-primary btn-sm" disabled={busy} onClick={submit}>{busy ? "Saving…" : "Save"}</button>
             <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
@@ -259,7 +259,7 @@ function DeleteAccountForm({ onClose }) {
       ) : (
         <>
           {error && <div className="error-msg">{error}</div>}
-          <input className="form-input" type="password" placeholder="Confirm your password" value={password} onChange={e => setPassword(e.target.value)} style={{ marginBottom: 8 }} />
+          <input className="form-input" type="password" aria-label="Confirm your password" autoComplete="current-password" placeholder="Confirm your password" value={password} onChange={e => setPassword(e.target.value)} style={{ marginBottom: 8 }} />
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-danger btn-sm" disabled={busy} onClick={submit}>{busy ? "Deleting…" : "Yes, Delete My Account"}</button>
             <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>

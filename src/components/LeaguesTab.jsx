@@ -8,6 +8,7 @@ import { makeEntry } from "../lib/auditLog.js";
 import { generateCode, DEFAULT_SCORING } from "../lib/scoring.js";
 import Avatar from "./Avatar.jsx";
 import AdminPanel from "./AdminPanel.jsx";
+import ConfirmDialog from "./ConfirmDialog.jsx";
 import StandingsCard from "./StandingsCard.jsx";
 import WeeklyStandingsCard from "./WeeklyStandingsCard.jsx";
 import HeadToHeadCard from "./HeadToHeadCard.jsx";
@@ -109,7 +110,12 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
         return (
           <div key={league.id} className="glass card" style={{ marginBottom: 14, borderColor: isSelected ? "rgba(59,130,246,0.4)" : undefined }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ cursor: "pointer", flex: 1, minWidth: 180 }} onClick={() => openLeague(league.id)}>
+              {/* Not role="button": it contains the Copy button, and nesting
+                  a control inside a control is invalid and confuses screen
+                  readers. The keyboard path is the real "View" button to the
+                  right; this is a mouse shortcut, so it's marked as one. */}
+              <div style={{ cursor: "pointer", flex: 1, minWidth: 180 }}
+                onClick={() => openLeague(league.id)}>
                 <div style={{ fontWeight: 800, fontSize: 16, display: "flex", alignItems: "center", gap: 12 }}>
                   {league.name} {isSelected && <span className="chip active">Active</span>}
                 </div>
@@ -224,18 +230,37 @@ function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, onLeft }) 
       { targetUid: uid, promoted: promoting });
   };
 
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
   const kick = async (uid) => {
-    await fsRemoveLeagueMember(league.id, uid);
-    log("member_removed", `${nameOf(uid)} removed from ${league.name}`, { targetUid: uid });
-    setConfirmKick(null);
+    setBusy(true); setError("");
+    try {
+      await fsRemoveLeagueMember(league.id, uid);
+      log("member_removed", `${nameOf(uid)} removed from ${league.name}`, { targetUid: uid });
+      setConfirmKick(null);
+    } catch (err) {
+      // Previously unguarded: a failed write left the row sitting on
+      // "Confirm | Cancel" with the member still there and no explanation.
+      console.error("Couldn't remove the member", err);
+      setError("Couldn't remove them — check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const leave = async () => {
-    setLeaving(true);
-    await fsLeaveLeague(league.id, user.uid);
-    setLeaving(false);
-    setConfirmLeave(false);
-    onLeft?.();
+    setLeaving(true); setError("");
+    try {
+      await fsLeaveLeague(league.id, user.uid);
+      setConfirmLeave(false);
+      onLeft?.();
+    } catch (err) {
+      console.error("Couldn't leave the league", err);
+      setError("Couldn't leave — check your connection and try again.");
+    } finally {
+      setLeaving(false);
+    }
   };
 
   return (
@@ -244,20 +269,43 @@ function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, onLeft }) 
           League is the equivalent action for them (see AdminPanel), since
           leaving would either abandon a league with other people still in
           it, or is pointless if they're the only member. */}
+      {error && <div className="error-msg">{error}</div>}
+
       {!isSuperAdmin && (
         <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
-          {!confirmLeave ? (
-            <button className="btn btn-ghost btn-sm" onClick={() => setConfirmLeave(true)}>Leave League</button>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div className="error-msg">Leave "{league.name}"? You'll need the code to rejoin later.</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn btn-danger btn-sm" disabled={leaving} onClick={leave}>{leaving ? "Leaving…" : "Yes, Leave"}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setConfirmLeave(false)}>Cancel</button>
-              </div>
-            </div>
-          )}
+          <button className="btn btn-ghost btn-sm" onClick={() => setConfirmLeave(true)}>Leave League</button>
         </div>
+      )}
+
+      {/* Both of these used to be an inline two-step. Leaving at least said
+          what would happen; Kick turned into a bare "Confirm | Cancel" with
+          no statement of what it does to the other person at all. They now
+          use the same dialog as every other destructive action, and both say
+          the thing people actually worry about: the picks are safe. */}
+      {confirmLeave && (
+        <ConfirmDialog
+          tone="danger"
+          title={`Leave ${league.name}?`}
+          lines={[league.name, `Code ${league.id}`]}
+          note="Your picks belong to your account, not to the league — nothing is deleted, and they come straight back if you rejoin. You'll disappear from this league's standings until you do, and you'll need the code above to get back in."
+          confirmLabel="Leave the league"
+          busy={leaving}
+          onConfirm={leave}
+          onCancel={() => setConfirmLeave(false)}
+        />
+      )}
+
+      {confirmKick && (
+        <ConfirmDialog
+          tone="danger"
+          title={`Remove ${nameOf(confirmKick)} from the league?`}
+          lines={[nameOf(confirmKick), `${league.name} · code ${league.id}`]}
+          note="They drop out of the standings immediately. Their picks aren't deleted — those are stored per person — so if they rejoin with the code, everything they've scored comes back with them. Recorded in History under your name."
+          confirmLabel="Remove them"
+          busy={busy}
+          onConfirm={() => kick(confirmKick)}
+          onCancel={() => setConfirmKick(null)}
+        />
       )}
 
       {league.members.map(uid => {
@@ -276,14 +324,7 @@ function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, onLeft }) 
               </button>
             )}
             {isAdmin && !isSuper && uid !== user.uid && (
-              confirmKick === uid ? (
-                <>
-                  <button className="btn btn-danger btn-sm" onClick={() => kick(uid)}>Confirm</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setConfirmKick(null)}>Cancel</button>
-                </>
-              ) : (
-                <button className="btn btn-ghost btn-sm" onClick={() => setConfirmKick(uid)}>Kick</button>
-              )
+              <button className="btn btn-ghost btn-sm" onClick={() => setConfirmKick(uid)}>Remove</button>
             )}
           </div>
         );

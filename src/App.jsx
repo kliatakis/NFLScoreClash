@@ -298,7 +298,9 @@ export default function App() {
       <div className="app">
         <div className="topbar">
         <header className="header">
-          <div className="brand" onClick={() => setTab("dashboard")}>
+          <div className="brand" role="button" tabIndex={0} aria-label="Go to the dashboard"
+            onClick={() => setTab("dashboard")}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("dashboard"); } }}>
             <HexIcon size={34} />
             <div className="brand-word">{APP_NAME.slice(0, Math.ceil(APP_NAME.length / 2))}<span>{APP_NAME.slice(Math.ceil(APP_NAME.length / 2))}</span></div>
           </div>

@@ -10,8 +10,9 @@ import {
 } from "../firebase.js";
 import { useFixtureLock, useSeasonPicksLock, useCountdown, LOCK_MINUTES_BEFORE_KICKOFF } from "../lib/hooks.js";
 import { formatKickoff, lockUrgency, formatDuration } from "../lib/time.js";
-import { classifyPick, pickWinner, resultWinner } from "../lib/scoring.js";
+import { classifyPick, pickWinner, resultWinner, nextOpenWeek } from "../lib/scoring.js";
 import TeamBadge from "./TeamBadge.jsx";
+import ConfirmDialog from "./ConfirmDialog.jsx";
 
 // Predictions are shared across every league the user is in — this tab is
 // intentionally NOT scoped to a selected league for entering picks (see
@@ -43,12 +44,35 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
   const [preds, setPreds] = useState({ picks: {}, specials: {} });
   const [predsLoaded, setPredsLoaded] = useState(false);
   const [results, setResults] = useState({});
+  // Whether the week has been auto-set once. After that the person's own
+  // choice wins — jumping them back to the live week while they're reading
+  // Week 3 would be worse than the problem this fixes.
+  const weekAutoSet = useRef(false);
 
   useEffect(() => {
     const u1 = fsSubscribePredictions(user.uid, (p) => { setPreds(p); setPredsLoaded(true); });
     const u2 = fsSubscribeResults(setResults);
     return () => { u1(); u2(); };
   }, [user.uid]);
+
+  // Open on the week that's actually live, not Week 1.
+  //
+  // The selector was hardcoded to 1, so from Week 2 onwards every single visit
+  // landed on a week that had already been played and needed changing by hand
+  // — and App.jsx remounts this tab on every tab switch, so it reset each
+  // time. Worse, the dashboard's "Pick Week 6 →" button led straight here and
+  // still showed Week 1.
+  //
+  // Waits for results to arrive: on first paint `results` is {} and every week
+  // looks unplayed, which would answer Week 1 and immediately be right for the
+  // wrong reason.
+  useEffect(() => {
+    if (weekAutoSet.current || Object.keys(results).length === 0) return;
+    weekAutoSet.current = true;
+    const open = nextOpenWeek(results);
+    // Regular season over — leave them on the last week rather than nowhere.
+    setWeek(open ?? SEASON.regularSeasonWeeks);
+  }, [results]);
 
   const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
   // Counted via pickWinner, not a stray homeScore field — winner-only picks
@@ -62,6 +86,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
   const [drafts, setDrafts] = useState({});          // fixtureId -> "H" | "A" | "T"
   const [bulkBusy, setBulkBusy] = useState("");      // "" | "saving" | "clearing"
   const [bulkError, setBulkError] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
   const hydratedWeeks = useRef(new Set());
 
   // Seed a week from saved picks exactly once, after the subscription has
@@ -125,6 +150,11 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
     }
   };
 
+  // The one destructive action any member can take, and it was a single
+  // unguarded tap: "Clear all (16)" deleted a whole week of saved picks with
+  // no undo. It sits right next to "Save all", which is the button people
+  // actually want. Every admin action that destroys something asks first —
+  // this one has to as well.
   const clearAll = async () => {
     if (clearableFixtures.length === 0) return;
     setBulkBusy("clearing"); setBulkError("");
@@ -136,9 +166,11 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
         for (const id of ids) next[id] = null;
         return next;
       });
+      setConfirmClear(false);
     } catch (err) {
       console.error("Bulk clear failed", err);
       setBulkError("Couldn't clear the week — check your connection and try again.");
+      setConfirmClear(false);
     } finally {
       setBulkBusy("");
     }
@@ -191,7 +223,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
               <button
                 className="btn btn-ghost btn-sm"
                 disabled={clearableFixtures.length === 0 || bulkBusy !== ""}
-                onClick={clearAll}
+                onClick={() => setConfirmClear(true)}
                 title={clearableFixtures.length === 0 ? "No saved picks to clear in this week" : undefined}
               >
                 {bulkBusy === "clearing"
@@ -200,6 +232,22 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
               </button>
               <span className="bulk-hint">Only unlocked games are affected.</span>
             </div>
+          )}
+
+          {confirmClear && (
+            <ConfirmDialog
+              tone="danger"
+              title={`Clear your Week ${week} picks?`}
+              lines={[
+                `${clearableFixtures.length} saved pick${clearableFixtures.length === 1 ? "" : "s"} will be deleted`,
+                "Locked and already-played games are left alone",
+              ]}
+              note="There's no undo — you'd have to pick the week again from scratch. Your picks count in every league you're in, so this clears them everywhere."
+              confirmLabel={`Clear ${clearableFixtures.length} pick${clearableFixtures.length === 1 ? "" : "s"}`}
+              busy={bulkBusy === "clearing"}
+              onConfirm={clearAll}
+              onCancel={() => setConfirmClear(false)}
+            />
           )}
           {bulkError && <div className="error-msg">{bulkError}</div>}
           {fixtures.length === 0 && <div className="glass card" style={{ color: "var(--muted)" }}>No games loaded for this week yet.</div>}

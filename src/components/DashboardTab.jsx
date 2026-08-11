@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { calcStandings, getScoringSettings, pickWinner, pickStreaks, liveWeekStatus, pendingPickers } from "../lib/scoring.js";
+import { calcStandings, getScoringSettings, pickWinner, pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek } from "../lib/scoring.js";
 import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
 import { teamTint } from "../data/teams.js";
 import { formatKickoff, formatDuration } from "../lib/time.js";
@@ -56,10 +56,8 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
 
   // The full slate for the earliest week that still has unplayed games —
   // rather than an arbitrary "next 6" cut that could straddle two weeks.
-  const upcomingWeek = useMemo(() => {
-    const weeks = REGULAR_SEASON_FIXTURES.filter(f => !results[f.id]).map(f => f.week);
-    return weeks.length ? Math.min(...weeks) : null;
-  }, [results]);
+  // Shared with the Predictions week selector so the two always agree.
+  const upcomingWeek = useMemo(() => nextOpenWeek(results), [results]);
   const upcoming = upcomingWeek != null
     ? REGULAR_SEASON_FIXTURES.filter(f => f.week === upcomingWeek)
     : [];
@@ -146,9 +144,15 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         note: `${seasonMade} of ${SPECIAL_PICK_TYPES.length} · they lock at kickoff and never reopen`,
         done: seasonMade === SPECIAL_PICK_TYPES.length, go: "predictions",
       }]),
-      { id: "week", label: `Pick Week ${upcomingWeek ?? ""}`.trim(),
-        note: pickProgress ? `${pickProgress.made} of ${pickProgress.total} games` : "the season hasn't started",
-        done: !!pickProgress && pickProgress.made === pickProgress.total, go: "predictions" },
+      // Dropped once the regular season is over. It used to survive as
+      // "Pick Week" with the note "the season hasn't started" — wrong on both
+      // counts in January — and because it could never be marked done, the
+      // whole card sat there nagging for the entire playoffs.
+      ...(upcomingWeek == null || !pickProgress ? [] : [{
+        id: "week", label: `Pick Week ${upcomingWeek}`,
+        note: `${pickProgress.made} of ${pickProgress.total} games`,
+        done: pickProgress.made === pickProgress.total, go: "predictions",
+      }]),
       { id: "invite", label: "Invite someone",
         note: league.members.length > 1
           ? `${league.members.length} in the league`
@@ -415,7 +419,16 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
       </div>
 
       <div className="card-title">{upcomingWeek != null ? `Week ${upcomingWeek} — Upcoming Games` : "Upcoming Games"}</div>
-      {upcoming.length === 0 && <div className="glass card" style={{ color: "var(--muted)" }}>No upcoming games loaded.</div>}
+      {/* "No upcoming games loaded" reads like a failure. Once the regular
+          season is done it isn't one — there's simply nothing left to load,
+          and the playoffs live on their own tab. */}
+      {upcoming.length === 0 && (
+        <div className="glass card" style={{ color: "var(--muted)" }}>
+          {upcomingWeek == null
+            ? "The regular season is done. Playoff games are in the Predictions tab, under Playoffs."
+            : "No games loaded for this week yet."}
+        </div>
+      )}
       {/* Own class rather than inline styles so it can carry a visible
           scrollbar — the global 5px one is nearly invisible on a dark card,
           and there was nothing to suggest the row scrolled at all. */}
