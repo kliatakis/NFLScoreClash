@@ -15,12 +15,12 @@
 // These values are not secret. They identify the project in the browser;
 // access is controlled by firestore.rules, not by hiding this.
 export const firebaseConfig = {
-  apiKey: "AIzaSyC2O4fEPgkC4KcSRjbCn1yk3su1_JviWss",
-  authDomain: "nflscoreclash.firebaseapp.com",
-  projectId: "nflscoreclash",
-  storageBucket: "nflscoreclash.firebasestorage.app",
-  messagingSenderId: "950705116363",
-  appId: "1:950705116363:web:3b159e3353b820ba4e374e",
+  apiKey: "REPLACE_ME",
+  authDomain: "REPLACE_ME.firebaseapp.com",
+  projectId: "REPLACE_ME",
+  storageBucket: "REPLACE_ME.firebasestorage.app",
+  messagingSenderId: "REPLACE_ME",
+  appId: "REPLACE_ME",
 };
 
 // True when the file is still untouched. The app checks this and says so

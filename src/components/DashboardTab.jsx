@@ -181,12 +181,21 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         note: `${pickProgress.made} of ${pickProgress.total} games`,
         done: pickProgress.made === pickProgress.total, go: "predictions",
       }]),
-      // Takes over from the weekly step once the regular season ends. Playoff
-      // games are worth the same as any other, and there was previously
-      // nothing anywhere on this page telling you they'd opened.
-      ...(playoffProgress ? [{
+      // TAKES OVER from the weekly step — it does not sit alongside it.
+      //
+      // Gated on the regular season being finished, not merely on a playoff
+      // matchup existing. An admin setting one early (or testing one in
+      // September) otherwise parked "Pick the playoff games" in the list for
+      // months, next to a weekly step that's the actual job that week.
+      //
+      // The trade-off: this waits for every Week 18 result to be in, so one
+      // score an admin forgets to enter would delay the nudge. In practice
+      // the daily fetch has them all by the Monday, days before the wild
+      // card round — and the Predictions tab and Upcoming strip both show
+      // the playoffs regardless.
+      ...(upcomingWeek == null && playoffProgress ? [{
         id: "playoffs", label: "Pick the playoff games",
-        note: `${playoffProgress.made} of ${playoffProgress.total} confirmed games`,
+        note: `${playoffProgress.made} of ${playoffProgress.total} confirmed game${playoffProgress.total === 1 ? "" : "s"}`,
         done: playoffProgress.made === playoffProgress.total, go: "predictions",
       }] : []),
       { id: "invite", label: "Invite someone",
