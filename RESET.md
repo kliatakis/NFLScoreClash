@@ -1,3 +1,8 @@
+> **Deploying an update?** `src/firebaseConfig.js` holds your Firebase keys and
+> is the ONE file you should never overwrite. Upload it once, with your real
+> values, and skip it in every future update. Everything else can be replaced
+> freely. If the site ever comes up blank, it now says why on the page itself.
+
 # Resetting ScoreClash to a clean slate
 
 Wipes every account, league, prediction and result so the app behaves as if it

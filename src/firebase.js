@@ -22,17 +22,28 @@ import {
 import { SEASON } from "./data/fixtures.js";
 
 // ─── Firebase project config ────────────────────────────────────────────────
-// This is a brand new, independent Firebase project — NOT the original
-// ScoreClash project. Create a fresh project at console.firebase.google.com,
-// enable Firestore + Email/Password Auth, then paste your config here.
-const firebaseConfig = {
-  apiKey: "AIzaSyC2O4fEPgkC4KcSRjbCn1yk3su1_JviWss",
-  authDomain: "nflscoreclash.firebaseapp.com",
-  projectId: "nflscoreclash",
-  storageBucket: "nflscoreclash.firebasestorage.app",
-  messagingSenderId: "950705116363",
-  appId: "1:950705116363:web:3b159e3353b820ba4e374e",s
-};
+//
+// The keys now live in their own file, src/firebaseConfig.js, and NOT here.
+//
+// They used to be right at the top of this file, which made every update a
+// hazard: this file changes whenever a feature needs a new query, so it gets
+// re-uploaded — and re-uploading it silently replaced a working config with
+// placeholders. The build still passes, the deploy still succeeds, and the
+// site fails at runtime with nothing obvious to point at.
+//
+// Upload src/firebaseConfig.js once. Never again.
+import { firebaseConfig, isFirebaseConfigured } from "./firebaseConfig.js";
+
+if (!isFirebaseConfigured) {
+  // Thrown deliberately, at module load, before anything can half-work. The
+  // watchdog in index.html catches it and puts this text on the screen — the
+  // alternative is auth calls that hang forever behind a blank page.
+  throw new Error(
+    "Firebase isn't configured. Open src/firebaseConfig.js and replace the "
+    + "REPLACE_ME values with your project's config from the Firebase console "
+    + "(Project settings → General → Your apps → SDK setup and configuration)."
+  );
+}
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);

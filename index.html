@@ -22,6 +22,77 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- ── BOOT WATCHDOG ──────────────────────────────────────────────────
+         Plain inline script, deliberately NOT a module and NOT part of the
+         bundle, so it still runs when the bundle itself is the thing that
+         failed.
+
+         Without it, every possible startup failure — a module that throws on
+         import, a 404 on the JS, an unconfigured Firebase — produces exactly
+         the same thing: a white page with nothing on it and no clue what
+         went wrong. This turns all of them into a readable message. -->
+    <script>
+      (function () {
+        var shown = false;
+        var problems = [];
+
+        function report(what) {
+          if (what && problems.indexOf(what) === -1) problems.push(what);
+        }
+
+        function show() {
+          if (shown) return;
+          var root = document.getElementById("root");
+          if (root && root.childElementCount > 0) return; // the app rendered
+          shown = true;
+          document.body.style.margin = "0";
+          document.body.style.background = "#07070b";
+          document.body.innerHTML =
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;'
+            + 'font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#e7e7ee;background:#07070b">'
+            + '<div style="max-width:560px;width:100%;background:#14141d;border:1px solid rgba(255,255,255,0.16);'
+            + 'border-radius:16px;padding:28px;box-shadow:0 24px 70px rgba(0,0,0,0.6)">'
+            + '<div style="font-size:20px;font-weight:800;letter-spacing:0.5px;margin-bottom:6px">ScoreClash didn\'t start</div>'
+            + '<div style="font-size:13.5px;color:#9a9aab;line-height:1.6;margin-bottom:18px">'
+            + 'The page loaded but the app failed before it could draw anything. The reason is below.</div>'
+            + '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.55;color:#f43f5e;'
+            + 'background:rgba(244,63,94,0.10);border:1px solid rgba(244,63,94,0.3);border-radius:10px;'
+            + 'padding:12px;margin:0 0 18px">'
+            + (problems.length ? problems.join("\n\n") : "No error was reported — the script may not have loaded at all (check the Network tab for a 404 on /assets/index-*.js).").replace(/[<>&]/g, function (c) { return { "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]; })
+            + '</pre>'
+            + '<div style="font-size:13px;color:#9a9aab;line-height:1.7">Most likely, in order:'
+            + '<ol style="margin:8px 0 0;padding-left:20px">'
+            + '<li><b style="color:#e7e7ee">src/firebaseConfig.js still says REPLACE_ME.</b> Paste in your Firebase config.</li>'
+            + '<li><b style="color:#e7e7ee">A file didn\'t get uploaded.</b> Check the newest ones exist on GitHub: '
+            + 'src/data/avatars.js, src/data/roasts.js, src/lib/shoutouts.js, src/lib/auditLog.js, '
+            + 'src/components/ConfirmDialog.jsx, src/components/HistoryPanel.jsx.</li>'
+            + '<li><b style="color:#e7e7ee">The Vercel build failed</b> and it\'s serving an old or empty deploy. '
+            + 'Check the Deployments tab for a red build.</li>'
+            + '</ol></div></div></div>';
+        }
+
+        window.addEventListener("error", function (e) {
+          // A failed <script>/<link> fires an error event with no message.
+          if (e && e.target && e.target !== window && e.target.src) {
+            report("Failed to load: " + e.target.src);
+          } else if (e && e.message) {
+            report(e.message + (e.filename ? "\n  at " + e.filename + ":" + e.lineno : ""));
+          }
+          setTimeout(show, 50);
+        }, true);
+
+        window.addEventListener("unhandledrejection", function (e) {
+          report("Unhandled promise rejection: " + ((e && e.reason && (e.reason.message || e.reason)) || "unknown"));
+          setTimeout(show, 50);
+        });
+
+        // Nothing threw, but nothing drew either — a bundle that 404s is
+        // silent. Generous enough not to fire on a slow phone.
+        window.addEventListener("load", function () { setTimeout(show, 8000); });
+      })();
+    </script>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
