@@ -4,11 +4,11 @@ import { TEAMS, TEAM_CODES, teamsByConference, teamsForSpecialPick } from "../da
 import {
   fsSetResult, fsClearResult, fsSetSpecialResult, fsUpdateLeague, fsDeleteLeague,
   fsAdminOverrideGamePrediction, fsGetPredictions, fsGetAllUsers,
-  fsSubscribeResults, fsSubscribeSpecialResults,
+  fsSubscribeResults, fsSubscribeSpecialResults, fsSubscribeAllPredictions,
   fsSetPlayoffFixture, fsClearPlayoffFixture, fsSubscribePlayoffFixtures,
   fsLogChange,
 } from "../firebase.js";
-import { getScoringSettings } from "../lib/scoring.js";
+import { getScoringSettings, pickWinner } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
 import {
   makeEntry, resultKind, resultSummary, fixtureText, scoreText,
@@ -121,7 +121,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
         </div>
       )}
 
-      {section === "Playoffs" && <PlayoffEntry timezone={user.timezone} logChange={logChange} />}
+      {section === "Playoffs" && <PlayoffEntry league={league} timezone={user.timezone} logChange={logChange} />}
       {section === "Overrides" && <OverridesEntry league={league} adminUid={user.uid} logChange={logChange} />}
       {section === "Special Picks" && <SpecialResultsEntry logChange={logChange} />}
       {section === "Scoring Settings" && <ScoringSettings league={league} logChange={logChange} />}
@@ -321,11 +321,19 @@ function ResultRow({ fixture, result, timezone, logChange }) {
 // Attaches real teams and kickoff times to the placeholder playoff fixtures.
 // Everyone's picks and the scoring already key off those permanent IDs, so
 // filling these in is purely a matter of saying who's playing and when.
-function PlayoffEntry({ timezone, logChange }) {
+function PlayoffEntry({ league, timezone, logChange }) {
   const [matchups, setMatchups] = useState({});
   const [results, setResults] = useState({});
+  const [allPredictions, setAllPredictions] = useState({});
   useEffect(() => fsSubscribePlayoffFixtures(setMatchups), []);
   useEffect(() => fsSubscribeResults(setResults), []);
+  // Needed only to warn how many people have already picked a game before you
+  // change who's playing in it. Picks hang off the placeholder id, so swapping
+  // the teams silently reassigns everyone's pick to a different matchup.
+  useEffect(() => fsSubscribeAllPredictions(setAllPredictions), []);
+
+  const pickedCount = (fixtureId) => (league?.members || [])
+    .filter(uid => pickWinner((allPredictions[uid]?.picks || {})[fixtureId]) != null).length;
 
   const setCount = PLAYOFF_FIXTURES.filter(f => isPlayoffMatchupReady(matchups[f.id])).length;
 
@@ -346,7 +354,7 @@ function PlayoffEntry({ timezone, logChange }) {
             <div className="form-label" style={{ marginBottom: 8 }}>{round.label}</div>
             {fixtures.map(f => (
               <PlayoffRow key={f.id} fixture={f} matchup={matchups[f.id]} result={results[f.id]}
-                timezone={timezone} logChange={logChange} />
+                timezone={timezone} logChange={logChange} pickedCount={pickedCount(f.id)} />
             ))}
           </div>
         );
@@ -355,10 +363,17 @@ function PlayoffEntry({ timezone, logChange }) {
   );
 }
 
-function PlayoffRow({ fixture, matchup, result, timezone, logChange }) {
+function PlayoffRow({ fixture, matchup, result, timezone, logChange, pickedCount = 0 }) {
+  // The Super Bowl's date and kickoff have been known since the schedule was
+  // published and are already sitting in SEASON — no reason to make somebody
+  // type them in from memory. Every other playoff slot genuinely isn't known
+  // until the round before, so only this one prefills.
+  const defaultWhen = fixture.round === "superbowl"
+    ? toLocalInput(SEASON.playoffs?.superBowl?.kickoffUTC)
+    : "";
   const [away, setAway] = useState(matchup?.away || "");
   const [home, setHome] = useState(matchup?.home || "");
-  const [when, setWhen] = useState(toLocalInput(matchup?.kickoffUTC));
+  const [when, setWhen] = useState(toLocalInput(matchup?.kickoffUTC) || defaultWhen);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [confirming, setConfirming] = useState(null);   // null | "update" | "clear"
@@ -366,8 +381,8 @@ function PlayoffRow({ fixture, matchup, result, timezone, logChange }) {
   useEffect(() => {
     setAway(matchup?.away || "");
     setHome(matchup?.home || "");
-    setWhen(toLocalInput(matchup?.kickoffUTC));
-  }, [matchup?.away, matchup?.home, matchup?.kickoffUTC]);
+    setWhen(toLocalInput(matchup?.kickoffUTC) || defaultWhen);
+  }, [matchup?.away, matchup?.home, matchup?.kickoffUTC, defaultWhen]);
 
   // The Super Bowl is cross-conference; every other playoff game is within one.
   const options = fixture.conf ? teamsByConference(fixture.conf) : TEAM_CODES;
@@ -438,6 +453,7 @@ function PlayoffRow({ fixture, matchup, result, timezone, logChange }) {
         {result && <span className="chip">Final {result.awayScore}–{result.homeScore}</span>}
         {isSet && matchup?.kickoffUTC && <span>{formatKickoff(matchup.kickoffUTC, timezone)}</span>}
         {isSet && !matchup?.kickoffUTC && <span style={{ color: "var(--gold)" }}>No kickoff time — still closed for picks</span>}
+        {pickedCount > 0 && <span className="chip">{pickedCount} picked</span>}
         {error && <span style={{ color: "var(--accent2)" }}>{error}</span>}
       </span>
 
@@ -472,7 +488,11 @@ function PlayoffRow({ fixture, matchup, result, timezone, logChange }) {
             fixture.label,
             `${matchup?.away || "?"} @ ${matchup?.home || "?"}  →  ${away} @ ${home}`,
           ]}
-          note="Picks are stored against the game, not the teams — anyone who already picked this game keeps their pick, and it now applies to the new matchup. Tell them if this isn't a simple correction."
+          note={
+            pickedCount > 0
+              ? `${pickedCount} member${pickedCount === 1 ? " has" : "s have"} already picked this game. Picks are stored against the slot, not the teams — so their pick now applies to the NEW matchup, which may not be the team they chose. Only do this if it's a correction they'd expect.`
+              : "Picks are stored against the slot, not the teams. Nobody has picked this one yet, so there's nothing to disturb."
+          }
           confirmLabel="Change the matchup"
           busy={busy}
           onConfirm={doSave}
@@ -484,7 +504,7 @@ function PlayoffRow({ fixture, matchup, result, timezone, logChange }) {
           tone="danger"
           title="Clear this matchup?"
           lines={[fixture.label, `${matchup?.away || "?"} @ ${matchup?.home || "?"}  →  not set`]}
-          note="The game closes for predictions again. Picks already made are kept but score nothing until teams and a kickoff time are set."
+          note={`The game closes for predictions again. Picks already made are kept but score nothing until teams and a kickoff time are set.${pickedCount > 0 ? ` ${pickedCount} member${pickedCount === 1 ? " has" : "s have"} picked this one.` : ""}`}
           confirmLabel="Clear the matchup"
           busy={busy}
           onConfirm={doClear}

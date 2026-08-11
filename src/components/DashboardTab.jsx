@@ -1,6 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { calcStandings, getScoringSettings, pickWinner, pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek } from "../lib/scoring.js";
-import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
+import {
+  REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, PLAYOFF_FIXTURES, isPlayoffMatchupReady,
+} from "../data/fixtures.js";
+import { fsSubscribePlayoffFixtures } from "../firebase.js";
 import { teamTint } from "../data/teams.js";
 import { formatKickoff, formatDuration } from "../lib/time.js";
 import { useCountUp, useSeasonPicksLock } from "../lib/hooks.js";
@@ -58,9 +61,34 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
   // rather than an arbitrary "next 6" cut that could straddle two weeks.
   // Shared with the Predictions week selector so the two always agree.
   const upcomingWeek = useMemo(() => nextOpenWeek(results), [results]);
+
+  // ── The playoffs ──────────────────────────────────────────────────────────
+  // Everything above keys off REGULAR_SEASON_FIXTURES, so from the moment
+  // Week 18 finished the dashboard had nothing to say for a month — no games
+  // listed, no nudge, no progress — while the highest-stakes picks of the
+  // season were going unmade. The matchups live in the results document,
+  // attached by an admin (see AdminPanel → Playoffs).
+  const [playoffMatchups, setPlayoffMatchups] = useState({});
+  useEffect(() => fsSubscribePlayoffFixtures(setPlayoffMatchups), []);
+
+  // Only games an admin has actually confirmed. A placeholder with no teams
+  // isn't pickable and shouldn't be advertised as if it were.
+  const openPlayoffGames = useMemo(() => PLAYOFF_FIXTURES
+    .filter(f => isPlayoffMatchupReady(playoffMatchups[f.id]) && !results[f.id])
+    .map(f => ({ ...f, ...playoffMatchups[f.id], note: f.label }))
+    .sort((a, b) => new Date(a.kickoffUTC) - new Date(b.kickoffUTC)),
+    [playoffMatchups, results]);
+
+  const playoffProgress = useMemo(() => {
+    if (openPlayoffGames.length === 0) return null;
+    const picks = (allPredictions[user.uid] || {}).picks || {};
+    const made = openPlayoffGames.filter(f => pickWinner(picks[f.id])).length;
+    return { made, total: openPlayoffGames.length };
+  }, [openPlayoffGames, allPredictions, user.uid]);
+
   const upcoming = upcomingWeek != null
     ? REGULAR_SEASON_FIXTURES.filter(f => f.week === upcomingWeek)
-    : [];
+    : openPlayoffGames;
 
   const me = standings.find(s => s.uid === user.uid);
 
@@ -153,6 +181,14 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         note: `${pickProgress.made} of ${pickProgress.total} games`,
         done: pickProgress.made === pickProgress.total, go: "predictions",
       }]),
+      // Takes over from the weekly step once the regular season ends. Playoff
+      // games are worth the same as any other, and there was previously
+      // nothing anywhere on this page telling you they'd opened.
+      ...(playoffProgress ? [{
+        id: "playoffs", label: "Pick the playoff games",
+        note: `${playoffProgress.made} of ${playoffProgress.total} confirmed games`,
+        done: playoffProgress.made === playoffProgress.total, go: "predictions",
+      }] : []),
       { id: "invite", label: "Invite someone",
         note: league.members.length > 1
           ? `${league.members.length} in the league`
@@ -160,7 +196,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         done: league.members.length > 1, go: "leagues" },
     ];
     return steps.every(s => s.done) ? null : steps;
-  }, [league, allPredictions, user.uid, upcomingWeek, pickProgress, seasonPicksLocked]);
+  }, [league, allPredictions, user.uid, upcomingWeek, pickProgress, playoffProgress, seasonPicksLocked]);
 
   // Accuracy = games where you called the winner, out of games that have a
   // result AND a pick. Games you didn't pick aren't held against you — that's
@@ -418,14 +454,16 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
         <StandingsCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} specialResults={specialResults} />
       </div>
 
-      <div className="card-title">{upcomingWeek != null ? `Week ${upcomingWeek} — Upcoming Games` : "Upcoming Games"}</div>
+      <div className="card-title">
+        {upcomingWeek != null ? `Week ${upcomingWeek} — Upcoming Games` : "Playoffs — Upcoming Games"}
+      </div>
       {/* "No upcoming games loaded" reads like a failure. Once the regular
-          season is done it isn't one — there's simply nothing left to load,
-          and the playoffs live on their own tab. */}
+          season is done it isn't one — and if the playoff matchups simply
+          haven't been set yet, that's the thing worth saying. */}
       {upcoming.length === 0 && (
         <div className="glass card" style={{ color: "var(--muted)" }}>
           {upcomingWeek == null
-            ? "The regular season is done. Playoff games are in the Predictions tab, under Playoffs."
+            ? "The regular season is done. Playoff games appear here as soon as a league admin confirms who's playing."
             : "No games loaded for this week yet."}
         </div>
       )}

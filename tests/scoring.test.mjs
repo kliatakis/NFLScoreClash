@@ -8,9 +8,10 @@
 // accident; several of these assertions exist because that already happened.
 
 import {
-  REGULAR_SEASON_FIXTURES, PLAYOFF_FIXTURES, SCORABLE_FIXTURES, SPECIAL_PICK_TYPES,
-  effectiveKickoffUTC, isPlayoffMatchupReady,
+  REGULAR_SEASON_FIXTURES, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, SCORABLE_FIXTURES,
+  SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, isPlayoffMatchupReady,
 } from "../src/data/fixtures.js";
+import { AVATAR_GROUPS, PRESET_AVATARS } from "../src/data/avatars.js";
 import {
   DEFAULT_SCORING, getScoringSettings, pickWinner, resultWinner, classifyPick,
   calcMatchScore, weekAccuracyBadge, calcStandings, calcWeeklyStandings,
@@ -966,6 +967,86 @@ group("Which week is 'now'");
   // completed, so it nagged through the entire playoffs.
   t("once the regular season is done there is no open week", nextOpenWeek(all) === null);
   t("...and every week counts as finished", finishedWeeks(all).length === 18);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Playoff placeholders");
+{
+  // The whole design rests on these ids never changing: picks and results are
+  // filed against them from day one, and the teams are attached months later.
+  // Renaming one silently orphans every pick made against it.
+  const ids = PLAYOFF_FIXTURES.map(f => f.id);
+  t("13 playoff slots — 6 wild card, 4 divisional, 2 conference, 1 final",
+    PLAYOFF_FIXTURES.length === 13);
+  t("ids are unique", new Set(ids).size === ids.length);
+  t("ids never collide with regular-season ids",
+    !REGULAR_SEASON_FIXTURES.some(f => ids.includes(f.id)));
+  for (const [round, count] of [["wildcard", 6], ["divisional", 4], ["conference", 2], ["superbowl", 1]]) {
+    t(`${round}: ${count} slots`, PLAYOFF_FIXTURES.filter(f => f.round === round).length === count);
+  }
+  t("every round id is a real round",
+    PLAYOFF_FIXTURES.every(f => PLAYOFF_ROUNDS.some(r => r.id === f.round)));
+  t("conference games are split evenly between AFC and NFC",
+    ["wildcard", "divisional", "conference"].every(r => {
+      const inRound = PLAYOFF_FIXTURES.filter(f => f.round === r);
+      return inRound.filter(f => f.conf === "AFC").length === inRound.filter(f => f.conf === "NFC").length;
+    }));
+  t("only the Super Bowl is cross-conference",
+    PLAYOFF_FIXTURES.filter(f => f.conf === null).length === 1);
+
+  // A placeholder carries no teams and no kickoff, which is exactly why it
+  // must stay shut until an admin fills it in.
+  t("placeholders ship with no teams", PLAYOFF_FIXTURES.every(f => !f.home && !f.away));
+  t("...and no kickoff", PLAYOFF_FIXTURES.every(f => !f.kickoffUTC));
+  t("a bare placeholder is not ready", PLAYOFF_FIXTURES.every(f => !isPlayoffMatchupReady(f)));
+
+  // REGRESSION: teams alone used to open a game that could then never lock,
+  // because a playoff slot has no week to derive a fallback time from.
+  t("teams without a kickoff is still not ready",
+    !isPlayoffMatchupReady({ home: "KC", away: "BUF" }));
+  t("teams plus a kickoff is ready",
+    isPlayoffMatchupReady({ home: "KC", away: "BUF", kickoffUTC: "2027-01-17T21:00:00Z" }));
+  t("a playoff slot has no derived lock time of its own",
+    PLAYOFF_FIXTURES.every(f => effectiveKickoffUTC(f) === null));
+
+  // Picks and results hang off the id, so scoring must walk playoff slots too.
+  t("playoff slots are scorable",
+    ids.every(id => SCORABLE_FIXTURES.some(f => f.id === id)));
+
+  // The Super Bowl's kickoff is already known and in the data — the admin
+  // form prefills from it rather than asking someone to remember it.
+  t("the Super Bowl kickoff is available to prefill",
+    !!SEASON.playoffs?.superBowl?.kickoffUTC && !isNaN(new Date(SEASON.playoffs.superBowl.kickoffUTC)));
+
+  // A pick survives the teams being attached, and scores against them.
+  {
+    const sb = PLAYOFF_FIXTURES.find(f => f.round === "superbowl");
+    const league = { members: ["a"] }, users = { a: { username: "A" } };
+    const preds = { a: { picks: { [sb.id]: { winner: "H" } }, specials: {} } };
+    t("a pick made before the teams are known scores once they are",
+      calcStandings(league, users, preds, { [sb.id]: { homeScore: 27, awayScore: 24 } }, {}, SC)[0].points
+        === SC.correctPoints);
+    t("...and no week bonus comes from a playoff game",
+      calcStandings(league, users, preds, { [sb.id]: { homeScore: 27, awayScore: 24 } }, {}, SC)[0].bonusPoints === 0);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Avatars");
+{
+  const all = AVATAR_GROUPS.flatMap(g => g.avatars);
+  t("the flat list matches the groups", PRESET_AVATARS.length === all.length);
+  t("plenty to choose from", all.length >= 100, `${all.length} avatars`);
+  // The EMOJI is the stored identity, so a duplicate would light up two tiles
+  // as "selected" at once.
+  const emojis = all.map(a => a.emoji);
+  t("no duplicate emoji", new Set(emojis).size === emojis.length,
+    [...new Set(emojis.filter((e, i) => emojis.indexOf(e) !== i))].join(" "));
+  const keys = all.map(a => a.id);
+  t("no duplicate React keys", new Set(keys).size === keys.length);
+  t("every avatar has a label", all.every(a => a.label && a.label.length > 0));
+  t("every group has a label and at least one avatar",
+    AVATAR_GROUPS.every(g => g.id && g.label && g.avatars.length > 0));
 }
 
 // ────────────────────────────────────────────────────────────────────────────

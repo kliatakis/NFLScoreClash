@@ -218,10 +218,18 @@ export const css = (dark = true) => `
 
   /* Avatar picker — there was previously no way to tell which one you'd
      chosen; every tile looked identical. */
+  .avatar-group { margin-bottom: 10px; }
+  .avatar-group:last-child { margin-bottom: 0; }
+  .avatar-group-label {
+    font-size: 9.5px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--muted); opacity: 0.75; margin-bottom: 5px;
+  }
+  .avatar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
   .avatar-option {
     aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--border);
     background: var(--surface2); display: flex; align-items: center; justify-content: center;
-    font-size: 18px; cursor: pointer; transition: transform 0.15s, border-color 0.15s, background 0.15s;
+    font-size: 18px; cursor: pointer; padding: 0; color: inherit; font-family: inherit;
+    transition: transform 0.15s, border-color 0.15s, background 0.15s;
   }
   .avatar-option:hover { border-color: var(--border2); background: var(--surface3); transform: translateY(-1px); }
   .avatar-option.selected {

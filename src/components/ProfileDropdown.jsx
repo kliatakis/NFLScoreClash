@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fsWriteUser, fsIsUsernameTaken, fsClaimUsername, fbChangePassword, fbChangeEmail, fbDeleteAccountCascade, validateUsername, USERNAME_MAX } from "../firebase.js";
-import Avatar, { PRESET_AVATARS } from "./Avatar.jsx";
+import Avatar, { AVATAR_GROUPS } from "./Avatar.jsx";
 import { COMMON_TIMEZONES, DEFAULT_TIMEZONE } from "../lib/time.js";
 
 export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, onToggleDark }) {
@@ -69,22 +69,33 @@ export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, on
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>{user.email}</div>
               </div>
             </div>
+            {/* Grouped, and buttons rather than divs. One flat grid of a
+                hundred-plus tiles was a wall to scroll, and as plain divs
+                none of them could be reached by keyboard at all. */}
             <div className="profile-section">
               <div className="form-label">Avatar</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
-                {PRESET_AVATARS.map(a => (
-                  <div
-                    key={a.id}
-                    onClick={() => pickAvatar(a.emoji)}
-                    // Every tile looked identical before, so there was no way
-                    // to tell which avatar you were currently using.
-                    className={`avatar-option ${user.avatar?.value === a.emoji ? "selected" : ""}`}
-                    title={a.label}
-                  >
-                    {a.emoji}
+              {AVATAR_GROUPS.map(group => (
+                <div key={group.id} className="avatar-group">
+                  <div className="avatar-group-label">{group.label}</div>
+                  <div className="avatar-grid">
+                    {group.avatars.map(a => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => pickAvatar(a.emoji)}
+                        // Every tile looked identical before, so there was no
+                        // way to tell which avatar you were currently using.
+                        className={`avatar-option ${user.avatar?.value === a.emoji ? "selected" : ""}`}
+                        title={a.label}
+                        aria-label={a.label}
+                        aria-pressed={user.avatar?.value === a.emoji}
+                      >
+                        {a.emoji}
+                      </button>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
             <div className="profile-section" style={{ display: "flex", gap: 8 }}>
               <input className="form-input" value={username} maxLength={USERNAME_MAX}
