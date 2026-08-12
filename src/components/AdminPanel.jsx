@@ -6,8 +6,9 @@ import {
   fsAdminOverrideGamePrediction, fsGetPredictions, fsGetAllUsers,
   fsSubscribeResults, fsSubscribeSpecialResults, fsSubscribeAllPredictions,
   fsSetPlayoffFixture, fsClearPlayoffFixture, fsSubscribePlayoffFixtures,
-  fsLogChange,
+  fsLogChange, fsSubscribeFetchHealth,
 } from "../firebase.js";
+import { assessFetchHealth } from "../lib/fetchHealth.js";
 import { getScoringSettings, pickWinner } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
 import {
@@ -111,6 +112,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
 
       {section === "Results" && (
         <div>
+          <FetchHealth />
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <button className="btn btn-ghost btn-sm" onClick={fetchLatest} disabled={fetching}>
               {fetching ? "Fetching…" : "Fetch Latest Results (ESPN)"}
@@ -131,6 +133,39 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
       )}
       {section === "Backup" && <BackupPanel user={user} league={league} isSuperAdmin={isSuperAdmin} logChange={logChange} />}
       {section === "Danger Zone" && isSuperAdmin && <DangerZone league={league} onLeagueDeleted={onLeagueDeleted} />}
+    </div>
+  );
+}
+
+// Is the automatic fetcher alive?
+//
+// The scores come from an undocumented ESPN endpoint with no contract and no
+// alerting. The realistic failure is silent: they rename a team's
+// abbreviation, that team's games stop matching, and every run still reports
+// "success, 0 new results" — which is also exactly what a quiet Tuesday looks
+// like. This card is the difference between those two.
+function FetchHealth() {
+  const [record, setRecord] = useState(undefined);   // undefined = still loading
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => fsSubscribeFetchHealth(setRecord), []);
+  // "3 hours ago" has to keep up without a reload.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (record === undefined) return <div className="skeleton skeleton-row" style={{ marginBottom: 14 }} />;
+
+  const { level, headline, detail } = assessFetchHealth(record, now);
+  const icon = { good: "✅", warn: "⚠️", bad: "🚨", unknown: "❔" }[level];
+
+  return (
+    <div className={`fetch-health ${level}`}>
+      <span className="fetch-health-icon" aria-hidden="true">{icon}</span>
+      <div className="fetch-health-body">
+        <div className="fetch-health-head">Auto-fetch · {headline}</div>
+        {detail.map((line, i) => <div key={i} className="fetch-health-line">{line}</div>)}
+      </div>
     </div>
   );
 }

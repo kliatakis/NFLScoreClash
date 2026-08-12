@@ -16,7 +16,9 @@ export default function NflStandingsTab() {
     for (const code of Object.keys(TEAMS)) rec[code] = { w: 0, l: 0, t: 0, pf: 0, pa: 0 };
     for (const f of REGULAR_SEASON_FIXTURES) {
       const r = results[f.id];
-      if (!r) continue;
+      // A half-entered score (one box filled, the other still blank) would
+      // otherwise compare as `10 > null` and hand out a win nobody earned.
+      if (!r || r.homeScore == null || r.awayScore == null) continue;
       const h = rec[f.home], a = rec[f.away];
       if (!h || !a) continue;
       h.pf += r.homeScore; h.pa += r.awayScore;

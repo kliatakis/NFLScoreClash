@@ -5,12 +5,20 @@
 // anything — should be written. No network, no Firestore, no side effects, so
 // it can be reasoned about and tested directly.
 //
-// The safety rule throughout is FAIL CLOSED: a game is only accepted if we
-// can positively confirm it's a completed, regular-season game of the current
-// season with usable scores. Anything ambiguous is skipped with a reason
-// rather than guessed at — that's what stops an August preseason game or a
-// January playoff game (same two teams, different competition) from being
-// written into a regular-season fixture's slot.
+// The safety rule throughout is FAIL CLOSED: a game is only accepted if we can
+// positively confirm what competition it belongs to, that it's the current
+// season, and that it has usable scores. Anything ambiguous is skipped with a
+// reason rather than guessed at — that's what stops an August preseason game
+// being written into a regular-season slot.
+//
+// PLAYOFFS
+// ────────
+// Postseason games are matched too, but ONLY against playoff slots an admin
+// has already filled in, and only on teams. The pools are kept strictly
+// apart: a regular-season game can never land in a playoff slot and a playoff
+// game can never land in a regular-season one, even though the same two teams
+// may well meet in both. That separation is the entire reason the teams-only
+// fallback below is safe.
 
 import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
 import { TEAMS } from "../data/teams.js";
@@ -37,10 +45,34 @@ export function findFixture(game, fixtures = REGULAR_SEASON_FIXTURES) {
   return { fixture: null, matchedBy: null };
 }
 
+// Playoff slots carry no week — the round is decided by which slot an admin
+// put the teams in — so this matches on teams alone. A postseason meeting
+// between two teams happens at most once, single elimination, so there's
+// nothing to disambiguate.
+//
+// `slots` are resolved placeholders: the fixture id from data/fixtures.js
+// merged with the home/away an admin entered. A slot with no teams set is not
+// a candidate, which is why a playoff result arriving before the matchup has
+// been filled in is skipped rather than guessed at.
+export function findPlayoffSlot(game, slots = []) {
+  const match = slots.find(
+    s => s.home && s.away && s.home === game.homeAbbr && s.away === game.awayAbbr
+  );
+  return match ? { fixture: match, matchedBy: "playoff_teams" } : { fixture: null, matchedBy: null };
+}
+
 // Returns { writes, details, skipped, updatedCount }.
 // `writes` is keyed by Firestore field path so the caller can update only the
 // specific score keys — never the whole document, and never `specials`.
-export function planResultWrites({ games, currentScores = {}, seasonYear, fixtures = REGULAR_SEASON_FIXTURES }) {
+export function planResultWrites({
+  games, currentScores = {}, seasonYear,
+  fixtures = REGULAR_SEASON_FIXTURES,
+  // Resolved playoff slots: the placeholder id merged with the teams an admin
+  // entered. Empty means "no playoff matchups set yet", and every postseason
+  // game is then skipped as unmatched — which is correct, and shows up in the
+  // fetcher health panel rather than disappearing.
+  playoffSlots = [],
+}) {
   const writes = {};
   const details = [];
   const skipped = {};
@@ -56,10 +88,16 @@ export function planResultWrites({ games, currentScores = {}, seasonYear, fixtur
 
     if (!game.completed) { skip("not_completed", { game: label }); continue; }
 
-    // isRegularSeason is deliberately three-state — null means the provider
-    // didn't tell us, which is treated the same as "no", not as "probably".
-    if (game.isRegularSeason !== true) {
-      skip("not_regular_season", { game: label, isRegularSeason: game.isRegularSeason });
+    // Each competition needs its OWN positive confirmation. Preseason is not
+    // "not the regular season" — it's its own thing, and it must never be
+    // eligible for anything. Two independent flags mean an unknown or
+    // preseason game matches neither pool and is skipped.
+    const isRegular = game.isRegularSeason === true;
+    const isPlayoff = game.isPostSeason === true;
+    if (!isRegular && !isPlayoff) {
+      skip("not_scorable_competition", {
+        game: label, isRegularSeason: game.isRegularSeason, isPostSeason: game.isPostSeason,
+      });
       continue;
     }
     if (game.seasonYear !== seasonYear) {
@@ -85,8 +123,18 @@ export function planResultWrites({ games, currentScores = {}, seasonYear, fixtur
       continue;
     }
 
-    const { fixture, matchedBy } = findFixture(game, fixtures);
-    if (!fixture) { skip("no_matching_fixture", { game: label, week: game.week }); continue; }
+    // The two pools never mix. A regular-season game is only ever matched
+    // against the schedule, a postseason game only ever against slots an
+    // admin has filled in — so a January rematch can't overwrite the
+    // September fixture, or the other way round.
+    const { fixture, matchedBy } = isRegular
+      ? findFixture(game, fixtures)
+      : findPlayoffSlot(game, playoffSlots);
+    if (!fixture) {
+      skip(isRegular ? "no_matching_fixture" : "no_playoff_slot",
+        { game: label, week: game.week });
+      continue;
+    }
     if (currentScores[fixture.id]) { skip("already_exists", { fixtureId: fixture.id }); continue; }
 
     writes[`scores.${fixture.id}`] = {

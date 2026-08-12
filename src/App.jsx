@@ -11,10 +11,12 @@ import LeaguesTab from "./components/LeaguesTab.jsx";
 import PredictionsTab from "./components/PredictionsTab.jsx";
 import NflStandingsTab from "./components/NflStandingsTab.jsx";
 import HowItWorks from "./components/HowItWorks.jsx";
+import { shouldRefresh, readLastRefresh, writeLastRefresh } from "./lib/liveRefresh.js";
 import {
   fbOnAuthChange, fbLogout, fsReadUser, fsRecordLoginAndGetPrevious,
   fsSubscribeAllUsers, fsSubscribeMyLeagues, fsSubscribeAllPredictions,
-  fsSubscribeResults, fsSubscribeSpecialResults, fsClaimUsername, fsSubscribeUser,
+  fsSubscribeResults, fsSubscribeSpecialResults, fsSubscribePlayoffFixtures,
+  fsClaimUsername, fsSubscribeUser,
 } from "./firebase.js";
 
 const APP_NAME = "SCORECLASH";
@@ -96,6 +98,7 @@ export default function App() {
   const [allPredictions, setAllPredictions] = useState({});
   const [results, setResults] = useState({});
   const [specialResults, setSpecialResults] = useState({});
+  const [playoffMatchups, setPlayoffMatchups] = useState({});
 
   useEffect(() => {
     const hold = setTimeout(() => {
@@ -185,8 +188,50 @@ export default function App() {
     const u3 = fsSubscribeAllPredictions(setAllPredictions);
     const u4 = fsSubscribeResults(setResults);
     const u5 = fsSubscribeSpecialResults(setSpecialResults);
-    return () => { u1(); u2(); u3(); u4(); u5(); };
+    // Needed by the game-day refresh below to know when a playoff game has
+    // kicked off — the placeholder fixtures carry no time of their own.
+    const u6 = fsSubscribePlayoffFixtures(setPlayoffMatchups);
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); };
   }, [user?.uid]);
+
+  // ── Game-day refresh ─────────────────────────────────────────────────────
+  //
+  // The cron can only run once a day on the free plan, at 06:00 UTC. Sunday's
+  // late games finish at 03:30 UTC, so without this the standings stay frozen
+  // through the whole Sunday evening and quietly update overnight — missing
+  // the only hours anyone is actually watching.
+  //
+  // Whoever has the app open during a game is the trigger. It does nothing at
+  // all outside a live window, and shares one throttle across every tab on the
+  // device. See lib/liveRefresh.js.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const maybeRefresh = async () => {
+      if (cancelled || document.hidden) return;
+      if (!shouldRefresh({ results, lastRefreshAt: readLastRefresh(), playoffMatchups })) return;
+      // Written BEFORE the request, not after: a slow or failing call must
+      // still hold the throttle, or a broken endpoint would be retried on
+      // every tick.
+      writeLastRefresh();
+      try {
+        await fetch("/api/fetch-results?manual=true");
+      } catch (err) {
+        // Entirely best-effort. The daily cron and the admin's manual button
+        // are both still there, and nothing on screen depends on this.
+        console.warn("Game-day refresh didn't go through", err);
+      }
+    };
+
+    maybeRefresh();
+    const id = setInterval(maybeRefresh, 60000);
+    // Coming back to a backgrounded tab is the most likely moment for this to
+    // matter — you've been watching the game, not the app.
+    const onVisible = () => { if (!document.hidden) maybeRefresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
+  }, [user?.uid, results, playoffMatchups]);
 
   // Keep the signed-in user's own profile live.
   //

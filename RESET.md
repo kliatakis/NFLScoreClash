@@ -29,6 +29,7 @@ part that catches people out.
 | **Firestore** — `predictions` | One doc per user: every game pick and season pick | Delete collection |
 | **Firestore** — `results` | One doc, `results_2026`: all scores, special results, playoff matchups | Delete collection |
 | **Firestore** — `auditLog` | The change history shown in Admin Panel → History | Delete collection |
+| **Firestore** — `health` | One doc recording the results job's last run | Delete collection (rebuilds itself) |
 | **Authentication** | The actual login accounts (email + password) | Delete users |
 
 Firestore holds the *data*; Authentication holds the *logins*. Clearing only
@@ -46,7 +47,8 @@ will look broken for them rather than fresh.
    - **Delete collection**
    - Type the collection name to confirm
 
-Delete all six: `users`, `usernames`, `leagues`, `predictions`, `results`, `auditLog`.
+Delete all seven: `users`, `usernames`, `leagues`, `predictions`, `results`,
+`auditLog`, `health`.
 
 `auditLog` won't exist yet if no admin has changed anything — skip it if it's
 not listed. Note that the app itself can never delete from it (the rules allow
@@ -73,11 +75,12 @@ and re-register.
 Deleting collections doesn't touch security rules, but this is a good moment to
 confirm the `usernames` rule is live, since registration fails without it:
 
-Firestore → **Rules** tab → confirm you can see **both** of these:
+Firestore → **Rules** tab → confirm you can see **all three** of these:
 
 ```
 match /usernames/{name} {
 match /auditLog/{entryId} {
+match /health/{docId} {
 ```
 
 If either is missing, paste in the whole contents of `firestore.rules` from this

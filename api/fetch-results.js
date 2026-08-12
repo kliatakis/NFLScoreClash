@@ -12,9 +12,9 @@
 // Current source is ESPN's public (unofficial, undocumented, free, no API
 // key) scoreboard endpoint — chosen because the original ScoreClash build hit
 // a wall with API-Football, whose free tier excludes the current season. The
-// trade-off is that it's unsupported and could change without notice, hence
-// the admin's manual "Fetch Latest Results" button as a fallback and the
-// per-game reporting below so a silent breakage is diagnosable.
+// trade-off is that it's unsupported and could change without notice, which
+// is why every run now leaves a health record (see below) and the admin has a
+// manual button as a fallback.
 //
 // Guarantees: never overwrites an existing score; only ever adds keys under
 // results/{seasonId}.scores — never predictions, users, leagues, or the
@@ -22,9 +22,10 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { SEASON } from "../src/data/fixtures.js";
+import { SEASON, PLAYOFF_FIXTURES } from "../src/data/fixtures.js";
 import { espnProvider } from "../src/lib/resultsProviders.js";
 import { planResultWrites } from "../src/lib/resultsMatching.js";
+import { ALARMING_SKIPS } from "../src/lib/fetchHealth.js";
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
@@ -36,6 +37,21 @@ const RESULTS_DOC_ID = `results_${SEASON.year}`;
 // Swap this one line to change provider.
 const provider = espnProvider;
 
+// One document, overwritten every run. The admin panel reads it to tell
+// "nothing has finished since yesterday" apart from "this has been broken for
+// three weeks" — which otherwise look identical from the outside.
+//
+// Written even when the run fails, and even when it writes nothing. That's
+// the entire point: a run that leaves no trace is indistinguishable from a
+// run that never happened.
+async function recordHealth(fields) {
+  try {
+    await db.collection("health").doc("fetcher").set(fields, { merge: true });
+  } catch (err) {
+    console.error("Couldn't record fetcher health", err);
+  }
+}
+
 export default async function handler(req, res) {
   const authHeader = req.headers["authorization"];
   const isCronRequest = process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
@@ -45,17 +61,29 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
+  const startedAt = Date.now();
+
   try {
     const { games, fetchedCount } = await provider.fetchRecentGames();
 
     const resultsDocRef = db.collection("results").doc(RESULTS_DOC_ID);
     const snap = await resultsDocRef.get();
-    const currentScores = snap.exists ? (snap.data().scores || {}) : {};
+    const data = snap.exists ? snap.data() : {};
+    const currentScores = data.scores || {};
+
+    // Playoff slots an admin has filled in. Without these, postseason games
+    // have nothing to match against and are skipped — which is correct before
+    // the matchups are known, and is reported rather than hidden.
+    const stored = data.playoffFixtures || {};
+    const playoffSlots = PLAYOFF_FIXTURES
+      .map(f => ({ ...f, ...(stored[f.id] || {}) }))
+      .filter(f => f.home && f.away);
 
     const { writes, details, skipped, updatedCount } = planResultWrites({
       games,
       currentScores,
       seasonYear: SEASON.year,
+      playoffSlots,
     });
 
     if (updatedCount > 0) {
@@ -99,6 +127,29 @@ export default async function handler(req, res) {
       }
     }
 
+    // Which games it saw but couldn't place — the detail that turns "0 new
+    // results" from reassuring into alarming.
+    const unmatched = details
+      .filter(d => ALARMING_SKIPS.includes(d.status))
+      .map(d => d.game)
+      .filter(Boolean);
+
+    await recordHealth({
+      at: startedAt,
+      ok: true,
+      provider: provider.name,
+      trigger: isCronRequest ? "cron" : "manual",
+      checked: fetchedCount,
+      updated: updatedCount,
+      playoffSlotsKnown: playoffSlots.length,
+      skipped,
+      unmatched,
+      error: null,
+      // Only advanced when something was actually written, so it survives the
+      // many runs that legitimately do nothing.
+      ...(updatedCount > 0 ? { lastWriteAt: startedAt } : {}),
+    });
+
     return res.status(200).json({
       success: true,
       provider: provider.name,
@@ -108,6 +159,13 @@ export default async function handler(req, res) {
       details,
     });
   } catch (error) {
+    await recordHealth({
+      at: startedAt,
+      ok: false,
+      provider: provider.name,
+      trigger: isCronRequest ? "cron" : "manual",
+      error: String(error?.message || error).slice(0, 300),
+    });
     return res.status(500).json({ success: false, provider: provider.name, error: error.message });
   }
 }

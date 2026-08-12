@@ -55,8 +55,16 @@ function normalizeEspnEvent(event) {
 
   // ESPN season types: 1 = preseason, 2 = regular season, 3 = postseason.
   // Anything missing is reported as null (unknown) rather than guessed at.
+  //
+  // Both flags are reported SEPARATELY rather than as one boolean. Collapsing
+  // to "is it the regular season" made preseason and postseason
+  // indistinguishable — fine while playoffs were skipped outright, but the
+  // moment playoff games became matchable, an August preseason game would
+  // have been eligible for a playoff slot. Two independent positives mean
+  // each competition can only ever reach its own pool.
   const seasonType = event?.season?.type;
   const isRegularSeason = seasonType == null ? null : seasonType === 2;
+  const isPostSeason = seasonType == null ? null : seasonType === 3;
 
   return {
     homeAbbr: espnAbbr(home.team?.abbreviation),
@@ -65,6 +73,7 @@ function normalizeEspnEvent(event) {
     awayScore: toFiniteNumber(away.score),
     completed: comp.status?.type?.completed === true,
     isRegularSeason,
+    isPostSeason,
     seasonYear: toFiniteNumber(event?.season?.year),
     week: toFiniteNumber(event?.week?.number),
   };

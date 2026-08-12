@@ -3,7 +3,7 @@ import {
   fsSubscribeAuditLog, fsSubscribeResults, fsSubscribeSpecialResults,
   fsSubscribePlayoffFixtures, fsSubscribeAllPredictions,
   fsSetResult, fsClearResult, fsSetSpecialResult, fsSetPlayoffFixture,
-  fsClearPlayoffFixture, fsAdminOverrideGamePrediction, fsClearGamePredictions,
+  fsClearPlayoffFixture, fsRestoreGamePrediction, fsClearGamePredictions,
   fsUpdateLeague, fsSetLeagueAdmins,
 } from "../firebase.js";
 import {
@@ -88,7 +88,10 @@ export default function HistoryPanel({ league, timezone, isSuperAdmin, logChange
         case "special.set":  await fsSetSpecialResult(a.typeId, a.team); break;
         case "playoff.set":  await fsSetPlayoffFixture(a.fixtureId, a.matchup); break;
         case "playoff.clear": await fsClearPlayoffFixture(a.fixtureId); break;
-        case "pick.set":     await fsAdminOverrideGamePrediction(a.uid, a.fixtureId, a.winner, entry.actorUid); break;
+        // Restore, not override: putting somebody's own pick back must also
+        // clear the "*corrected" flag, or their unmodified answer keeps
+        // wearing an admin's fingerprints.
+        case "pick.set":     await fsRestoreGamePrediction(a.uid, a.fixtureId, a.winner); break;
         case "pick.clear":   await fsClearGamePredictions(a.uid, [a.fixtureId]); break;
         case "scoring.set":  await fsUpdateLeague(a.leagueId, { settings: a.settings }); break;
         case "admins.set": {

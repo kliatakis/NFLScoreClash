@@ -25,7 +25,9 @@ import {
   buildBackup, validateBackup, planRestore, describePlan, countBackup,
   backupFilename, BACKUP_VERSION, BACKUP_APP, RESTORABLE,
 } from "../src/lib/backup.js";
-import { planResultWrites, findFixture } from "../src/lib/resultsMatching.js";
+import { planResultWrites, findFixture, findPlayoffSlot } from "../src/lib/resultsMatching.js";
+import { assessFetchHealth, describeAge } from "../src/lib/fetchHealth.js";
+import { computeSeasonAwards, isSeasonComplete } from "../src/lib/awards.js";
 import { espnDateRange } from "../src/lib/resultsProviders.js";
 import {
   SOLO_MISS, GROUP_MISS, LONE_CALL, SWEEP_LINES, NEAR_LINES, SHARP_LINES,
@@ -35,6 +37,9 @@ import { planUndo, undoTargetOf, hasUndoDetail, NOT_UNDOABLE, sameValue } from "
 import {
   csvEscape, toCsv, buildStandingsCsv, buildPicksCsv, buildSeasonPicksCsv, csvFilename,
 } from "../src/lib/csv.js";
+import {
+  shouldRefresh, gamesInProgress, REFRESH_THROTTLE_MS, IN_PROGRESS_WINDOW_MS,
+} from "../src/lib/liveRefresh.js";
 import {
   AUDIT_VERSION, AUDIT_KINDS, AUDIT_GROUPS, makeEntry, isValidEntry, entryVisibleTo,
   filterEntries, groupByDay, dayLabel, resultKind, resultSummary, fixtureText, scoreText,
@@ -778,7 +783,7 @@ group("Results fetch — what gets written and what gets refused");
   const real = REGULAR_SEASON_FIXTURES[0];
   const base = {
     homeAbbr: real.home, awayAbbr: real.away, homeScore: 24, awayScore: 10,
-    completed: true, isRegularSeason: true, seasonYear: 2026, week: real.week,
+    completed: true, isRegularSeason: true, isPostSeason: false, seasonYear: 2026, week: real.week,
   };
   const run = (games, currentScores = {}) => planResultWrites({ games, currentScores, seasonYear: 2026 });
 
@@ -789,8 +794,10 @@ group("Results fetch — what gets written and what gets refused");
   // up against a real fixture.
   const refuses = [
     ["a game still in progress", { ...base, completed: false }, "not_completed"],
-    ["a preseason game", { ...base, isRegularSeason: false }, "not_regular_season"],
-    ["a game whose type is unknown", { ...base, isRegularSeason: null }, "not_regular_season"],
+    // Preseason and postseason are now told apart, so each can only reach its
+    // own pool. A preseason game matches nothing at all.
+    ["a preseason game", { ...base, isRegularSeason: false, isPostSeason: false }, "not_scorable_competition"],
+    ["a game whose type is unknown", { ...base, isRegularSeason: null, isPostSeason: null }, "not_scorable_competition"],
     ["last season's game", { ...base, seasonYear: 2025 }, "wrong_season_year"],
     ["a game with no scores", { ...base, homeScore: null, awayScore: null }, "missing_scores"],
     ["a game with only one score", { ...base, awayScore: null }, "missing_scores"],
@@ -827,7 +834,7 @@ group("Results fetch — what gets written and what gets refused");
   t("a home/away swap doesn't match the same fixture", rv.fixture?.id !== real.id);
 
   // A batch mixing good and bad writes only the good.
-  const mixed = run([base, { ...base, completed: false }, { ...base, isRegularSeason: false }]);
+  const mixed = run([base, { ...base, completed: false }, { ...base, isRegularSeason: false, isPostSeason: false }]);
   t("a mixed batch writes only the valid game", mixed.updatedCount === 1);
 }
 
@@ -986,6 +993,189 @@ group("Which week is 'now'");
   // completed, so it nagged through the entire playoffs.
   t("once the regular season is done there is no open week", nextOpenWeek(all) === null);
   t("...and every week counts as finished", finishedWeeks(all).length === 18);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Playoff results are fetched too");
+{
+  const slot = PLAYOFF_FIXTURES.find(f => f.round === "wildcard");
+  const setSlots = [{ ...slot, home: "BUF", away: "KC" }];
+  const po = {
+    homeAbbr: "BUF", awayAbbr: "KC", homeScore: 27, awayScore: 24,
+    completed: true, isRegularSeason: false, isPostSeason: true, seasonYear: 2026, week: 1,
+  };
+  const run = (games, opts = {}) => planResultWrites({
+    games, currentScores: {}, seasonYear: 2026, playoffSlots: setSlots, ...opts,
+  });
+
+  const out = run([po]);
+  t("a postseason game lands in the slot an admin set", out.updatedCount === 1);
+  t("...in the right slot", !!out.writes[`scores.${slot.id}`]);
+  t("...and is reported as a playoff match", out.details[0].matchedBy === "playoff_teams");
+
+  t("a playoff game with no slot set yet is skipped, not guessed",
+    run([po], { playoffSlots: [] }).skipped.no_playoff_slot === 1);
+  t("a home/away swap doesn't match the slot",
+    run([{ ...po, homeAbbr: "KC", awayAbbr: "BUF" }]).skipped.no_playoff_slot === 1);
+
+  // THE hazard: the same two teams meet in September and again in January.
+  // Neither result may ever land in the other's slot.
+  {
+    const real = REGULAR_SEASON_FIXTURES[0];
+    const regular = {
+      homeAbbr: real.home, awayAbbr: real.away, homeScore: 20, awayScore: 17,
+      completed: true, isRegularSeason: true, isPostSeason: false, seasonYear: 2026, week: real.week,
+    };
+    const rematchSlots = [{ ...slot, home: real.home, away: real.away }];
+    const asRegular = planResultWrites({ games: [regular], currentScores: {}, seasonYear: 2026, playoffSlots: rematchSlots });
+    t("a regular-season game never lands in a playoff slot",
+      !!asRegular.writes[`scores.${real.id}`] && !asRegular.writes[`scores.${slot.id}`]);
+
+    const asPlayoff = planResultWrites({
+      games: [{ ...regular, isRegularSeason: false, isPostSeason: true }],
+      currentScores: {}, seasonYear: 2026, playoffSlots: rematchSlots,
+    });
+    t("...and a playoff rematch never lands in the September fixture",
+      !!asPlayoff.writes[`scores.${slot.id}`] && !asPlayoff.writes[`scores.${real.id}`]);
+  }
+
+  // Preseason must reach neither pool, even if a slot happens to hold those
+  // teams — this is why the two flags are independent rather than one boolean.
+  t("a preseason game can't sneak into a playoff slot",
+    run([{ ...po, isPostSeason: false, isRegularSeason: false }]).skipped.not_scorable_competition === 1);
+  t("an unknown competition still touches nothing",
+    run([{ ...po, isPostSeason: null, isRegularSeason: null }]).updatedCount === 0);
+
+  t("an existing playoff score is never overwritten",
+    run([po], { currentScores: { [slot.id]: { homeScore: 1, awayScore: 0 } } }).skipped.already_exists === 1);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Fetcher health");
+{
+  const now = Date.UTC(2026, 9, 5, 12, 0);
+  const H = 3600000;
+
+  t("no record at all is reported as unknown",
+    assessFetchHealth(null, now).level === "unknown");
+  t("a recent clean run is healthy",
+    assessFetchHealth({ at: now - 2 * H, ok: true, checked: 14, updated: 3, skipped: {} }, now).level === "good");
+
+  // THE case this exists for: it ran, it succeeded, it wrote nothing — and
+  // that's either a quiet Tuesday or a silently broken team mapping.
+  t("a quiet run with nothing to do is still healthy",
+    assessFetchHealth({ at: now - H, ok: true, checked: 0, updated: 0, skipped: {} }, now).level === "good");
+  {
+    const broken = assessFetchHealth(
+      { at: now - H, ok: true, checked: 14, updated: 0, skipped: { unknown_team_code: 2 }, unmatched: ["LA@SF"] }, now);
+    t("...but a run that couldn't place games is a warning", broken.level === "warn");
+    t("...and it names the reason", broken.detail.join(" ").includes("unknown team code"));
+    t("...and points at the map to fix", broken.detail.join(" ").includes("ESPN_ABBR_MAP"));
+  }
+
+  t("a failed run is bad", assessFetchHealth({ at: now - H, ok: false, error: "ESPN responded 503" }, now).level === "bad");
+  t("...and shows what it said",
+    assessFetchHealth({ at: now - H, ok: false, error: "ESPN responded 503" }, now).headline.includes("FAILED"));
+
+  t("slightly overdue is a warning",
+    assessFetchHealth({ at: now - 30 * H, ok: true, skipped: {} }, now).level === "warn");
+  t("two days silent is bad",
+    assessFetchHealth({ at: now - 60 * H, ok: true, skipped: {} }, now).level === "bad");
+
+  t("ages read in plain words",
+    describeAge(30 * 60000) === "30 minutes ago" && describeAge(3 * H) === "3 hours ago"
+    && describeAge(5 * 24 * H) === "5 days ago");
+  t("a negative age doesn't produce nonsense", describeAge(-5) === "just now");
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Season awards");
+{
+  // Two players, a full week each, one of them better.
+  const g = scenario({ a: { 1: 0 }, b: { 1: 3 } });
+  const awards = computeSeasonAwards(g.league, g.users, g.preds, g.results, {}, SC);
+  const byId = Object.fromEntries(awards.map(a => [a.id, a]));
+
+  t("a champion is crowned", byId.champion?.winner === "A");
+  t("the last place gets the spoon", byId.spoon?.winner === "B");
+  t("the best week is found", byId["best-week"]?.winner === "A");
+  t("clean sweeps are counted", byId.sweeps?.winner === "A");
+  t("every award names somebody", awards.every(a => a.winner && a.winner !== "Unknown"));
+  t("every award has an icon, a label and a detail line",
+    awards.every(a => a.icon && a.label && a.detail));
+  t("award ids are unique", new Set(awards.map(a => a.id)).size === awards.length);
+
+  // THE rule: nothing is handed out for zero of something.
+  t("no Tie Whisperer in a season with no ties", !byId.ties);
+  t("no Oracle when no season pick has been decided", !byId.oracle);
+
+  t("nothing at all before any results",
+    computeSeasonAwards(g.league, g.users, { a: { picks: {} } }, {}, {}, SC).length === 0);
+  t("an empty league produces nothing",
+    computeSeasonAwards({ members: [] }, {}, {}, g.results, {}, SC).length === 0);
+
+  // The lone right call and the lone wrong one need a crowd to mean anything.
+  {
+    const wk = week(1);
+    const league = { members: ["a", "b", "c"] };
+    const users = { a: { username: "A" }, b: { username: "B" }, c: { username: "C" } };
+    const results = { [wk[0].id]: { homeScore: 24, awayScore: 10 } };
+    const preds = {
+      a: { picks: { [wk[0].id]: { winner: "H" } }, specials: {} },
+      b: { picks: { [wk[0].id]: { winner: "A" } }, specials: {} },
+      c: { picks: { [wk[0].id]: { winner: "A" } }, specials: {} },
+    };
+    const out = computeSeasonAwards(league, users, preds, results, {}, SC);
+    const ids = Object.fromEntries(out.map(x => [x.id, x]));
+    t("the only person to call it gets Call of the Season", ids.upset?.winner === "A");
+    t("...and with two wrong there's no lone howler", !ids.howler);
+  }
+
+  t("the season isn't complete until the Super Bowl is scored",
+    !isSeasonComplete(g.results) && isSeasonComplete({ po_sb: { homeScore: 27, awayScore: 24 } }));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Game-day refresh");
+{
+  const wk1 = REGULAR_SEASON_FIXTURES.filter(f => f.week === 1 && f.kickoffUTC);
+  const game = wk1[0];
+  const kickoff = new Date(game.kickoffUTC).getTime();
+
+  t("nothing to do before kickoff",
+    !shouldRefresh({ results: {}, now: kickoff - 60000 }));
+  t("fires once a game has started with no score",
+    shouldRefresh({ results: {}, now: kickoff + 60000 }));
+  t("stops once every started game has a score",
+    !shouldRefresh({ results: { [game.id]: { homeScore: 24, awayScore: 10 } }, now: kickoff + 60000 }));
+  t("stops well after the game must have finished",
+    !shouldRefresh({ results: {}, now: kickoff + IN_PROGRESS_WINDOW_MS + 60000 }));
+
+  // Throttle — shared across tabs via localStorage.
+  t("respects the throttle",
+    !shouldRefresh({ results: {}, now: kickoff + 60000, lastRefreshAt: kickoff + 30000 }));
+  t("...and fires again once it expires",
+    shouldRefresh({ results: {}, now: kickoff + REFRESH_THROTTLE_MS + 60000, lastRefreshAt: kickoff }));
+  // A clock that jumped backwards, or a junk localStorage value, must not
+  // disable refreshing for good.
+  t("a future timestamp doesn't lock it out forever",
+    shouldRefresh({ results: {}, now: kickoff + 60000, lastRefreshAt: kickoff + 999999999 }));
+  t("a corrupt stored value is ignored",
+    shouldRefresh({ results: {}, now: kickoff + 60000, lastRefreshAt: NaN }));
+
+  t("only the games actually in progress are counted",
+    gamesInProgress({}, kickoff + 60000).every(f => f.week === 1));
+
+  // Playoff slots have no kickoff until an admin sets one.
+  {
+    const po = PLAYOFF_FIXTURES[0];
+    const poKick = Date.UTC(2027, 0, 16, 22, 0);
+    t("an unset playoff slot never counts as in progress",
+      gamesInProgress({}, poKick + 60000).every(f => f.id !== po.id));
+    t("...and does once its kickoff is known",
+      gamesInProgress({}, poKick + 60000, { [po.id]: { home: "KC", away: "BUF", kickoffUTC: new Date(poKick).toISOString() } })
+        .some(f => f.id === po.id));
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────────────

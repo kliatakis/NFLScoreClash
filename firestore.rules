@@ -137,6 +137,17 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
+    // ── health/fetcher — the results job's last run ───────────────────────
+    //
+    // Written ONLY by the scheduled function, which uses the admin SDK and
+    // bypasses these rules entirely. So the client rule is simply: everyone
+    // signed in may read it, nobody may write it. A client that could forge a
+    // healthy record would defeat the entire point of having one.
+    match /health/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     // ── auditLog/{entryId} — the change history, APPEND-ONLY ──────────────
     //
     // The single most important line here is the absence of `update` and

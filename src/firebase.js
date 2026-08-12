@@ -480,6 +480,27 @@ export async function fsAdminOverrideGamePrediction(targetUid, fixtureId, winner
   }, { merge: true });
 }
 
+// Puts a pick back to a plain, un-corrected state.
+//
+// Used only by undo. fsAdminOverrideGamePrediction stamps `overriddenBy`, and
+// a merge write can't remove a field — so undoing an override with that
+// function restored the right team but left the "*corrected" asterisk on it.
+// The member's own pick would sit there flagged as having been changed by an
+// admin, which is the opposite of the truth.
+export async function fsRestoreGamePrediction(uid, fixtureId, winner) {
+  await setDoc(doc(db, "predictions", uid), {
+    picks: {
+      [fixtureId]: {
+        winner,
+        overriddenBy: deleteField(),
+        overriddenAt: deleteField(),
+        homeScore: deleteField(),
+        awayScore: deleteField(),
+      },
+    },
+  }, { merge: true });
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // RESULTS — one small doc for the whole season (fine as a single doc: size
 // scales with game count (~285), not with user count).
@@ -605,6 +626,25 @@ export function fsSubscribeAuditLog(callback, max = 400) {
     (err) => {
       console.error("Couldn't read the change history", err);
       callback([], err);
+    }
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// FETCHER HEALTH — one document, rewritten by every run of the results job.
+// Read-only from the app; only the server-side function (which uses the admin
+// SDK and bypasses rules) ever writes it.
+// ══════════════════════════════════════════════════════════════════════════
+
+export function fsSubscribeFetchHealth(callback) {
+  return onSnapshot(
+    doc(db, "health", "fetcher"),
+    (snap) => callback(snap.exists() ? snap.data() : null),
+    (err) => {
+      // A missing rule shouldn't blank the admin panel — the health card just
+      // reports that it can't read anything.
+      console.error("Couldn't read fetcher health", err);
+      callback(null);
     }
   );
 }

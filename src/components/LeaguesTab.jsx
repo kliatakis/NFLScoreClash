@@ -13,6 +13,7 @@ import StandingsCard from "./StandingsCard.jsx";
 import WeeklyStandingsCard from "./WeeklyStandingsCard.jsx";
 import HeadToHeadCard from "./HeadToHeadCard.jsx";
 import SeasonChartCard from "./SeasonChartCard.jsx";
+import AwardsCard from "./AwardsCard.jsx";
 
 export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, results, specialResults, selectedLeague, onSetLeague, leaguesLoaded = true, inviteCode = null, onInviteHandled }) {
   const [modal, setModal] = useState(null); // "create" | "join"
@@ -152,6 +153,7 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
                   <button className={`nav-tab ${expandedPanel === "weekly" ? "active" : ""}`} onClick={() => setExpandedPanel("weekly")}>Weekly Standings</button>
                   <button className={`nav-tab ${expandedPanel === "h2h" ? "active" : ""}`} onClick={() => setExpandedPanel("h2h")}>Head 2 Head</button>
                   <button className={`nav-tab ${expandedPanel === "chart" ? "active" : ""}`} onClick={() => setExpandedPanel("chart")}>Season Chart</button>
+                  <button className={`nav-tab ${expandedPanel === "awards" ? "active" : ""}`} onClick={() => setExpandedPanel("awards")}>Awards</button>
                   <button className={`nav-tab ${expandedPanel === "members" ? "active" : ""}`} onClick={() => setExpandedPanel("members")}>Members</button>
                   {isAdmin && <button className={`nav-tab ${expandedPanel === "admin" ? "active" : ""}`} onClick={() => setExpandedPanel("admin")}>Admin Panel</button>}
                 </div>
@@ -167,6 +169,10 @@ export default function LeaguesTab({ user, myLeagues, allUsers, allPredictions, 
                 )}
                 {expandedPanel === "chart" && (
                   <SeasonChartCard league={league} user={user} allUsers={allUsers} allPredictions={allPredictions} results={results} />
+                )}
+                {expandedPanel === "awards" && (
+                  <AwardsCard league={league} allUsers={allUsers} allPredictions={allPredictions}
+                    results={results} specialResults={specialResults} />
                 )}
                 {expandedPanel === "members" && (
                   <MembersList

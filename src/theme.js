@@ -1012,6 +1012,41 @@ export const css = (dark = true) => `
     color: var(--text); margin-top: 2px; word-break: break-word;
   }
   .history-meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  /* ── Fetcher health ───────────────────────────────────────────────────── */
+  .fetch-health {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 11px 13px; margin-bottom: 14px; border-radius: 10px;
+    background: var(--surface2); border: 1px solid var(--border); border-left-width: 3px;
+  }
+  .fetch-health.good { border-left-color: var(--green); }
+  .fetch-health.warn { border-left-color: var(--gold); background: rgba(245,158,11,0.07); }
+  .fetch-health.bad { border-left-color: var(--accent2); background: rgba(244,63,94,0.08); }
+  .fetch-health.unknown { border-left-color: var(--border2); }
+  .fetch-health-icon { font-size: 15px; line-height: 1.4; flex-shrink: 0; }
+  .fetch-health-body { flex: 1; min-width: 0; }
+  .fetch-health-head { font-size: 13px; font-weight: 800; margin-bottom: 2px; }
+  .fetch-health-line { font-size: 11.5px; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
+
+  /* ── Season awards ────────────────────────────────────────────────────── */
+  .awards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .award {
+    display: flex; gap: 11px; align-items: flex-start;
+    padding: 12px 13px; border-radius: 12px;
+    background: var(--surface2); border: 1px solid var(--border); border-left-width: 3px;
+  }
+  .award.gold { border-left-color: var(--gold); background: rgba(245,158,11,0.07); }
+  .award.good { border-left-color: var(--green); }
+  .award.warn { border-left-color: var(--accent); }
+  .award.bad { border-left-color: var(--accent2); background: rgba(244,63,94,0.06); }
+  .award-icon { font-size: 22px; line-height: 1.1; flex-shrink: 0; }
+  .award-body { flex: 1; min-width: 0; }
+  .award-label {
+    font-size: 9.5px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 3px;
+  }
+  .award-winner { font-size: 15px; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+  .award-detail { font-size: 11.5px; color: var(--muted); line-height: 1.45; margin-top: 3px; }
+
   .undo-btn { color: var(--gold); font-weight: 800; }
   .history-noundo {
     margin-top: 6px; padding: 6px 9px; border-radius: 8px;
