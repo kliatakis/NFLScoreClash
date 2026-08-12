@@ -31,6 +31,10 @@ import {
   SOLO_MISS, GROUP_MISS, LONE_CALL, SWEEP_LINES, NEAR_LINES, SHARP_LINES,
 } from "../src/data/roasts.js";
 import { hashSeed, pickLine, templateParts, fillTemplate, usablePool } from "../src/lib/shoutouts.js";
+import { planUndo, undoTargetOf, hasUndoDetail, NOT_UNDOABLE, sameValue } from "../src/lib/undo.js";
+import {
+  csvEscape, toCsv, buildStandingsCsv, buildPicksCsv, buildSeasonPicksCsv, csvFilename,
+} from "../src/lib/csv.js";
 import {
   AUDIT_VERSION, AUDIT_KINDS, AUDIT_GROUPS, makeEntry, isValidEntry, entryVisibleTo,
   filterEntries, groupByDay, dayLabel, resultKind, resultSummary, fixtureText, scoreText,
@@ -982,6 +986,188 @@ group("Which week is 'now'");
   // completed, so it nagged through the entire playoffs.
   t("once the regular season is done there is no open week", nextOpenWeek(all) === null);
   t("...and every week counts as finished", finishedWeeks(all).length === 18);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("CSV export");
+{
+  // RFC 4180 plus the spreadsheet-specific hazard below.
+  t("plain values pass through", csvEscape("Kansas City") === "Kansas City");
+  t("a comma forces quotes", csvEscape("Smith, John") === '"Smith, John"');
+  t("embedded quotes are doubled", csvEscape('He said "no"') === '"He said ""no"""');
+  t("newlines are quoted", csvEscape("a\nb") === '"a\nb"');
+  t("null and undefined become empty", csvEscape(null) === "" && csvEscape(undefined) === "");
+  t("numbers survive", csvEscape(0) === "0" && csvEscape(24) === "24");
+
+  // THE one that matters: a username is user-controlled text, and Excel
+  // executes a cell beginning with = + - or @ as a formula.
+  for (const bad of ["=1+1", "+SUM(A1)", "-2", "@cmd"]) {
+    t(`"${bad}" can't run as a spreadsheet formula`, csvEscape(bad).startsWith("'"));
+  }
+  t("...and a normal name starting with a letter is untouched", csvEscape("Nikos") === "Nikos");
+
+  t("output starts with a UTF-8 BOM so Excel reads accents",
+    toCsv([["a"]]).charCodeAt(0) === 0xFEFF);
+  t("rows are CRLF separated", toCsv([["a"], ["b"]]).includes("\r\n"));
+
+  // Standings
+  {
+    const standings = [
+      { username: "A", points: 40, correct: 30, gamesScored: 40, totalBonus: 10, tiesCalled: 1,
+        medals: 2, sweepWeeks: 1, nearWeeks: 0, sharpWeeks: 2, superbowlCorrect: 1,
+        conferenceCorrect: 2, divisionCorrect: 3 },
+      { username: "B,comma", points: 20, correct: 15, gamesScored: 40 },
+    ];
+    const csv = buildStandingsCsv(standings);
+    const lines = csv.replace(/^﻿/, "").trim().split("\r\n");
+    t("a header plus one row per player", lines.length === 3);
+    t("rank is 1-based and in order", lines[1].startsWith("1,A,40") && lines[2].startsWith("2,"));
+    t("accuracy is computed", lines[1].includes(",75,"));
+    t("a comma in a name doesn't break the columns", lines[2].includes('"B,comma"'));
+    // Naive comma-splitting would trip over the quoted name above, so the
+    // column count is checked on a row that has no comma in it.
+    const plain = buildStandingsCsv([{ username: "Solo", points: 5, correct: 4, gamesScored: 8 }])
+      .replace(/^﻿/, "").trim().split("\r\n");
+    t("missing optional fields become 0, not blank or NaN",
+      !plain[1].includes("NaN") && plain[1].split(",").length === plain[0].split(",").length);
+    t("...and they read as 0", plain[1].endsWith(",0,0,0,0,0,0,0,0"));
+    t("nobody scored yet leaves accuracy empty rather than dividing by zero",
+      !buildStandingsCsv([{ username: "C", points: 0, correct: 0, gamesScored: 0 }]).includes("NaN"));
+  }
+
+  // Picks grid
+  {
+    const fixtures = REGULAR_SEASON_FIXTURES.slice(0, 3);
+    const members = [{ uid: "a", username: "Ann" }, { uid: "b", username: "Bob" }];
+    const allPredictions = {
+      a: { picks: { [fixtures[0].id]: { winner: "H" }, [fixtures[1].id]: { winner: "T" } } },
+      b: { picks: { [fixtures[0].id]: { winner: "A" } } },
+    };
+    const results = { [fixtures[0].id]: { homeScore: 24, awayScore: 17 } };
+    const csv = buildPicksCsv({ fixtures, members, allPredictions, results });
+    const lines = csv.replace(/^﻿/, "").trim().split("\r\n");
+    t("one row per game plus a header", lines.length === 4);
+    t("a column per player, named", lines[0].endsWith(",Ann,Bob"));
+    t("the home pick resolves to the home team", lines[1].endsWith(`,${fixtures[0].home},${fixtures[0].away}`));
+    t("the winner column reads from the score", lines[1].includes(`,${fixtures[0].home},`));
+    t("a tie pick is written as TIE", lines[2].includes("TIE"));
+    t("an unpicked game leaves the cell empty, not 'undefined'", !csv.includes("undefined"));
+    t("every row has the same column count",
+      new Set(lines.map(l => l.split(",").length)).size === 1);
+    // A drawn game must read TIE, not fall through to the home team.
+    const drawn = buildPicksCsv({ fixtures: [fixtures[0]], members: [], allPredictions: {},
+      results: { [fixtures[0].id]: { homeScore: 20, awayScore: 20 } } });
+    t("a drawn game's winner is TIE", drawn.includes("TIE"));
+  }
+
+  // Season picks
+  {
+    const members = [{ uid: "a", username: "Ann" }];
+    const csv = buildSeasonPicksCsv({
+      pickTypes: SPECIAL_PICK_TYPES, members,
+      allPredictions: { a: { specials: { superbowl: "KC" } } },
+      specialResults: { superbowl: "BUF" },
+    });
+    const lines = csv.replace(/^﻿/, "").trim().split("\r\n");
+    t("one row per season pick", lines.length === SPECIAL_PICK_TYPES.length + 1);
+    t("the actual winner sits next to the guesses", lines.some(l => l.includes("BUF") && l.includes("KC")));
+  }
+
+  t("the filename carries league, kind, season and date",
+    /^scoreclash-My-League-standings-2026-\d{4}-\d{2}-\d{2}\.csv$/
+      .test(csvFilename("My League!", "standings", 2026, Date.UTC(2026, 8, 14, 12))));
+  t("a league named with only symbols still produces a usable filename",
+    csvFilename("***", "picks", 2026).startsWith("scoreclash-league-picks-"));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Undo");
+{
+  const entry = (kind, target, detail, extra = {}) =>
+    makeEntry({ kind, actorUid: "u1", actorName: "K", target, detail, leagueId: "ABC", ...extra });
+
+  // ── THE central guarantee ────────────────────────────────────────────────
+  // Undo must refuse when anything has touched the value since. Without this,
+  // undoing an old entry silently overwrites a newer, correct change.
+  {
+    const e = entry("result_changed", "w1_1",
+      { before: { homeScore: 21, awayScore: 17 }, after: { homeScore: 24, awayScore: 17 } });
+    const unchanged = planUndo(e, { homeScore: 24, awayScore: 17, enteredAt: 999 });
+    t("undo works while the value still matches the entry", unchanged.ok);
+    t("...and puts the old score back",
+      unchanged.action.type === "result.set" && unchanged.action.homeScore === 21);
+    t("bookkeeping fields don't make it look stale", unchanged.ok);
+
+    const moved = planUndo(e, { homeScore: 30, awayScore: 0 });
+    t("REFUSED once somebody else has changed it", !moved.ok);
+    t("...and says why", /changed this since/i.test(moved.reason));
+
+    const gone = planUndo(e, null);
+    t("REFUSED if the value was cleared since", !gone.ok);
+  }
+
+  // Every direction of a result change
+  {
+    const set = entry("result_set", "w1_2", { before: null, after: { homeScore: 10, awayScore: 7 } });
+    const p = planUndo(set, { homeScore: 10, awayScore: 7 });
+    t("undoing a first-time score clears it", p.ok && p.action.type === "result.clear");
+
+    const cleared = entry("result_cleared", "w1_3", { before: { homeScore: 14, awayScore: 3 } });
+    const q = planUndo(cleared, null);
+    t("undoing a clear puts the score back", q.ok && q.action.type === "result.set" && q.action.awayScore === 3);
+  }
+
+  // Season winners, playoff matchups, picks, scoring
+  {
+    const sp = entry("special_changed", "conf_AFC", { before: "KC", after: "BUF" });
+    t("a season winner reverts", planUndo(sp, "BUF").ok);
+    t("...and is refused if it moved again", !planUndo(sp, "BAL").ok);
+
+    const po = entry("playoff_changed", "po_sb", {
+      before: { home: "KC", away: "PHI", kickoffUTC: "2027-02-14T23:30:00Z" },
+      after: { home: "BUF", away: "DAL", kickoffUTC: "2027-02-14T23:30:00Z" },
+    });
+    const pp = planUndo(po, { home: "BUF", away: "DAL", kickoffUTC: "2027-02-14T23:30:00Z" });
+    t("a playoff matchup reverts", pp.ok && pp.action.matchup.home === "KC");
+    t("...and a changed kickoff counts as touched",
+      !planUndo(po, { home: "BUF", away: "DAL", kickoffUTC: "2027-02-15T00:00:00Z" }).ok);
+
+    const ov = entry("pick_override", "u2:w1_1",
+      { targetUid: "u2", username: "BOB", fixtureId: "w1_1", before: "A", after: "H" });
+    const op = planUndo(ov, "H");
+    t("an overridden pick reverts to what they had", op.ok && op.action.type === "pick.set" && op.action.winner === "A");
+    const ov2 = entry("pick_override", "u2:w1_1",
+      { targetUid: "u2", username: "BOB", fixtureId: "w1_1", before: null, after: "H" });
+    t("...or is removed if they'd made no pick", planUndo(ov2, "H").action.type === "pick.clear");
+
+    const sc = entry("scoring_changed", "ABC",
+      { before: { ...DEFAULT_SCORING, sweepBonus: 8 }, after: { ...DEFAULT_SCORING, sweepBonus: 12 } });
+    t("scoring reverts to the old values",
+      planUndo(sc, { ...DEFAULT_SCORING, sweepBonus: 12 }, { leagueId: "ABC" }).action.settings.sweepBonus === 8);
+    t("...and is refused after another edit",
+      !planUndo(sc, { ...DEFAULT_SCORING, sweepBonus: 9 }, { leagueId: "ABC" }).ok);
+
+    const ad = entry("admins_changed", "ABC", { targetUid: "u3", username: "SAM", promoted: true });
+    const ap = planUndo(ad, ["u3"], { leagueId: "ABC" });
+    t("a promotion reverts", ap.ok && ap.action.makeAdmin === false);
+    t("...and is refused if they're no longer an admin anyway", !planUndo(ad, [], { leagueId: "ABC" }).ok);
+  }
+
+  // What must never offer an undo
+  for (const kind of ["member_removed", "restore", "fetch_results"]) {
+    const p = planUndo(entry(kind, "x", { before: 1, after: 2 }), null);
+    t(`${kind} is refused with a reason`, !p.ok && p.reason.length > 20);
+  }
+  t("every not-undoable kind is a real kind",
+    Object.keys(NOT_UNDOABLE).every(k => !!AUDIT_KINDS[k]));
+  t("no kind is both undoable and not",
+    !Object.keys(NOT_UNDOABLE).some(k => undoTargetOf({ kind: k })));
+
+  // Entries written before undo existed simply don't offer it.
+  t("an entry with no detail can't be undone",
+    !hasUndoDetail({ kind: "result_changed", detail: null })
+    && !planUndo({ kind: "result_changed", detail: null }, null).ok);
+  t("a nonsense entry is refused", !planUndo(null, null).ok);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

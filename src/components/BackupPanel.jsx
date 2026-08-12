@@ -1,9 +1,14 @@
 import { useState, useRef } from "react";
-import { SEASON } from "../data/fixtures.js";
+import { SEASON, REGULAR_SEASON_FIXTURES, PLAYOFF_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
+import { TEAMS } from "../data/teams.js";
 import { fsReadEverything, fsApplyRestorePlan } from "../firebase.js";
+import { calcStandings, getScoringSettings } from "../lib/scoring.js";
 import {
   buildBackup, validateBackup, planRestore, describePlan, backupFilename, RESTORABLE,
 } from "../lib/backup.js";
+import {
+  buildStandingsCsv, buildPicksCsv, buildSeasonPicksCsv, csvFilename,
+} from "../lib/csv.js";
 
 // Admin backup + restore.
 //
@@ -22,7 +27,11 @@ const PART_LABELS = {
 };
 
 function download(obj, filename) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  downloadText(JSON.stringify(obj, null, 2), filename, "application/json");
+}
+
+function downloadText(text, filename, type) {
+  const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -35,7 +44,7 @@ function download(obj, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function BackupPanel({ user, isSuperAdmin, logChange }) {
+export default function BackupPanel({ user, league, isSuperAdmin, logChange }) {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
@@ -148,6 +157,53 @@ export default function BackupPanel({ user, isSuperAdmin, logChange }) {
     } finally { setBusy(""); }
   };
 
+  // Built from the same live data the standings table draws from, so an
+  // exported file always agrees with what's on screen.
+  const exportCsv = async (kind) => {
+    setBusy("csv"); setError(""); setMsg("");
+    try {
+      const all = await fsReadEverything();
+      const leagueDoc = all.leagues.find(l => l.id === league?.id) || league;
+      if (!leagueDoc) { setError("Couldn't work out which league to export."); return; }
+
+      const members = (leagueDoc.members || [])
+        .map(uid => ({ uid, username: all.users[uid]?.username || uid }))
+        .sort((a, b) => a.username.localeCompare(b.username));
+      const teamName = (code) => (TEAMS[code] ? `${TEAMS[code].city} ${TEAMS[code].name}` : code);
+
+      let csv, label;
+      if (kind === "standings") {
+        const standings = calcStandings(
+          leagueDoc, all.users, all.predictions, all.results.scores,
+          all.results.specials, getScoringSettings(leagueDoc));
+        csv = buildStandingsCsv(standings);
+        label = `${standings.length} player${standings.length === 1 ? "" : "s"}`;
+      } else if (kind === "picks") {
+        // Playoff slots only once an admin has said who's playing — a row of
+        // blanks for a game nobody can pick yet is noise in a spreadsheet.
+        const playoffs = PLAYOFF_FIXTURES
+          .map(f => ({ ...f, ...(all.results.playoffFixtures[f.id] || {}), roundLabel: f.label }))
+          .filter(f => f.home && f.away);
+        const fixtures = [...REGULAR_SEASON_FIXTURES, ...playoffs];
+        csv = buildPicksCsv({ fixtures, members, allPredictions: all.predictions, results: all.results.scores, teamName });
+        label = `${fixtures.length} games × ${members.length} player${members.length === 1 ? "" : "s"}`;
+      } else {
+        csv = buildSeasonPicksCsv({
+          pickTypes: SPECIAL_PICK_TYPES, members,
+          allPredictions: all.predictions, specialResults: all.results.specials, teamName,
+        });
+        label = `${SPECIAL_PICK_TYPES.length} season picks`;
+      }
+
+      downloadText(csv, csvFilename(leagueDoc.name, kind, SEASON.year), "text/csv;charset=utf-8");
+      setMsg(`Exported — ${label}.`);
+      setTimeout(() => setMsg(""), 6000);
+    } catch (err) {
+      console.error("CSV export failed", err);
+      setError("Couldn't build that export. Check your connection and try again.");
+    } finally { setBusy(""); }
+  };
+
   const togglePart = (p) => {
     setPlan(null);
     setParts(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
@@ -174,6 +230,29 @@ export default function BackupPanel({ user, isSuperAdmin, logChange }) {
         <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={doDownload}>
           {busy === "download" ? "Preparing…" : "Download backup"}
         </button>
+      </div>
+
+      {/* Deliberately a SEPARATE block with its own warning.
+          A CSV sitting next to a backup button will eventually be mistaken for
+          one, and the day somebody needs to restore is the worst possible day
+          to discover that the file they kept can't do it. */}
+      <div className="backup-block">
+        <div className="form-label">Export for a spreadsheet</div>
+        <p className="backup-note">
+          Opens in Excel or Google Sheets. <b>These are not backups</b> — a CSV is one flat
+          table and can't hold everything a restore needs. Keep the JSON above for that.
+        </p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportCsv("standings")}>
+            Standings
+          </button>
+          <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportCsv("picks")}>
+            Every pick
+          </button>
+          <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportCsv("season-picks")}>
+            Season picks
+          </button>
+        </div>
       </div>
 
       {!isSuperAdmin ? (

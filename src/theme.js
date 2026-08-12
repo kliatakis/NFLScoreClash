@@ -1012,6 +1012,12 @@ export const css = (dark = true) => `
     color: var(--text); margin-top: 2px; word-break: break-word;
   }
   .history-meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .undo-btn { color: var(--gold); font-weight: 800; }
+  .history-noundo {
+    margin-top: 6px; padding: 6px 9px; border-radius: 8px;
+    font-size: 11px; line-height: 1.5; color: var(--muted);
+    background: var(--surface3); border: 1px solid var(--border);
+  }
   .history-detail {
     margin-top: 8px; padding: 10px; border-radius: 8px; overflow-x: auto;
     background: var(--surface3); border: 1px solid var(--border);

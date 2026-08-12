@@ -125,8 +125,11 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
       {section === "Overrides" && <OverridesEntry league={league} adminUid={user.uid} logChange={logChange} />}
       {section === "Special Picks" && <SpecialResultsEntry logChange={logChange} />}
       {section === "Scoring Settings" && <ScoringSettings league={league} logChange={logChange} />}
-      {section === "History" && <HistoryPanel league={league} timezone={user.timezone} />}
-      {section === "Backup" && <BackupPanel user={user} isSuperAdmin={isSuperAdmin} logChange={logChange} />}
+      {section === "History" && (
+        <HistoryPanel league={league} timezone={user.timezone}
+          isSuperAdmin={isSuperAdmin} logChange={logChange} />
+      )}
+      {section === "Backup" && <BackupPanel user={user} league={league} isSuperAdmin={isSuperAdmin} logChange={logChange} />}
       {section === "Danger Zone" && isSuperAdmin && <DangerZone league={league} onLeagueDeleted={onLeagueDeleted} />}
     </div>
   );
