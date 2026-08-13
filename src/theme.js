@@ -1012,6 +1012,21 @@ export const css = (dark = true) => `
     color: var(--text); margin-top: 2px; word-break: break-word;
   }
   .history-meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  /* A week outside the pick window. Never just greyed out with no reason —
+     the card always says why and, where there is one, offers a way forward. */
+  .week-closed {
+    margin-bottom: 16px; border-left: 3px solid var(--gold);
+    background: rgba(245,158,11,0.07); font-size: 13px; line-height: 1.55; color: var(--muted);
+  }
+
+  /* Deliberately the loudest thing on the dashboard — the trial scores for
+     real, so leaving it in the table is a silent way to start the season
+     wrong. Gold rather than red: it isn't broken, it just isn't finished. */
+  .trial-warning {
+    margin-bottom: 18px; border-left: 3px solid var(--gold);
+    background: rgba(245,158,11,0.09); font-size: 13px; line-height: 1.55;
+  }
+
   /* ── Fetcher health ───────────────────────────────────────────────────── */
   .fetch-health {
     display: flex; gap: 10px; align-items: flex-start;

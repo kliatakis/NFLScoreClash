@@ -850,6 +850,67 @@ export function nextOpenWeek(results) {
   return earliest;
 }
 
+// ─── HOW FAR AHEAD YOU CAN PICK ─────────────────────────────────────────────
+//
+// The current week plus the next two. Far enough that a fortnight away doesn't
+// end your season; near enough that the weekly rhythm survives — the nudges,
+// the "waiting on Jack", the Monday roast all rely on people coming back.
+export const PICK_WEEKS_AHEAD = 2;
+
+// Which week we're in, decided by the CALENDAR and nothing else.
+//
+// Deliberately not derived from results. "Week 2 opens when Week 1 finishes"
+// sounds right and is a trap: it makes the pick window depend on an admin
+// typing scores in. Thursday night of Week 2 arrives, one Week 1 score is
+// still missing, and nobody in the league can pick anything. The clock can't
+// be forgotten.
+//
+// The current week is the earliest one that still has a game which hasn't
+// kicked off — with a grace period so a Sunday in progress stays "this week"
+// rather than flipping over while games are still being played.
+export function currentWeekByDate(now = Date.now(), graceMs = 6 * 60 * 60 * 1000) {
+  for (const f of REGULAR_SEASON_FIXTURES) {   // already in week order
+    const kickoff = effectiveKickoffUTC(f);
+    if (!kickoff) continue;
+    const t = new Date(kickoff).getTime();
+    if (Number.isFinite(t) && t > now - graceMs) return f.week;
+  }
+  // Everything has been played — sit on the last week rather than nowhere.
+  return REGULAR_SEASON_FIXTURES.length
+    ? REGULAR_SEASON_FIXTURES[REGULAR_SEASON_FIXTURES.length - 1].week
+    : 1;
+}
+
+// The weeks a person may pick right now.
+//
+// Empty while a preseason trial is running: the rehearsal is the only thing
+// that should be pickable, or people quietly do Week 1 in August and the
+// trial stops being a trial.
+export function openPickWeeks({ now = Date.now(), trialOpen = false, weeksAhead = PICK_WEEKS_AHEAD } = {}) {
+  if (trialOpen) return [];
+  const current = currentWeekByDate(now);
+  const last = REGULAR_SEASON_FIXTURES.length
+    ? Math.max(...REGULAR_SEASON_FIXTURES.map(f => f.week))
+    : current;
+  const weeks = [];
+  for (let w = current; w <= Math.min(current + weeksAhead, last); w++) weeks.push(w);
+  return weeks;
+}
+
+// Why a given week can't be picked — used for the message on screen, so it
+// never just greys out with no explanation.
+export function weekPickState(week, { now = Date.now(), trialOpen = false, weeksAhead = PICK_WEEKS_AHEAD } = {}) {
+  if (trialOpen) {
+    return { open: false, reason: "trial", label: "Closed during the preseason trial" };
+  }
+  const open = openPickWeeks({ now, trialOpen, weeksAhead });
+  if (open.includes(week)) return { open: true, reason: null, label: "" };
+  const current = currentWeekByDate(now);
+  return week < current
+    ? { open: false, reason: "past", label: "This week has already been played" }
+    : { open: false, reason: "future", label: `Opens in Week ${week - weeksAhead}` };
+}
+
 // Weeks where EVERY game has a result. Stricter, and used only for the week
 // accuracy bonuses — see weekAccuracyBadge for why they can't be settled while
 // games are still outstanding.

@@ -569,6 +569,81 @@ export function fsSubscribePlayoffFixtures(callback) {
   );
 }
 
+// ─── PRESEASON TRIAL ────────────────────────────────────────────────────────
+// Stored alongside the playoff matchups, in the same document and the same
+// shape. See PRESEASON_FIXTURES in data/fixtures.js.
+
+export async function fsSetPreseasonFixture(fixtureId, matchup) {
+  await setDoc(doc(db, "results", RESULTS_DOC_ID), {
+    preseasonFixtures: { [fixtureId]: matchup },
+  }, { merge: true });
+}
+
+export async function fsClearPreseasonFixture(fixtureId) {
+  await updateDoc(doc(db, "results", RESULTS_DOC_ID), {
+    [`preseasonFixtures.${fixtureId}`]: deleteField(),
+  });
+}
+
+export function fsSubscribePreseasonFixtures(callback) {
+  return onSnapshot(doc(db, "results", RESULTS_DOC_ID), (snap) =>
+    callback(snap.exists() ? snap.data().preseasonFixtures || {} : {})
+  );
+}
+
+// Removes every trace of the trial: the scores, the slot definitions, and
+// everybody's picks for those games.
+//
+// Picks are stored PER PERSON and shared across leagues, so this has to walk
+// every predictions document — not just the members of one league. Missing a
+// single one would leave a stray pick that scores nothing (the slot is gone)
+// but still shows up in a backup and in that person's pick count.
+//
+// Returns what it did so the caller can report it honestly rather than
+// claiming success it didn't verify.
+export async function fsClearPreseasonTrial(fixtureIds) {
+  const ids = (fixtureIds || []).filter(Boolean);
+  if (ids.length === 0) return { scoresCleared: 0, slotsCleared: 0, picksCleared: 0, failed: [] };
+
+  const failed = [];
+  let scoresCleared = 0, slotsCleared = 0, picksCleared = 0;
+
+  // 1. Scores and slot definitions — both live in the one results document,
+  //    so this is a single write and can't half-apply.
+  try {
+    const payload = {};
+    for (const id of ids) {
+      payload[`scores.${id}`] = deleteField();
+      payload[`preseasonFixtures.${id}`] = deleteField();
+    }
+    await updateDoc(doc(db, "results", RESULTS_DOC_ID), payload);
+    scoresCleared = ids.length;
+    slotsCleared = ids.length;
+  } catch (err) {
+    if (err?.code !== "not-found") { console.error("Couldn't clear trial results", err); failed.push("results"); }
+  }
+
+  // 2. Everyone's picks. One write per person who actually has one, so a
+  //    league of five is five writes, not one per game.
+  const snap = await getDocs(collection(db, "predictions"));
+  for (const d of snap.docs) {
+    const picks = d.data()?.picks || {};
+    const mine = ids.filter(id => picks[id] !== undefined);
+    if (mine.length === 0) continue;
+    try {
+      const payload = {};
+      for (const id of mine) payload[`picks.${id}`] = deleteField();
+      await updateDoc(doc(db, "predictions", d.id), payload);
+      picksCleared += mine.length;
+    } catch (err) {
+      console.error("Couldn't clear trial picks for", d.id, err);
+      failed.push(`predictions/${d.id}`);
+    }
+  }
+
+  return { scoresCleared, slotsCleared, picksCleared, failed };
+}
+
 export async function fsGetSpecialResults() {
   const snap = await getDoc(doc(db, "results", RESULTS_DOC_ID));
   return snap.exists() ? snap.data().specials || {} : {};
@@ -628,6 +703,77 @@ export function fsSubscribeAuditLog(callback, max = 400) {
       callback([], err);
     }
   );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// FRESH START — clear a season's play, keep the people.
+//
+// The blunt version of this is deleting collections in the Firebase console,
+// which also destroys every account and league: everyone re-registers,
+// re-joins, re-picks their avatar and re-enters their timezone, and the league
+// gets a new code you have to redistribute. That's a lot of friction for
+// "let's start again".
+//
+// This removes only what was PLAYED:
+//   predictions   every game pick and season pick, for everybody — deleted
+//   results       scores, season winners, playoff matchups, trial slots — deleted
+//   leagues       the standings snapshots and announcement-board reactions,
+//                 which are derived leftovers that would otherwise show
+//                 movement arrows against a table that no longer exists
+//
+// And keeps: accounts, usernames, avatars, timezones, the league itself, its
+// code, its members, its admins and its scoring settings.
+//
+// NOT the audit log. That's the record of what happened — including this —
+// and the rules forbid deleting from it anyway.
+//
+// Predictions and results are global, not per-league, so this is inherently
+// app-wide. The caller says so plainly.
+// ══════════════════════════════════════════════════════════════════════════
+
+export async function fsWipeSeasonPlay({ leagueIds = [] } = {}) {
+  const report = { predictionsDeleted: 0, resultsDeleted: false, leaguesCleaned: 0, failed: [] };
+
+  // Every picks document, for every person.
+  const snap = await getDocs(collection(db, "predictions"));
+  for (const d of snap.docs) {
+    try { await deleteDoc(doc(db, "predictions", d.id)); report.predictionsDeleted++; }
+    catch (err) {
+      console.error("Couldn't delete predictions for", d.id, err);
+      report.failed.push(`predictions/${d.id}`);
+    }
+  }
+
+  // The whole results document: scores, specials, playoff matchups and any
+  // preseason trial slots all live in it.
+  try {
+    await deleteDoc(doc(db, "results", RESULTS_DOC_ID));
+    report.resultsDeleted = true;
+  } catch (err) {
+    console.error("Couldn't delete the results document", err);
+    report.failed.push("results");
+  }
+
+  // Derived leftovers on the league. Only leagues the caller actually
+  // administers — the security rules would reject the rest, and silently
+  // failing on somebody else's league would be worse than not trying.
+  for (const id of leagueIds) {
+    try {
+      await updateDoc(doc(db, "leagues", id), {
+        standingsSnapshot: deleteField(),
+        standingsSnapshotVersion: deleteField(),
+        standingsTrackedSnapshot: deleteField(),
+        standingsTrackedVersion: deleteField(),
+        reactions: deleteField(),
+      });
+      report.leaguesCleaned++;
+    } catch (err) {
+      console.error("Couldn't clean league", id, err);
+      report.failed.push(`leagues/${id}`);
+    }
+  }
+
+  return report;
 }
 
 // ══════════════════════════════════════════════════════════════════════════

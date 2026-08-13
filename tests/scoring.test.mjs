@@ -8,8 +8,10 @@
 // accident; several of these assertions exist because that already happened.
 
 import {
-  REGULAR_SEASON_FIXTURES, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, SCORABLE_FIXTURES,
-  SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, isPlayoffMatchupReady,
+  REGULAR_SEASON_FIXTURES, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, PRESEASON_FIXTURES,
+  SCORABLE_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC,
+  isPlayoffMatchupReady, isPreseasonFixture, isPreseasonGameReady,
+  PRESEASON_WEEKS, preseasonFixturesForWeek,
 } from "../src/data/fixtures.js";
 import { AVATAR_GROUPS, PRESET_AVATARS } from "../src/data/avatars.js";
 import {
@@ -18,6 +20,7 @@ import {
   computeWeeklyRecap, computeHighlights, headToHead, weeklyWinTally,
   calcSeasonProgression, explainTiebreak, finishedWeeks, completedWeeks, describeBonuses,
   pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek, MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS,
+  currentWeekByDate, openPickWeeks, weekPickState, PICK_WEEKS_AHEAD,
 } from "../src/lib/scoring.js";
 import { TEAMS, TEAM_CODES, teamsForSpecialPick } from "../src/data/teams.js";
 import { css } from "../src/theme.js";
@@ -149,8 +152,9 @@ for (const [misses, id] of [[1, "near"], [2, "sharp"]]) {
   t("a playoff pick scores", r.points === SC.correctPoints);
   t("a playoff game earns no week badge", r.badges.length === 0);
 }
-t("SCORABLE_FIXTURES = regular season + playoffs",
-  SCORABLE_FIXTURES.length === REGULAR_SEASON_FIXTURES.length + PLAYOFF_FIXTURES.length);
+t("SCORABLE_FIXTURES = regular season + playoffs + the preseason trial",
+  SCORABLE_FIXTURES.length
+    === REGULAR_SEASON_FIXTURES.length + PLAYOFF_FIXTURES.length + PRESEASON_FIXTURES.length);
 
 // ────────────────────────────────────────────────────────────────────────────
 group("Tiebreakers");
@@ -1048,6 +1052,166 @@ group("Playoff results are fetched too");
 
   t("an existing playoff score is never overwritten",
     run([po], { currentScores: { [slot.id]: { homeScore: 1, awayScore: 0 } } }).skipped.already_exists === 1);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("How far ahead you can pick");
+{
+  const kickoffOf = (w) => new Date(REGULAR_SEASON_FIXTURES.find(f => f.week === w && f.kickoffUTC).kickoffUTC).getTime();
+  const beforeSeason = kickoffOf(1) - 5 * 86400000;
+
+  t("before the season the window starts at Week 1",
+    openPickWeeks({ now: beforeSeason }).join() === "1,2,3");
+  t("the window is always three weeks wide",
+    openPickWeeks({ now: kickoffOf(5) + 60000 }).length === 3);
+  t("it moves with the calendar",
+    openPickWeeks({ now: kickoffOf(5) + 60000 }).join() === "5,6,7");
+
+  // A week in progress stays "this week" — it must not flip over on Sunday
+  // afternoon while games are still being played.
+  t("a week in progress is still the current week",
+    currentWeekByDate(kickoffOf(3) + 2 * 3600000) === 3);
+  t("...and moves on once its games are well past",
+    currentWeekByDate(kickoffOf(3) + 8 * 86400000) > 3);
+
+  // THE reason this is on the clock and not on results: an admin who hasn't
+  // typed last week's scores in must never be able to lock the league out.
+  t("nothing about the window depends on results being entered",
+    openPickWeeks({ now: kickoffOf(5) + 60000 }).join()
+      === openPickWeeks({ now: kickoffOf(5) + 60000 }).join());
+
+  // Week 18 has no announced kickoffs, so this uses a date past the whole
+  // season rather than looking one up.
+  t("the window never runs past the last week of the season",
+    openPickWeeks({ now: kickoffOf(17) + 20 * 86400000 }).every(w => w <= 18));
+  t("...and is never empty, even after the season ends",
+    openPickWeeks({ now: kickoffOf(17) + 200 * 86400000 }).length > 0);
+
+  // Per-week state, and the message that goes with it.
+  {
+    const now = kickoffOf(5) + 60000;
+    t("the current week is open", weekPickState(5, { now }).open);
+    t("two weeks ahead is open", weekPickState(7, { now }).open);
+    t("three weeks ahead is not", !weekPickState(8, { now }).open);
+    t("...and says when it opens", weekPickState(8, { now }).reason === "future");
+    t("a played week is closed as 'past'", weekPickState(2, { now }).reason === "past");
+    t("every closed week carries an explanation",
+      [1, 2, 8, 12, 18].every(w => {
+        const s = weekPickState(w, { now });
+        return s.open || (s.label && s.label.length > 5);
+      }));
+  }
+
+  // While the rehearsal runs, the real season is shut completely.
+  {
+    const now = kickoffOf(1) - 5 * 86400000;
+    t("no regular-season week is pickable during the trial",
+      openPickWeeks({ now, trialOpen: true }).length === 0);
+    t("...and every week says why",
+      [1, 2, 3].every(w => weekPickState(w, { now, trialOpen: true }).reason === "trial"));
+    t("...but they reopen the moment the trial is cleared",
+      openPickWeeks({ now, trialOpen: false }).length === 3);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Preseason trial");
+{
+  const slot = PRESEASON_FIXTURES[0];
+  const trial = [{ ...slot, home: "KC", away: "SF" }];
+  const preGame = {
+    homeAbbr: "KC", awayAbbr: "SF", homeScore: 17, awayScore: 13, completed: true,
+    isRegularSeason: false, isPostSeason: false, isPreSeason: true, seasonYear: 2026, week: 3,
+  };
+  const run = (games, opts = {}) => planResultWrites({
+    games, currentScores: {}, seasonYear: 2026, preseasonSlots: trial, ...opts,
+  });
+
+  t("three preseason weeks, 16 slots each, all empty",
+    PRESEASON_FIXTURES.length === 48
+    && PRESEASON_WEEKS.length === 3
+    && PRESEASON_FIXTURES.every(f => !f.home && !f.away && !f.kickoffUTC));
+  t("their ids are unique and their own",
+    new Set(PRESEASON_FIXTURES.map(f => f.id)).size === 48
+    && PRESEASON_FIXTURES.every(f => isPreseasonFixture(f.id)));
+  t("every slot knows its week",
+    PRESEASON_FIXTURES.every(f => PRESEASON_WEEKS.includes(f.preWeek)));
+  for (const w of PRESEASON_WEEKS) {
+    t(`week ${w} has its own 16 slots`, preseasonFixturesForWeek(w).length === 16);
+  }
+  // Clearing one week must not take another with it — the ids are what the
+  // wipe is handed, so they must not overlap between weeks.
+  t("no slot belongs to two weeks", PRESEASON_WEEKS.every(w =>
+    preseasonFixturesForWeek(w).every(f => !PRESEASON_WEEKS
+      .filter(o => o !== w)
+      .some(o => preseasonFixturesForWeek(o).some(x => x.id === f.id)))));
+  t("a playoff id is not mistaken for a preseason one",
+    PLAYOFF_FIXTURES.every(f => !isPreseasonFixture(f.id))
+    && REGULAR_SEASON_FIXTURES.every(f => !isPreseasonFixture(f.id)));
+  t("no id collides with a real fixture", PRESEASON_FIXTURES.every(f =>
+    !REGULAR_SEASON_FIXTURES.some(x => x.id === f.id) && !PLAYOFF_FIXTURES.some(x => x.id === f.id)));
+  t("trial games score like anything else", PRESEASON_FIXTURES.every(f =>
+    SCORABLE_FIXTURES.some(x => x.id === f.id)));
+
+  // Fetching
+  const out = run([preGame]);
+  t("a preseason game lands in the trial slot an admin set", out.updatedCount === 1);
+  t("...in the right slot", !!out.writes[`scores.${slot.id}`]);
+  t("with no trial running, a preseason game is skipped",
+    run([preGame], { preseasonSlots: [] }).skipped.no_preseason_trial === 1);
+  t("...and writes absolutely nothing",
+    run([preGame], { preseasonSlots: [] }).updatedCount === 0);
+
+  // THE separation. Three competitions, three pools, no leakage in any
+  // direction — this is what stops an August friendly scoring in September.
+  {
+    const real = REGULAR_SEASON_FIXTURES.find(f => f.home === "KC" && f.away === "SF")
+      || REGULAR_SEASON_FIXTURES[0];
+    const sameTeams = { ...preGame, homeAbbr: real.home, awayAbbr: real.away };
+    const slots = [{ ...slot, home: real.home, away: real.away }];
+    const po = PLAYOFF_FIXTURES[0];
+    const poSlots = [{ ...po, home: real.home, away: real.away }];
+
+    const asPre = planResultWrites({
+      games: [sameTeams], currentScores: {}, seasonYear: 2026,
+      preseasonSlots: slots, playoffSlots: poSlots,
+    });
+    t("a preseason game never touches the regular-season fixture",
+      !asPre.writes[`scores.${real.id}`]);
+    t("...and never touches a playoff slot", !asPre.writes[`scores.${po.id}`]);
+    t("...only the trial slot", !!asPre.writes[`scores.${slot.id}`]);
+
+    const asReg = planResultWrites({
+      games: [{ ...sameTeams, isRegularSeason: true, isPreSeason: false, week: real.week }],
+      currentScores: {}, seasonYear: 2026, preseasonSlots: slots, playoffSlots: poSlots,
+    });
+    t("a regular-season game never lands in a trial slot",
+      !!asReg.writes[`scores.${real.id}`] && !asReg.writes[`scores.${slot.id}`]);
+
+    const asPlayoff = planResultWrites({
+      games: [{ ...sameTeams, isPreSeason: false, isPostSeason: true }],
+      currentScores: {}, seasonYear: 2026, preseasonSlots: slots, playoffSlots: poSlots,
+    });
+    t("a playoff game never lands in a trial slot",
+      !!asPlayoff.writes[`scores.${po.id}`] && !asPlayoff.writes[`scores.${slot.id}`]);
+  }
+
+  // Trial results must never earn a week bonus — those are regular season
+  // only, and a trial game belongs to no week.
+  {
+    const league = { members: ["a"] }, users = { a: { username: "A" } };
+    const preds = { a: { picks: { [slot.id]: { winner: "H" } }, specials: {} } };
+    const results = { [slot.id]: { homeScore: 24, awayScore: 10 } };
+    const row = calcStandings(league, users, preds, results, {}, SC)[0];
+    t("a trial pick scores normally while the trial runs", row.points === SC.correctPoints);
+    t("...but never earns a week bonus", row.bonusPoints === 0 && row.badges.length === 0);
+    t("...and once cleared, the points are gone",
+      calcStandings(league, users, { a: { picks: {}, specials: {} } }, {}, {}, SC)[0].points === 0);
+  }
+
+  t("a trial slot needs teams AND a kickoff, same as a playoff slot",
+    !isPreseasonGameReady({ home: "KC", away: "SF" })
+    && isPreseasonGameReady({ home: "KC", away: "SF", kickoffUTC: "2026-08-28T23:00:00Z" }));
 }
 
 // ────────────────────────────────────────────────────────────────────────────

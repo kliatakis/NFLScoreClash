@@ -65,6 +65,7 @@ function normalizeEspnEvent(event) {
   const seasonType = event?.season?.type;
   const isRegularSeason = seasonType == null ? null : seasonType === 2;
   const isPostSeason = seasonType == null ? null : seasonType === 3;
+  const isPreSeason = seasonType == null ? null : seasonType === 1;
 
   return {
     homeAbbr: espnAbbr(home.team?.abbreviation),
@@ -74,6 +75,7 @@ function normalizeEspnEvent(event) {
     completed: comp.status?.type?.completed === true,
     isRegularSeason,
     isPostSeason,
+    isPreSeason,
     seasonYear: toFiniteNumber(event?.season?.year),
     week: toFiniteNumber(event?.week?.number),
   };

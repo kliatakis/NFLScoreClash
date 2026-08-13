@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, isPlayoffMatchupReady } from "../data/fixtures.js";
+import {
+  REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS,
+  PRESEASON_FIXTURES, PRESEASON_WEEKS, preseasonFixturesForWeek,
+  isPlayoffMatchupReady, isPreseasonGameReady,
+} from "../data/fixtures.js";
 import { TEAMS, TEAM_CODES, teamsByConference, teamsForSpecialPick } from "../data/teams.js";
 import {
   fsSetResult, fsClearResult, fsSetSpecialResult, fsUpdateLeague, fsDeleteLeague,
@@ -7,7 +11,10 @@ import {
   fsSubscribeResults, fsSubscribeSpecialResults, fsSubscribeAllPredictions,
   fsSetPlayoffFixture, fsClearPlayoffFixture, fsSubscribePlayoffFixtures,
   fsLogChange, fsSubscribeFetchHealth,
+  fsSetPreseasonFixture, fsClearPreseasonFixture, fsSubscribePreseasonFixtures,
+  fsClearPreseasonTrial, fsWipeSeasonPlay, fsReadEverything,
 } from "../firebase.js";
+import { buildBackup, backupFilename } from "../lib/backup.js";
 import { assessFetchHealth } from "../lib/fetchHealth.js";
 import { getScoringSettings, pickWinner } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
@@ -21,7 +28,22 @@ import BackupPanel from "./BackupPanel.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import HistoryPanel from "./HistoryPanel.jsx";
 
-const SECTIONS = ["Results", "Playoffs", "Overrides", "Special Picks", "Scoring Settings", "History", "Backup", "Danger Zone"];
+const SECTIONS = ["Results", "Preseason Trial", "Playoffs", "Overrides", "Special Picks", "Scoring Settings", "History", "Backup", "Danger Zone"];
+
+// Saves an object as a downloaded .json. Same helper as BackupPanel's; kept
+// local rather than shared because it's six lines and importing a component's
+// internals to reuse them is worse than repeating them.
+function downloadJson(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 // Plain names for the history line. The on-screen labels carry emoji and
 // dashes ("🧹 Clean Sweep — no misses") which read badly in a one-line summary.
@@ -123,6 +145,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
         </div>
       )}
 
+      {section === "Preseason Trial" && <PreseasonTrial league={league} timezone={user.timezone} logChange={logChange} isSuperAdmin={isSuperAdmin} />}
       {section === "Playoffs" && <PlayoffEntry league={league} timezone={user.timezone} logChange={logChange} />}
       {section === "Overrides" && <OverridesEntry league={league} adminUid={user.uid} logChange={logChange} />}
       {section === "Special Picks" && <SpecialResultsEntry logChange={logChange} />}
@@ -132,7 +155,9 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
           isSuperAdmin={isSuperAdmin} logChange={logChange} />
       )}
       {section === "Backup" && <BackupPanel user={user} league={league} isSuperAdmin={isSuperAdmin} logChange={logChange} />}
-      {section === "Danger Zone" && isSuperAdmin && <DangerZone league={league} onLeagueDeleted={onLeagueDeleted} />}
+      {section === "Danger Zone" && isSuperAdmin && (
+        <DangerZone league={league} user={user} logChange={logChange} onLeagueDeleted={onLeagueDeleted} />
+      )}
     </div>
   );
 }
@@ -171,25 +196,32 @@ function FetchHealth() {
 }
 
 function ResultsEntry({ timezone, logChange }) {
-  // A "period" is either a regular-season week number or a playoff round id,
-  // so playoff scores are entered in the same place as everything else.
+  // A "period" is a regular-season week number, a playoff round id, or the
+  // preseason trial — every score in the app is typed in the same place.
   const [period, setPeriod] = useState("1");
   const [results, setResults] = useState({});
   const [matchups, setMatchups] = useState({});
+  const [preseason, setPreseason] = useState({});
   // Live, so the admin can SEE what's already entered (by hand or by the
   // auto-fetch cron) instead of typing blind into empty boxes.
   useEffect(() => fsSubscribeResults(setResults), []);
   useEffect(() => fsSubscribePlayoffFixtures(setMatchups), []);
+  useEffect(() => fsSubscribePreseasonFixtures(setPreseason), []);
 
   const isPlayoffRound = PLAYOFF_ROUNDS.some(r => r.id === period);
+  const isPreseason = period === "preseason";
 
-  // Playoff placeholders only become enterable once an admin has said who's
-  // playing — there's no sensible way to record a score for an unknown game.
-  const fixtures = isPlayoffRound
-    ? PLAYOFF_FIXTURES
-        .filter(f => f.round === period && matchups[f.id]?.home && matchups[f.id]?.away)
-        .map(f => ({ ...f, ...matchups[f.id] }))
-    : REGULAR_SEASON_FIXTURES.filter(f => f.week === Number(period));
+  // Placeholders only become enterable once an admin has said who's playing —
+  // there's no sensible way to record a score for an unknown game.
+  const fixtures = isPreseason
+    ? PRESEASON_FIXTURES
+        .filter(f => preseason[f.id]?.home && preseason[f.id]?.away)
+        .map(f => ({ ...f, ...preseason[f.id], note: f.label }))
+    : isPlayoffRound
+      ? PLAYOFF_FIXTURES
+          .filter(f => f.round === period && matchups[f.id]?.home && matchups[f.id]?.away)
+          .map(f => ({ ...f, ...matchups[f.id] }))
+      : REGULAR_SEASON_FIXTURES.filter(f => f.week === Number(period));
 
   const enteredCount = fixtures.filter(f => results[f.id]).length;
   const pendingPlayoff = isPlayoffRound
@@ -207,6 +239,9 @@ function ResultsEntry({ timezone, logChange }) {
           <optgroup label="Playoffs">
             {PLAYOFF_ROUNDS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
           </optgroup>
+          <optgroup label="Rehearsal">
+            <option value="preseason">Preseason Trial</option>
+          </optgroup>
         </select>
         {fixtures.length > 0 && (
           <span style={{ fontSize: 13.5, color: "var(--muted)" }}>
@@ -217,9 +252,11 @@ function ResultsEntry({ timezone, logChange }) {
 
       {fixtures.length === 0 && (
         <div style={{ color: "var(--muted)", fontSize: 14 }}>
-          {isPlayoffRound
-            ? "No matchups set for this round yet — set them in the Playoffs tab first."
-            : "No fixtures loaded for this week yet."}
+          {isPreseason
+            ? "No trial games set up yet — add them in the Preseason Trial tab first."
+            : isPlayoffRound
+              ? "No matchups set for this round yet — set them in the Playoffs tab first."
+              : "No fixtures loaded for this week yet."}
         </div>
       )}
       {pendingPlayoff > 0 && fixtures.length > 0 && (
@@ -356,6 +393,171 @@ function ResultRow({ fixture, result, timezone, logChange }) {
   );
 }
 
+// ─── PRESEASON TRIAL ────────────────────────────────────────────────────────
+//
+// A dress rehearsal on real games, a fortnight before anything counts.
+//
+// These score FOR REAL while the trial runs — that's deliberate. A rehearsal
+// on a separate scoreboard tests a copy of the machine; this tests the machine
+// itself, including the ESPN fetch, the locking, the reveal at kickoff and the
+// standings. "Clear the trial" then removes every trace so Week 1 starts from
+// zero, and the dashboard nags everyone until it's been done.
+function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
+  const [slots, setSlots] = useState({});
+  const [results, setResults] = useState({});
+  const [allPredictions, setAllPredictions] = useState({});
+  // null = not confirming; a number = that week; "all" = the lot
+  const [confirming, setConfirming] = useState(null);
+  const [week, setWeek] = useState(PRESEASON_WEEKS[PRESEASON_WEEKS.length - 1]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => fsSubscribePreseasonFixtures(setSlots), []);
+  useEffect(() => fsSubscribeResults(setResults), []);
+  useEffect(() => fsSubscribeAllPredictions(setAllPredictions), []);
+
+  const picksFor = (f) => Object.values(allPredictions)
+    .filter(p => (p?.picks || {})[f.id] !== undefined).length;
+
+  // Counts per week, so each week can report and clear on its own.
+  const tally = (fixtures) => ({
+    set: fixtures.filter(f => isPreseasonGameReady(slots[f.id])).length,
+    scored: fixtures.filter(f => results[f.id]).length,
+    picks: fixtures.reduce((n, f) => n + picksFor(f), 0),
+  });
+  const weekFixtures = preseasonFixturesForWeek(week);
+  const weekCounts = tally(weekFixtures);
+  const allCounts = tally(PRESEASON_FIXTURES);
+  const weekHasAnything = weekCounts.set > 0 || weekCounts.scored > 0 || weekCounts.picks > 0;
+  const anyAnything = allCounts.set > 0 || allCounts.scored > 0 || allCounts.picks > 0;
+
+  // One code path for both buttons — "clear week 2" and "clear everything"
+  // differ only in which ids they're handed.
+  const clearTrial = async (scope) => {
+    const fixtures = scope === "all" ? PRESEASON_FIXTURES : preseasonFixturesForWeek(scope);
+    const what = scope === "all" ? "the whole trial" : `Preseason Week ${scope}`;
+    setBusy(true); setError("");
+    try {
+      const report = await fsClearPreseasonTrial(fixtures.map(f => f.id));
+      logChange("result_cleared", {
+        target: scope === "all" ? "preseason-trial" : `preseason-week-${scope}`,
+        summary: `${what} cleared — ${report.scoresCleared} score slot(s), ${report.picksCleared} pick(s)`,
+        detail: { scope, ...report },
+      });
+      setConfirming(null);
+      setMsg(report.failed.length === 0
+        ? `Cleared ${what} — ${report.picksCleared} pick${report.picksCleared === 1 ? "" : "s"} and every score in it removed.`
+        : `Cleared most of it, but ${report.failed.length} document(s) failed: ${report.failed.join(", ")}. Try again.`);
+      setTimeout(() => setMsg(""), 12000);
+    } catch (err) {
+      console.error("Couldn't clear the preseason trial", err);
+      setError("Couldn't clear it — check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14, lineHeight: 1.55 }}>
+        A dress rehearsal on real preseason games. Point a slot at a game, everyone picks it, the
+        score arrives from ESPN or you type it in — the full machine, points and all.
+        {" "}<b>These count while the trial is running</b>, which is the point. Clear it below before
+        Week 1 and the table goes back to zero.
+      </p>
+
+      {msg && <div className="success-msg">{msg}</div>}
+      {error && <div className="error-msg">{error}</div>}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+        <select className="form-select" style={{ maxWidth: 220 }} value={week}
+          onChange={e => setWeek(Number(e.target.value))}>
+          {PRESEASON_WEEKS.map(w => {
+            const c = tally(preseasonFixturesForWeek(w));
+            return (
+              <option key={w} value={w}>
+                Preseason Week {w}{c.set ? ` · ${c.set} set` : ""}
+              </option>
+            );
+          })}
+        </select>
+        <span style={{ fontSize: 13.5, color: "var(--muted)" }}>
+          <b>{weekCounts.set} of {weekFixtures.length}</b> set · {weekCounts.scored} scored · {weekCounts.picks} pick(s)
+        </span>
+      </div>
+
+      <p className="backup-note" style={{ marginBottom: 12 }}>
+        Teams AND a kickoff time, or the game stays closed — without a time there's nothing to lock
+        against. Enter the scores in the Results tab under “Preseason Trial”, or let the daily fetch
+        find them.
+      </p>
+
+      {weekFixtures.map(f => (
+        <PlayoffRow
+          key={f.id} fixture={f} matchup={slots[f.id]} result={results[f.id]}
+          timezone={timezone} logChange={logChange}
+          pickedCount={picksFor(f)}
+          onSave={(next) => fsSetPreseasonFixture(f.id, next)}
+          onClear={() => fsClearPreseasonFixture(f.id)}
+          anyTeam
+        />
+      ))}
+
+      {/* Per week, so you can rehearse in Week 2, wipe it, and go again in
+          Week 3 from a clean table — without losing the setup for a week you
+          haven't run yet. */}
+      <div className="backup-block danger" style={{ marginTop: 18 }}>
+        <div className="form-label">Clear</div>
+        <p className="backup-note">
+          Deletes the trial scores, everyone's trial picks and the games themselves. Nothing else is
+          touched — regular-season picks, season picks and scoring settings are left exactly as they
+          are. Clear everything before the season opener.
+        </p>
+        {!isSuperAdmin ? (
+          <p className="backup-note">Only the league's super admin can clear a trial.</p>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn btn-danger btn-sm" disabled={!weekHasAnything || busy}
+              onClick={() => setConfirming(week)}>
+              {weekHasAnything ? `Clear Preseason Week ${week}` : `Nothing in Week ${week}`}
+            </button>
+            <button className="btn btn-ghost btn-sm" disabled={!anyAnything || busy}
+              onClick={() => setConfirming("all")}>
+              Clear all three weeks
+            </button>
+          </div>
+        )}
+      </div>
+
+      {confirming != null && (() => {
+        const scope = confirming;
+        const c = scope === "all" ? allCounts : tally(preseasonFixturesForWeek(scope));
+        return (
+          <ConfirmDialog
+            tone="danger"
+            title={scope === "all" ? "Clear the whole preseason trial?" : `Clear Preseason Week ${scope}?`}
+            lines={[
+              `${c.set} trial game${c.set === 1 ? "" : "s"}`,
+              `${c.scored} score${c.scored === 1 ? "" : "s"} · ${c.picks} pick${c.picks === 1 ? "" : "s"}`,
+            ]}
+            note={
+              (scope === "all"
+                ? "Every trial week goes. "
+                : `Only Week ${scope} goes — the other preseason weeks are left alone. `)
+              + "Those trial points disappear from the standings. Regular-season picks, season picks and scoring settings are untouched. This can't be undone, but it's exactly what the trial is for."
+            }
+            confirmLabel={scope === "all" ? "Clear all three" : `Clear Week ${scope}`}
+            busy={busy}
+            onConfirm={() => clearTrial(scope)}
+            onCancel={() => setConfirming(null)}
+          />
+        );
+      })()}
+    </div>
+  );
+}
+
 // Attaches real teams and kickoff times to the placeholder playoff fixtures.
 // Everyone's picks and the scoring already key off those permanent IDs, so
 // filling these in is purely a matter of saying who's playing and when.
@@ -401,7 +603,13 @@ function PlayoffEntry({ league, timezone, logChange }) {
   );
 }
 
-function PlayoffRow({ fixture, matchup, result, timezone, logChange, pickedCount = 0 }) {
+// Also used, unchanged, for the preseason trial rows — the job is identical
+// (attach two teams and a kickoff to a permanent empty slot), so the writes
+// are injected rather than the component being copied.
+function PlayoffRow({
+  fixture, matchup, result, timezone, logChange, pickedCount = 0,
+  onSave = null, onClear = null, anyTeam = false,
+}) {
   // The Super Bowl's date and kickoff have been known since the schedule was
   // published and are already sitting in SEASON — no reason to make somebody
   // type them in from memory. Every other playoff slot genuinely isn't known
@@ -422,8 +630,9 @@ function PlayoffRow({ fixture, matchup, result, timezone, logChange, pickedCount
     setWhen(toLocalInput(matchup?.kickoffUTC) || defaultWhen);
   }, [matchup?.away, matchup?.home, matchup?.kickoffUTC, defaultWhen]);
 
-  // The Super Bowl is cross-conference; every other playoff game is within one.
-  const options = fixture.conf ? teamsByConference(fixture.conf) : TEAM_CODES;
+  // The Super Bowl is cross-conference; every other playoff game is within
+  // one. Preseason ignores conferences entirely — anybody can play anybody.
+  const options = (!anyTeam && fixture.conf) ? teamsByConference(fixture.conf) : TEAM_CODES;
   const isSet = !!(matchup?.home && matchup?.away);
 
   const [error, setError] = useState("");
@@ -434,7 +643,7 @@ function PlayoffRow({ fixture, matchup, result, timezone, logChange, pickedCount
     try {
       const next = { away, home, kickoffUTC: kickoff.toISOString() };
       const previous = isSet ? { away: matchup.away, home: matchup.home, kickoffUTC: matchup.kickoffUTC } : null;
-      await fsSetPlayoffFixture(fixture.id, next);
+      await (onSave ? onSave(next) : fsSetPlayoffFixture(fixture.id, next));
       logChange(previous ? "playoff_changed" : "playoff_set", {
         target: fixture.id,
         summary: playoffSummary(fixture, previous, next),
@@ -468,7 +677,7 @@ function PlayoffRow({ fixture, matchup, result, timezone, logChange, pickedCount
   const doClear = async () => {
     setBusy(true);
     try {
-      await fsClearPlayoffFixture(fixture.id);
+      await (onClear ? onClear() : fsClearPlayoffFixture(fixture.id));
       logChange("playoff_cleared", {
         target: fixture.id,
         summary: playoffSummary(fixture, { away: matchup?.away, home: matchup?.home }, null),
@@ -914,9 +1123,16 @@ function ScoringSettings({ league, logChange }) {
   );
 }
 
-function DangerZone({ league, onLeagueDeleted }) {
+function DangerZone({ league, user, logChange, onLeagueDeleted }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // ── Fresh start ──────────────────────────────────────────────────────────
+  const [wipeWord, setWipeWord] = useState("");
+  const [wiping, setWiping] = useState(false);
+  const [wipeMsg, setWipeMsg] = useState("");
+  const [wipeError, setWipeError] = useState("");
+
   const del = async () => {
     setBusy(true);
     try {
@@ -926,8 +1142,82 @@ function DangerZone({ league, onLeagueDeleted }) {
       setBusy(false);
     }
   };
+
+  const freshStart = async () => {
+    if (wipeWord.trim().toUpperCase() !== "WIPE") return;
+    setWiping(true); setWipeError(""); setWipeMsg("");
+    try {
+      // A safety copy downloads FIRST, and a failure here aborts the whole
+      // thing. Exactly the rule the restore follows: an irreversible action
+      // that can't produce its own undo doesn't run.
+      const all = await fsReadEverything({ includeHistory: true });
+      const backup = buildBackup({
+        ...all, seasonYear: SEASON.year,
+        takenBy: { uid: user.uid, username: user.username },
+      });
+      downloadJson(backup, `BEFORE-WIPE-${backupFilename(backup)}`);
+
+      const report = await fsWipeSeasonPlay({ leagueIds: [league.id] });
+      logChange("restore", {
+        global: true,
+        target: "fresh-start",
+        summary: `Fresh start — ${report.predictionsDeleted} prediction doc(s) and every result deleted`,
+        detail: report,
+      });
+      setWipeWord("");
+      setWipeMsg(report.failed.length === 0
+        ? `Done. ${report.predictionsDeleted} player${report.predictionsDeleted === 1 ? "" : "s"}' picks and every result removed. Accounts and the league are untouched — everyone is on zero.`
+        : `Mostly done, but these failed: ${report.failed.join(", ")}. Run it again.`);
+    } catch (err) {
+      console.error("Fresh start failed", err);
+      setWipeError("Couldn't take the safety backup, so nothing was deleted. Try again.");
+    } finally {
+      setWiping(false);
+    }
+  };
+
   return (
     <div>
+      {/* Deliberately ABOVE Delete League: it's the thing people actually
+          want when they think they want to delete everything, and it costs
+          nobody their account. */}
+      <div className="backup-block danger" style={{ marginBottom: 18 }}>
+        <div className="form-label">Fresh start — clear the season, keep everyone</div>
+        <p className="backup-note">
+          Deletes <b>every pick and every result</b> — game picks, season picks, scores, playoff
+          matchups and any preseason trial. Everyone goes back to zero.
+        </p>
+        <p className="backup-note">
+          <b>Kept:</b> all accounts, usernames, avatars and timezones, plus this league, its code
+          <code> {league.id}</code>, its members, its admins and its scoring settings. Nobody has to
+          re-register or rejoin.
+        </p>
+        <p className="backup-note">
+          Picks and results are shared across the whole app, so this clears them for
+          <b> every league</b>, not just this one. A safety backup downloads automatically first.
+        </p>
+
+        {wipeMsg && <div className="success-msg">{wipeMsg}</div>}
+        {wipeError && <div className="error-msg">{wipeError}</div>}
+
+        <div className="backup-plan" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            className="form-input" style={{ maxWidth: 160 }}
+            aria-label="Type WIPE to confirm"
+            placeholder="Type WIPE"
+            value={wipeWord}
+            onChange={e => setWipeWord(e.target.value)}
+          />
+          <button
+            className="btn btn-danger btn-sm"
+            disabled={wiping || wipeWord.trim().toUpperCase() !== "WIPE"}
+            onClick={freshStart}
+          >
+            {wiping ? "Clearing…" : "Clear the season"}
+          </button>
+        </div>
+      </div>
+
       <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>
         Deleting a league removes it for everyone. Only the super admin (league creator) can do this.
       </p>

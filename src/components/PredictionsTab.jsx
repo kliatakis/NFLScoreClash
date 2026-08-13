@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef } from "react";
 import {
   REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, hasEstimatedKickoff,
-  PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, isPlayoffMatchupReady,
+  PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, PRESEASON_FIXTURES, isPlayoffMatchupReady,
 } from "../data/fixtures.js";
 import { TEAMS, teamsForSpecialPick, teamTint, teamSideTint } from "../data/teams.js";
 import {
   fsSubscribePredictions, fsSaveGamePrediction, fsSaveSpecialPick, fsSubscribeResults,
   fsSubscribePlayoffFixtures, fsSaveGamePredictions, fsClearGamePredictions,
+  fsSubscribePreseasonFixtures,
 } from "../firebase.js";
 import { useFixtureLock, useSeasonPicksLock, useCountdown, LOCK_MINUTES_BEFORE_KICKOFF } from "../lib/hooks.js";
 import { formatKickoff, lockUrgency, formatDuration } from "../lib/time.js";
-import { classifyPick, pickWinner, resultWinner, nextOpenWeek } from "../lib/scoring.js";
+import {
+  classifyPick, pickWinner, resultWinner, nextOpenWeek, weekPickState, openPickWeeks,
+} from "../lib/scoring.js";
 import TeamBadge from "./TeamBadge.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 
@@ -26,6 +29,9 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 // pairs properly with "Playoffs". The three season picks say "Winners"
 // because "Division" alone doesn't tell you what you're being asked for, and
 // these are the picks people most often don't realise exist until they lock.
+// The trial tab is added only while a trial is actually set up, so it
+// disappears the moment it's cleared rather than sitting there all season
+// as a dead tab.
 const PREDICTIONS_TABS = [
   { key: "games", label: "Regular Season" },
   { key: "playoffs", label: "Playoffs" },
@@ -33,6 +39,7 @@ const PREDICTIONS_TABS = [
   { key: "conference", label: "Conference Winners" },
   { key: "superbowl", label: "Super Bowl Winner" },
 ];
+const TRIAL_TAB = { key: "preseason", label: "🧪 Preseason Trial" };
 
 // Preseason picks lock 15 minutes before the season opener — computed once
 // (not per-render) since SEASON.openerKickoffUTC is a build-time constant.
@@ -48,12 +55,25 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
   // choice wins — jumping them back to the live week while they're reading
   // Week 3 would be worse than the problem this fixes.
   const weekAutoSet = useRef(false);
+  const [preseasonSlots, setPreseasonSlots] = useState({});
 
   useEffect(() => {
     const u1 = fsSubscribePredictions(user.uid, (p) => { setPreds(p); setPredsLoaded(true); });
     const u2 = fsSubscribeResults(setResults);
-    return () => { u1(); u2(); };
+    const u3 = fsSubscribePreseasonFixtures(setPreseasonSlots);
+    return () => { u1(); u2(); u3(); };
   }, [user.uid]);
+
+  // The trial tab only exists while a trial does. It's first because during
+  // those two weeks it's the only thing anyone can actually pick.
+  const trialOpen = PRESEASON_FIXTURES.some(f => isPlayoffMatchupReady(preseasonSlots[f.id]));
+  const tabs = trialOpen ? [TRIAL_TAB, ...PREDICTIONS_TABS] : PREDICTIONS_TABS;
+
+  // A tab that vanishes underneath you (the admin just cleared the trial)
+  // must not leave the page blank.
+  useEffect(() => {
+    if (!trialOpen && view === "preseason") setView("games");
+  }, [trialOpen, view]);
 
   // Open on the week that's actually live, not Week 1.
   //
@@ -129,10 +149,24 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
     return now >= new Date(kickoff).getTime() - LOCK_MINUTES_BEFORE_KICKOFF * 60000;
   };
 
-  // Only unlocked, unplayed, complete, actually-changed rows get written.
-  const savableFixtures = fixtures.filter(f =>
+  // Which weeks are pickable at all — the current one plus the next two, and
+  // none at all while the rehearsal is running. Decided by the calendar, not
+  // by results: see openPickWeeks in lib/scoring.js for why "Week 2 opens when
+  // Week 1 finishes" would let a slow admin lock the whole league out.
+  //
+  // Declared here, below `now`, because it reads it. (It sat above the state
+  // declaration at first, which is a temporal dead zone and takes the page
+  // down on load.)
+  const weekState = weekPickState(week, { now, trialOpen });
+  const openWeeks = openPickWeeks({ now, trialOpen });
+
+  // Only unlocked, unplayed, complete, actually-changed rows in an OPEN week
+  // get written. The week gate is repeated here rather than trusted from the
+  // UI: "Save all" writes in bulk, and a stale render must not be able to
+  // push a week that isn't open yet.
+  const savableFixtures = !weekState.open ? [] : fixtures.filter(f =>
     !isLocked(f) && !results[f.id] && isComplete(f) && isDirty(f));
-  const clearableFixtures = fixtures.filter(f =>
+  const clearableFixtures = !weekState.open ? [] : fixtures.filter(f =>
     !isLocked(f) && !results[f.id] && preds.picks?.[f.id]);
 
   const saveAll = async () => {
@@ -182,7 +216,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
       <div className="page-sub">Your picks are shared across every league you're in — enter once.</div>
 
       <div className="subtab-row">
-        {PREDICTIONS_TABS.map(t => (
+        {tabs.map(t => (
           <button key={t.key} className={`nav-tab ${view === t.key ? "active" : ""}`} onClick={() => setView(t.key)}>{t.label}</button>
         ))}
       </div>
@@ -190,8 +224,15 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
       {view === "games" && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
-            <select className="form-select" style={{ maxWidth: 160 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
-              {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1).map(w => <option key={w} value={w}>Week {w}</option>)}
+            {/* Weeks outside the window stay selectable so you can LOOK at
+                them — the schedule is public and hiding it helps nobody. They
+                just can't be picked, and the card below says why. */}
+            <select className="form-select" style={{ maxWidth: 190 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
+              {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1).map(w => (
+                <option key={w} value={w}>
+                  Week {w}{openWeeks.includes(w) ? "" : " 🔒"}
+                </option>
+              ))}
             </select>
             {fixtures.length > 0 && (
               // Previously you had to scroll the whole week and count to know
@@ -208,7 +249,25 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
               </div>
             )}
           </div>
-          {fixtures.length > 0 && (
+          {!weekState.open && (
+            <div className="glass card week-closed">
+              <div className="mini-label">Week {week} is closed for picks</div>
+              {weekState.reason === "trial"
+                ? "The preseason trial is running, so the regular season is on hold. Pick the trial games in the 🧪 tab — the real thing opens once an admin clears the rehearsal."
+                : weekState.reason === "past"
+                  ? "This week has been played. You can look at it and see everyone's picks, but nothing can be changed."
+                  : `You can pick the current week and the two after it — far enough ahead to cover a holiday, close enough that the league keeps its rhythm. Week ${week} opens nearer the time.`}
+              {weekState.reason === "future" && openWeeks.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => setWeek(openWeeks[0])}>
+                    Go to Week {openWeeks[0]}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {fixtures.length > 0 && weekState.open && (
             <div className="bulk-actions">
               <button
                 className="btn btn-primary btn-sm"
@@ -257,9 +316,22 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
               league={league} allUsers={allUsers} allPredictions={allPredictions}
               draft={draftFor(f.id)}
               onDraftChange={(patch) => setDraft(f.id, patch)}
+              // A closed week is read-only: the rows still show, with
+              // everyone's picks once locked, but nothing can be tapped.
+              readOnly={!weekState.open}
             />
           ))}
         </div>
+      )}
+
+      {view === "preseason" && (
+        <SlotPicks
+          slots={PRESEASON_FIXTURES} matchups={preseasonSlots} title="Preseason Trial"
+          intro={"A rehearsal on real preseason games. These score exactly like the real thing — "
+            + "that's the point — and an admin wipes every trial point before Week 1."}
+          preds={preds} predsLoaded={predsLoaded} results={results} uid={user.uid} timezone={user.timezone}
+          league={league} allUsers={allUsers} allPredictions={allPredictions}
+        />
       )}
 
       {view === "playoffs" && (
@@ -278,7 +350,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
 
 function GameRow({
   fixture, pick, result, uid, timezone, league, allUsers, allPredictions,
-  draft, onDraftChange,
+  draft, onDraftChange, readOnly = false,
 }) {
   // Locks against the effective kickoff, which falls back to a derived time
   // for fixtures the NFL hasn't scheduled yet (all of Week 18) — those used
@@ -301,7 +373,7 @@ function GameRow({
   // that's now meant to be a single gesture. "Save all" stays for anyone who
   // taps through a week offline and needs a retry.
   const choose = async (winner) => {
-    if (locked || hasResult) return;
+    if (locked || hasResult || readOnly) return;
     const next = winner === selected ? null : winner;   // tap again to undo
     onDraftChange?.(next);
     setSaveError(false);
@@ -434,7 +506,7 @@ function GameRow({
       <div className={`pick-row ${selected ? "has-pick" : ""}`}>
         <button
           className={optionClass("A")}
-          disabled={locked || hasResult || saving || clearing}
+          disabled={locked || hasResult || saving || clearing || readOnly}
           onClick={() => choose("A")}
           style={teamSideTint(fixture.away)}
         >
@@ -443,7 +515,7 @@ function GameRow({
 
         <button
           className={`${optionClass("T")} pick-option-tie`}
-          disabled={locked || hasResult || saving || clearing}
+          disabled={locked || hasResult || saving || clearing || readOnly}
           onClick={() => choose("T")}
           title="Predict a tie"
         >
@@ -452,7 +524,7 @@ function GameRow({
 
         <button
           className={optionClass("H")}
-          disabled={locked || hasResult || saving || clearing}
+          disabled={locked || hasResult || saving || clearing || readOnly}
           onClick={() => choose("H")}
           style={teamSideTint(fixture.home)}
         >
@@ -580,6 +652,65 @@ function PlayoffPicks({ preds, predsLoaded, results, uid, timezone, league, allU
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// A flat list of admin-filled slots. Used by the preseason trial, which has
+// no rounds to group by — the same rules as PlayoffPicks above (a slot stays
+// shut until it has both teams AND a kickoff), just without the headings.
+function SlotPicks({
+  slots, matchups, title, intro,
+  preds, predsLoaded, results, uid, timezone, league, allUsers, allPredictions,
+}) {
+  const [drafts, setDrafts] = useState({});
+  const hydrated = useRef(false);
+  useEffect(() => {
+    if (!predsLoaded || hydrated.current) return;
+    hydrated.current = true;
+    const next = {};
+    for (const f of slots) next[f.id] = pickWinner(preds.picks?.[f.id]);
+    setDrafts(next);
+  }, [predsLoaded]);
+
+  const ready = slots.filter(f => isPlayoffMatchupReady(matchups[f.id]));
+  // Grouped by preseason week, and only weeks that actually have games — a
+  // heading for an empty week is noise.
+  const weeks = [...new Set(ready.map(f => f.preWeek))].sort((a, b) => a - b);
+
+  return (
+    <div>
+      <div className="glass card" style={{ marginBottom: 18, fontSize: 13, color: "var(--muted)", lineHeight: 1.55 }}>
+        <b>{title}</b> — {intro}
+        {ready.length > 0 && ` ${ready.length} game${ready.length === 1 ? "" : "s"} open.`}
+      </div>
+
+      {ready.length === 0 && (
+        <div className="glass card" style={{ color: "var(--muted)", fontSize: 13 }}>
+          Nothing set up yet — an admin picks which games to use.
+        </div>
+      )}
+
+      {weeks.map(w => (
+        <div key={w} style={{ marginBottom: 20 }}>
+          {weeks.length > 1 && (
+            <div className="card-title" style={{ marginBottom: 10 }}>Preseason Week {w}</div>
+          )}
+          {ready.filter(f => f.preWeek === w).map(f => {
+            const m = matchups[f.id];
+            const merged = { ...f, home: m.home, away: m.away, kickoffUTC: m.kickoffUTC || null, note: f.label };
+            return (
+              <GameRow
+                key={f.id} fixture={merged} pick={preds.picks?.[f.id]} result={results[f.id]}
+                uid={uid} timezone={timezone}
+                league={league} allUsers={allUsers} allPredictions={allPredictions}
+                draft={drafts[f.id] ?? null}
+                onDraftChange={(winner) => setDrafts(d => ({ ...d, [f.id]: winner }))}
+              />
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

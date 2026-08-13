@@ -1,7 +1,11 @@
 import { useMemo, useState, useEffect } from "react";
-import { calcStandings, getScoringSettings, pickWinner, pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek } from "../lib/scoring.js";
 import {
-  REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, PLAYOFF_FIXTURES, isPlayoffMatchupReady,
+  calcStandings, getScoringSettings, pickWinner, pickStreaks, liveWeekStatus,
+  pendingPickers, nextOpenWeek, calcMatchScore,
+} from "../lib/scoring.js";
+import {
+  REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, PLAYOFF_FIXTURES, PRESEASON_FIXTURES,
+  isPlayoffMatchupReady,
 } from "../data/fixtures.js";
 import { fsSubscribePlayoffFixtures } from "../firebase.js";
 import { teamTint } from "../data/teams.js";
@@ -78,6 +82,21 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
     .map(f => ({ ...f, ...playoffMatchups[f.id], note: f.label }))
     .sort((a, b) => new Date(a.kickoffUTC) - new Date(b.kickoffUTC)),
     [playoffMatchups, results]);
+
+  // How much of the table is rehearsal. Counted across the whole league, not
+  // just you, because the warning is about the standings being wrong for
+  // everybody.
+  const trialPoints = useMemo(() => {
+    let n = 0;
+    for (const f of PRESEASON_FIXTURES) {
+      const r = results[f.id];
+      if (!r) continue;
+      for (const uid of (league?.members || [])) {
+        n += calcMatchScore((allPredictions[uid]?.picks || {})[f.id], r, scoring);
+      }
+    }
+    return n;
+  }, [results, allPredictions, league, scoring]);
 
   const playoffProgress = useMemo(() => {
     if (openPlayoffGames.length === 0) return null;
@@ -251,6 +270,21 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
     <div>
       <div className="page-title">{league.name}</div>
       <div className="page-sub">Code <code>{league.id}</code> · {league.members.length} members</div>
+
+      {/* ── Trial data is still counting ────────────────────────────────────
+          The rehearsal scores for real, which is what makes it a real
+          rehearsal — and also what makes forgetting to clear it a problem.
+          This sits at the very top of the page, for everyone, until an admin
+          has wiped it. Silence here would mean Week 1 starting with points
+          from an August friendly still in the table. */}
+      {trialPoints > 0 && (
+        <div className="glass card trial-warning">
+          <div className="mini-label">Preseason trial</div>
+          🧪 <b>{trialPoints} point{trialPoints === 1 ? "" : "s"}</b> in the standings
+          {trialPoints > 0 && " right now"} came from trial games, not the real season.
+          An admin clears them in <b>Admin Panel → Preseason Trial</b> before Week 1.
+        </div>
+      )}
 
       {newResultsCount > 0 && (
         <div className="glass card" style={{ marginBottom: 18, borderLeft: "3px solid var(--accent)" }}>

@@ -72,6 +72,9 @@ export function planResultWrites({
   // game is then skipped as unmatched — which is correct, and shows up in the
   // fetcher health panel rather than disappearing.
   playoffSlots = [],
+  // Trial slots an admin pointed at real preseason games. Empty means no
+  // trial is running, and every preseason game is then skipped.
+  preseasonSlots = [],
 }) {
   const writes = {};
   const details = [];
@@ -88,16 +91,29 @@ export function planResultWrites({
 
     if (!game.completed) { skip("not_completed", { game: label }); continue; }
 
-    // Each competition needs its OWN positive confirmation. Preseason is not
-    // "not the regular season" — it's its own thing, and it must never be
-    // eligible for anything. Two independent flags mean an unknown or
-    // preseason game matches neither pool and is skipped.
+    // THREE competitions, three pools, three independent positives.
+    //
+    // Nothing is ever inferred from the absence of another flag. A game is
+    // regular-season only if it says so, postseason only if it says so, and
+    // preseason only if it says so — and each can then only reach its own
+    // pool. That's what makes it impossible for an August friendly to land in
+    // a September fixture, or a January rematch in either.
     const isRegular = game.isRegularSeason === true;
     const isPlayoff = game.isPostSeason === true;
-    if (!isRegular && !isPlayoff) {
+    const isPre = game.isPreSeason === true;
+    if (!isRegular && !isPlayoff && !isPre) {
       skip("not_scorable_competition", {
-        game: label, isRegularSeason: game.isRegularSeason, isPostSeason: game.isPostSeason,
+        game: label,
+        isRegularSeason: game.isRegularSeason,
+        isPostSeason: game.isPostSeason,
+        isPreSeason: game.isPreSeason,
       });
+      continue;
+    }
+    // A preseason game with no trial running has nowhere to go, and must not
+    // fall through to any other pool.
+    if (isPre && preseasonSlots.length === 0) {
+      skip("no_preseason_trial", { game: label });
       continue;
     }
     if (game.seasonYear !== seasonYear) {
@@ -127,11 +143,11 @@ export function planResultWrites({
     // against the schedule, a postseason game only ever against slots an
     // admin has filled in — so a January rematch can't overwrite the
     // September fixture, or the other way round.
-    const { fixture, matchedBy } = isRegular
-      ? findFixture(game, fixtures)
-      : findPlayoffSlot(game, playoffSlots);
+    const { fixture, matchedBy } = isRegular ? findFixture(game, fixtures)
+      : isPlayoff ? findPlayoffSlot(game, playoffSlots)
+      : findPlayoffSlot(game, preseasonSlots);   // same teams-only rule
     if (!fixture) {
-      skip(isRegular ? "no_matching_fixture" : "no_playoff_slot",
+      skip(isRegular ? "no_matching_fixture" : isPlayoff ? "no_playoff_slot" : "no_preseason_slot",
         { game: label, week: game.week });
       continue;
     }

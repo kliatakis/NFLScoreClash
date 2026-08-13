@@ -5,6 +5,23 @@
 
 # Resetting ScoreClash to a clean slate
 
+> ## Read this first — you probably want the easy one
+>
+> **Admin Panel → Danger Zone → "Fresh start"** clears every pick and every
+> result while keeping all the accounts and the league itself. Type `WIPE`,
+> and a safety backup downloads on its own before anything is deleted.
+>
+> | | Fresh start | The full reset below |
+> |---|---|---|
+> | Picks and results | gone | gone |
+> | Accounts, usernames, avatars | **kept** | gone — everyone re-registers |
+> | The league, its code, members, scoring | **kept** | gone — everyone rejoins |
+> | Effort | one button | about five minutes, two consoles |
+>
+> Use the full reset only when you want the project genuinely empty — a new
+> group of people, or a bad state you want gone entirely.
+
+
 Wipes every account, league, prediction and result so the app behaves as if it
 had just been deployed. Takes about five minutes.
 

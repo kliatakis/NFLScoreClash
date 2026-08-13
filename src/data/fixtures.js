@@ -360,11 +360,56 @@ export const PLAYOFF_FIXTURES = [
   { id: "po_sb",       round: "superbowl",  conf: null,  label: SEASON.playoffs.superBowl.name },
 ];
 
+// ─── PRESEASON TRIAL ────────────────────────────────────────────────────────
+//
+// A dress rehearsal. Sixteen empty slots an admin can point at real preseason
+// games so everyone can join, pick, watch the scores arrive and see the table
+// move — a fortnight before any of it counts.
+//
+// Built exactly like the playoff slots above: permanent ids here, teams and
+// kickoff attached later and stored in Firestore. That's what lets the fetcher
+// match a real preseason game to one of these WITHOUT any preseason game ever
+// being eligible for a regular-season fixture (see lib/resultsMatching.js —
+// the three competitions are matched from three separate pools).
+//
+// These DO score while the trial runs. That's the point: a rehearsal on a
+// parallel scoreboard tests a copy of the machine, not the machine. Admin
+// Panel → Preseason Trial → "Clear the trial" then removes every trace —
+// scores, everyone's picks, and the slots — so Week 1 starts from zero. The
+// dashboard nags until it's done.
+// Grouped into the NFL's three preseason weeks, so a trial can be run and
+// cleared one week at a time — rehearse in Week 2, wipe it, rehearse again in
+// Week 3 with a clean table. Sixteen slots per week; unset ones cost nothing
+// and never appear anywhere.
+export const PRESEASON_WEEKS = [1, 2, 3];
+
+export const PRESEASON_FIXTURES = PRESEASON_WEEKS.flatMap(week =>
+  Array.from({ length: 16 }, (_, i) => ({
+    id: `pre${week}_${i + 1}`,
+    preseason: true,
+    preWeek: week,
+    label: `Preseason Week ${week} · Game ${i + 1}`,
+  }))
+);
+
+export const preseasonFixturesForWeek = (week) =>
+  PRESEASON_FIXTURES.filter(f => f.preWeek === week);
+
 // Everything that can carry a prediction and a result. Scoring walks this,
 // not just the regular season, so playoff picks count towards the table.
-export const SCORABLE_FIXTURES = [...REGULAR_SEASON_FIXTURES, ...PLAYOFF_FIXTURES];
+export const SCORABLE_FIXTURES = [
+  ...REGULAR_SEASON_FIXTURES, ...PLAYOFF_FIXTURES, ...PRESEASON_FIXTURES,
+];
 
 export const isPlayoffFixture = (id) => typeof id === "string" && id.startsWith("po_");
+// Ids look like "pre2_7" — the week matters, so this can't be a plain prefix
+// check against "pre_".
+export const isPreseasonFixture = (id) => typeof id === "string" && /^pre\d+_\d+$/.test(id);
+
+// Same rule as a playoff slot: teams AND a kickoff, or it stays shut. Without
+// a kickoff there is nothing to lock against and the game would stay editable
+// while it was being played.
+export const isPreseasonGameReady = (matchup) => isPlayoffMatchupReady(matchup);
 
 // Special preseason picks, made once per season, locked 15 min before the
 // season opener kickoff (SEASON.openerKickoffUTC).
