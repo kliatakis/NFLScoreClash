@@ -90,7 +90,24 @@ export function assessFetchHealth(record, now = Date.now()) {
 
   detail.push(`Checked ${record.checked ?? 0} game(s), wrote ${record.updated ?? 0}.`);
   if (record.lastWriteAt) detail.push(`Last actually wrote a score ${describeAge(now - record.lastWriteAt)}.`);
-  if ((record.updated ?? 0) === 0) {
+
+  // Preseason games it saw and deliberately refused.
+  //
+  // Without this line the panel reported a run that skipped sixteen finished
+  // preseason games as "Healthy — wrote 0, which is normal when no games have
+  // finished". It had just refused sixteen that had. Someone pressing Fetch on
+  // a preseason night with the trial switched off would read that as the
+  // fetcher being broken, when it was doing exactly as told.
+  const refusedPreseason = record.skipped?.no_preseason_slot || 0;
+  if (refusedPreseason > 0) {
+    detail.push(
+      `Skipped ${refusedPreseason} preseason game(s) — `
+      + (record.trialActive === false
+        ? "no trial is running, so preseason results aren't collected."
+        : "those weeks have been cleared, so they aren't collected again.")
+      + " Start a trial in Preseason Trial to collect them, or enter them by hand."
+    );
+  } else if ((record.updated ?? 0) === 0) {
     detail.push("Writing nothing is normal when no games have finished since the last run.");
   }
   return { level: "good", headline: `Healthy — ran ${ago}`, detail };
