@@ -1,4 +1,7 @@
-import { REGULAR_SEASON_FIXTURES, SCORABLE_FIXTURES, SPECIAL_PICK_TYPES, effectiveKickoffUTC } from "../data/fixtures.js";
+import {
+  REGULAR_SEASON_FIXTURES, SCORABLE_FIXTURES, SPECIAL_PICK_TYPES, effectiveKickoffUTC,
+  TRIAL_WEEK_KEYS, fixturesForWeek,
+} from "../data/fixtures.js";
 
 // ─── SCORING SETTINGS ───────────────────────────────────────────────────────
 //
@@ -119,7 +122,12 @@ export function weekAccuracyBadge(uid, week, allPredictions, results, scoring = 
   // then took it all away again. Points that appear and vanish mid-week are
   // worse than points that arrive late, so nothing is awarded until every
   // game in the week has a result.
-  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+  // Works for a trial week too: `week` may be 1–18 or "pre1"–"pre3", and
+  // fixturesForWeek knows which list to use. The preseason fixtures are
+  // constants like the regular season, so "has every game finished?" is
+  // answerable for both — which is the whole reason a rehearsal can earn a
+  // real bonus rather than needing its own watered-down version.
+  const fixtures = fixturesForWeek(week);
   if (fixtures.length === 0 || !fixtures.every(f => results[f.id])) return null;
 
   const picks = (allPredictions[uid] || {}).picks || {};
@@ -138,7 +146,7 @@ export function weekAccuracyBadge(uid, week, allPredictions, results, scoring = 
 
 // Every accuracy badge a member has earned this season, newest week first.
 export function weekAccuracyBadges(uid, allPredictions, results, scoring = DEFAULT_SCORING) {
-  return finishedWeeks(results)
+  return allFinishedWeeks(results)
     .map(week => weekAccuracyBadge(uid, week, allPredictions, results, scoring))
     .filter(Boolean);
 }
@@ -537,7 +545,7 @@ export function calcStandingsWithMovement(league, allUsers, allPredictions, resu
 // value to whichever week they happened to be decided in.
 export function calcWeeklyStandings(league, allUsers, allPredictions, results, scoring = DEFAULT_SCORING, week) {
   const members = league?.members || [];
-  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week && results[f.id]);
+  const fixtures = fixturesForWeek(week).filter(f => results[f.id]);
 
   return members.map(uid => {
     const picks = (allPredictions[uid] || {}).picks || {};
@@ -567,7 +575,13 @@ export function calcWeeklyStandings(league, allUsers, allPredictions, results, s
 // league "we both won that week" is the right answer, not an arbitrary
 // tiebreak on something that's meant to be a bit of fun.
 export function weeklyWinTally(league, allUsers, allPredictions, results, scoring) {
-  const weeks = completedWeeks(results).slice().sort((a, b) => a - b);
+  // Real weeks in order, then trial weeks. Sorted separately — mixing numbers
+  // and "pre1" in one comparison is exactly the kind of thing that sorts
+  // silently wrong.
+  const weeks = [
+    ...completedWeeks(results).slice().sort((a, b) => a - b),
+    ...TRIAL_WEEK_KEYS.filter(key => fixturesForWeek(key).some(f => results[f.id])),
+  ];
   const byUid = {};
   const perWeek = [];
 
@@ -924,6 +938,29 @@ export function finishedWeeks(results) {
     .filter(([, fixtures]) => fixtures.every(f => results[f.id]))
     .map(([week]) => week)
     .sort((a, b) => b - a);
+}
+
+// Trial weeks where every one of the sixteen games has a result. Kept apart
+// from finishedWeeks so nothing that reasons about the real season (the
+// awards, the highlights board, the season chart) picks them up by accident —
+// only the things that should count a rehearsal ask for both.
+export function finishedTrialWeeks(results) {
+  return TRIAL_WEEK_KEYS.filter(key => {
+    const fixtures = fixturesForWeek(key);
+    return fixtures.length > 0 && fixtures.every(f => results[f.id]);
+  });
+}
+
+// Real weeks first, then any completed trial weeks. Used for week bonuses and
+// medals, which are exactly the two things a rehearsal should exercise.
+export function allFinishedWeeks(results) {
+  return [...finishedWeeks(results), ...finishedTrialWeeks(results)];
+}
+
+// Same, for weeks with at least one result in.
+export function allCompletedWeeks(results) {
+  const trial = TRIAL_WEEK_KEYS.filter(key => fixturesForWeek(key).some(f => results[f.id]));
+  return [...completedWeeks(results), ...trial];
 }
 
 export function computeHighlights(league, allUsers, allPredictions, results, forWeek = null, scoring = DEFAULT_SCORING) {

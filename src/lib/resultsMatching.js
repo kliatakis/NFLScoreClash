@@ -20,7 +20,7 @@
 // may well meet in both. That separation is the entire reason the teams-only
 // fallback below is safe.
 
-import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
+import { REGULAR_SEASON_FIXTURES, PRESEASON_FIXTURES } from "../data/fixtures.js";
 import { TEAMS } from "../data/teams.js";
 
 // Prefers an exact match on teams AND week, falling back to teams-only.
@@ -72,9 +72,8 @@ export function planResultWrites({
   // game is then skipped as unmatched — which is correct, and shows up in the
   // fetcher health panel rather than disappearing.
   playoffSlots = [],
-  // Trial slots an admin pointed at real preseason games. Empty means no
-  // trial is running, and every preseason game is then skipped.
-  preseasonSlots = [],
+  // The preseason schedule — constants, like the regular season.
+  preseasonSlots = PRESEASON_FIXTURES,
 }) {
   const writes = {};
   const details = [];
@@ -108,12 +107,6 @@ export function planResultWrites({
         isPostSeason: game.isPostSeason,
         isPreSeason: game.isPreSeason,
       });
-      continue;
-    }
-    // A preseason game with no trial running has nowhere to go, and must not
-    // fall through to any other pool.
-    if (isPre && preseasonSlots.length === 0) {
-      skip("no_preseason_trial", { game: label });
       continue;
     }
     if (game.seasonYear !== seasonYear) {

@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import {
   REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, hasEstimatedKickoff,
-  PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, PRESEASON_FIXTURES, isPlayoffMatchupReady,
+  PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, PRESEASON_FIXTURES, PRESEASON_WEEKS,
+  preseasonFixturesForWeek, isPlayoffMatchupReady,
 } from "../data/fixtures.js";
 import { TEAMS, teamsForSpecialPick, teamTint, teamSideTint } from "../data/teams.js";
 import {
   fsSubscribePredictions, fsSaveGamePrediction, fsSaveSpecialPick, fsSubscribeResults,
   fsSubscribePlayoffFixtures, fsSaveGamePredictions, fsClearGamePredictions,
-  fsSubscribePreseasonFixtures,
+  fsSubscribeTrialActive,
 } from "../firebase.js";
 import { useFixtureLock, useSeasonPicksLock, useCountdown, LOCK_MINUTES_BEFORE_KICKOFF } from "../lib/hooks.js";
 import { formatKickoff, lockUrgency, formatDuration } from "../lib/time.js";
@@ -55,18 +56,18 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
   // choice wins — jumping them back to the live week while they're reading
   // Week 3 would be worse than the problem this fixes.
   const weekAutoSet = useRef(false);
-  const [preseasonSlots, setPreseasonSlots] = useState({});
+  const [trialActive, setTrialActive] = useState(false);
 
   useEffect(() => {
     const u1 = fsSubscribePredictions(user.uid, (p) => { setPreds(p); setPredsLoaded(true); });
     const u2 = fsSubscribeResults(setResults);
-    const u3 = fsSubscribePreseasonFixtures(setPreseasonSlots);
+    const u3 = fsSubscribeTrialActive(setTrialActive);
     return () => { u1(); u2(); u3(); };
   }, [user.uid]);
 
   // The trial tab only exists while a trial does. It's first because during
   // those two weeks it's the only thing anyone can actually pick.
-  const trialOpen = PRESEASON_FIXTURES.some(f => isPlayoffMatchupReady(preseasonSlots[f.id]));
+  const trialOpen = trialActive;
   const tabs = trialOpen ? [TRIAL_TAB, ...PREDICTIONS_TABS] : PREDICTIONS_TABS;
 
   // A tab that vanishes underneath you (the admin just cleared the trial)
@@ -325,10 +326,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
       )}
 
       {view === "preseason" && (
-        <SlotPicks
-          slots={PRESEASON_FIXTURES} matchups={preseasonSlots} title="Preseason Trial"
-          intro={"A rehearsal on real preseason games. These score exactly like the real thing — "
-            + "that's the point — and an admin wipes every trial point before Week 1."}
+        <TrialPicks
           preds={preds} predsLoaded={predsLoaded} results={results} uid={user.uid} timezone={user.timezone}
           league={league} allUsers={allUsers} allPredictions={allPredictions}
         />
@@ -656,60 +654,67 @@ function PlayoffPicks({ preds, predsLoaded, results, uid, timezone, league, allU
   );
 }
 
-// A flat list of admin-filled slots. Used by the preseason trial, which has
-// no rounds to group by — the same rules as PlayoffPicks above (a slot stays
-// shut until it has both teams AND a kickoff), just without the headings.
-function SlotPicks({
-  slots, matchups, title, intro,
-  preds, predsLoaded, results, uid, timezone, league, allUsers, allPredictions,
-}) {
+// The preseason rehearsal, over the real preseason schedule.
+//
+// These are ordinary fixtures — constants with teams and kickoffs, like any
+// regular-season game — so they lock, reveal and score down exactly the same
+// paths. Grouped by preseason week because a week is what earns a bonus.
+function TrialPicks({ preds, predsLoaded, results, uid, timezone, league, allUsers, allPredictions }) {
   const [drafts, setDrafts] = useState({});
   const hydrated = useRef(false);
   useEffect(() => {
     if (!predsLoaded || hydrated.current) return;
     hydrated.current = true;
     const next = {};
-    for (const f of slots) next[f.id] = pickWinner(preds.picks?.[f.id]);
+    for (const f of PRESEASON_FIXTURES) next[f.id] = pickWinner(preds.picks?.[f.id]);
     setDrafts(next);
   }, [predsLoaded]);
 
-  const ready = slots.filter(f => isPlayoffMatchupReady(matchups[f.id]));
-  // Grouped by preseason week, and only weeks that actually have games — a
-  // heading for an empty week is noise.
-  const weeks = [...new Set(ready.map(f => f.preWeek))].sort((a, b) => a - b);
+  const [week, setWeek] = useState(() => {
+    // Open on the preseason week that's live, the same rule the regular
+    // season uses.
+    const now = Date.now();
+    const live = PRESEASON_WEEKS.find(w =>
+      preseasonFixturesForWeek(w).some(f => new Date(f.kickoffUTC).getTime() > now - 6 * 3600000));
+    return live ?? PRESEASON_WEEKS[PRESEASON_WEEKS.length - 1];
+  });
+
+  const fixtures = preseasonFixturesForWeek(week);
+  const made = fixtures.filter(f => pickWinner(preds.picks?.[f.id]) != null).length;
 
   return (
     <div>
       <div className="glass card" style={{ marginBottom: 18, fontSize: 13, color: "var(--muted)", lineHeight: 1.55 }}>
-        <b>{title}</b> — {intro}
-        {ready.length > 0 && ` ${ready.length} game${ready.length === 1 ? "" : "s"} open.`}
+        <b>🧪 Preseason Trial</b> — a rehearsal on the real preseason. Everything counts exactly
+        like the season: points, medals, and the week bonuses if you call a whole week. An admin
+        wipes all of it before Week 1.
       </div>
 
-      {ready.length === 0 && (
-        <div className="glass card" style={{ color: "var(--muted)", fontSize: 13 }}>
-          Nothing set up yet — an admin picks which games to use.
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
+        <select className="form-select" style={{ maxWidth: 220 }} value={week}
+          onChange={e => setWeek(Number(e.target.value))}>
+          {PRESEASON_WEEKS.map(w => <option key={w} value={w}>Preseason Week {w}</option>)}
+        </select>
+        <div className="week-progress">
+          <span className="week-progress-text">
+            <b>{made}</b> of {fixtures.length} picked
+            {made === fixtures.length && <span className="week-progress-done"> · all done ✓</span>}
+          </span>
+          <span className="week-progress-bar">
+            <span className={`week-progress-fill ${made === fixtures.length ? "done" : ""}`}
+              style={{ width: `${(made / fixtures.length) * 100}%` }} />
+          </span>
         </div>
-      )}
+      </div>
 
-      {weeks.map(w => (
-        <div key={w} style={{ marginBottom: 20 }}>
-          {weeks.length > 1 && (
-            <div className="card-title" style={{ marginBottom: 10 }}>Preseason Week {w}</div>
-          )}
-          {ready.filter(f => f.preWeek === w).map(f => {
-            const m = matchups[f.id];
-            const merged = { ...f, home: m.home, away: m.away, kickoffUTC: m.kickoffUTC || null, note: f.label };
-            return (
-              <GameRow
-                key={f.id} fixture={merged} pick={preds.picks?.[f.id]} result={results[f.id]}
-                uid={uid} timezone={timezone}
-                league={league} allUsers={allUsers} allPredictions={allPredictions}
-                draft={drafts[f.id] ?? null}
-                onDraftChange={(winner) => setDrafts(d => ({ ...d, [f.id]: winner }))}
-              />
-            );
-          })}
-        </div>
+      {fixtures.map(f => (
+        <GameRow
+          key={f.id} fixture={f} pick={preds.picks?.[f.id]} result={results[f.id]}
+          uid={uid} timezone={timezone}
+          league={league} allUsers={allUsers} allPredictions={allPredictions}
+          draft={drafts[f.id] ?? null}
+          onDraftChange={(winner) => setDrafts(d => ({ ...d, [f.id]: winner }))}
+        />
       ))}
     </div>
   );

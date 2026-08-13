@@ -19,7 +19,7 @@ import {
   updatePassword,
   updateEmail,
 } from "firebase/auth";
-import { SEASON } from "./data/fixtures.js";
+import { SEASON, isPreseasonFixture } from "./data/fixtures.js";
 
 // ─── Firebase project config ────────────────────────────────────────────────
 //
@@ -570,29 +570,28 @@ export function fsSubscribePlayoffFixtures(callback) {
 }
 
 // ─── PRESEASON TRIAL ────────────────────────────────────────────────────────
-// Stored alongside the playoff matchups, in the same document and the same
-// shape. See PRESEASON_FIXTURES in data/fixtures.js.
+//
+// The fixtures themselves are CONSTANTS in data/fixtures.js — real teams, real
+// kickoffs — so there's nothing to store about them. All that lives here is
+// whether a rehearsal is currently running.
+//
+// It's an explicit switch rather than something inferred, because turning it on
+// closes the regular season for everybody and turning it off is what puts the
+// table back to zero. Both are decisions.
 
-export async function fsSetPreseasonFixture(fixtureId, matchup) {
-  await setDoc(doc(db, "results", RESULTS_DOC_ID), {
-    preseasonFixtures: { [fixtureId]: matchup },
-  }, { merge: true });
+export async function fsSetTrialActive(on) {
+  await setDoc(doc(db, "results", RESULTS_DOC_ID), { trialActive: !!on }, { merge: true });
 }
 
-export async function fsClearPreseasonFixture(fixtureId) {
-  await updateDoc(doc(db, "results", RESULTS_DOC_ID), {
-    [`preseasonFixtures.${fixtureId}`]: deleteField(),
-  });
-}
-
-export function fsSubscribePreseasonFixtures(callback) {
+export function fsSubscribeTrialActive(callback) {
   return onSnapshot(doc(db, "results", RESULTS_DOC_ID), (snap) =>
-    callback(snap.exists() ? snap.data().preseasonFixtures || {} : {})
+    callback(snap.exists() ? snap.data().trialActive === true : false)
   );
 }
 
-// Removes every trace of the trial: the scores, the slot definitions, and
-// everybody's picks for those games.
+// Removes every trace of a trial week: the scores and everybody's picks for
+// those games. The fixtures themselves are constants and stay put — unplayable
+// once their kickoff has passed, and scoring nothing without picks.
 //
 // Picks are stored PER PERSON and shared across leagues, so this has to walk
 // every predictions document — not just the members of one league. Missing a
@@ -602,23 +601,26 @@ export function fsSubscribePreseasonFixtures(callback) {
 // Returns what it did so the caller can report it honestly rather than
 // claiming success it didn't verify.
 export async function fsClearPreseasonTrial(fixtureIds) {
-  const ids = (fixtureIds || []).filter(Boolean);
-  if (ids.length === 0) return { scoresCleared: 0, slotsCleared: 0, picksCleared: 0, failed: [] };
+  // The only irreversible operation in the trial, and the one place a wrong id
+  // would delete real season scores. Callers pass ids from the constant
+  // preseason schedule, so this filter should never drop anything — which is
+  // exactly why it's cheap to keep. A mis-wired button in some future version
+  // gets refused here instead of quietly wiping Week 1.
+  const all = (fixtureIds || []).filter(Boolean);
+  const ids = all.filter(isPreseasonFixture);
+  const refused = all.filter(id => !isPreseasonFixture(id));
+  if (refused.length) console.error("Refused to clear non-preseason fixtures", refused);
+  if (ids.length === 0) return { scoresCleared: 0, picksCleared: 0, failed: [], refused };
 
   const failed = [];
-  let scoresCleared = 0, slotsCleared = 0, picksCleared = 0;
+  let scoresCleared = 0, picksCleared = 0;
 
-  // 1. Scores and slot definitions — both live in the one results document,
-  //    so this is a single write and can't half-apply.
+  // 1. The scores — one write, so it can't half-apply.
   try {
     const payload = {};
-    for (const id of ids) {
-      payload[`scores.${id}`] = deleteField();
-      payload[`preseasonFixtures.${id}`] = deleteField();
-    }
+    for (const id of ids) payload[`scores.${id}`] = deleteField();
     await updateDoc(doc(db, "results", RESULTS_DOC_ID), payload);
     scoresCleared = ids.length;
-    slotsCleared = ids.length;
   } catch (err) {
     if (err?.code !== "not-found") { console.error("Couldn't clear trial results", err); failed.push("results"); }
   }
@@ -641,7 +643,7 @@ export async function fsClearPreseasonTrial(fixtureIds) {
     }
   }
 
-  return { scoresCleared, slotsCleared, picksCleared, failed };
+  return { scoresCleared, picksCleared, failed, refused };
 }
 
 export async function fsGetSpecialResults() {

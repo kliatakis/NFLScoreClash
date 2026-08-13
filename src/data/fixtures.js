@@ -383,17 +383,98 @@ export const PLAYOFF_FIXTURES = [
 // and never appear anywhere.
 export const PRESEASON_WEEKS = [1, 2, 3];
 
-export const PRESEASON_FIXTURES = PRESEASON_WEEKS.flatMap(week =>
-  Array.from({ length: 16 }, (_, i) => ({
-    id: `pre${week}_${i + 1}`,
-    preseason: true,
-    preWeek: week,
-    label: `Preseason Week ${week} · Game ${i + 1}`,
-  }))
-);
+// The real 2026 preseason: three weekends, sixteen games each, every team
+// playing once a week. Pulled from ESPN once and written down here, exactly
+// like the regular season above.
+//
+// These being CONSTANTS rather than admin-entered slots is what lets a trial
+// week behave like a real one. A week bonus asks "does every game in this week
+// have a result yet?" — answerable only when the week's fixture list is known
+// in advance. With slots filled in at runtime the scoring core couldn't tell
+// an unused slot from one still waiting to be played, so it couldn't award
+// bonuses or medals at all. Now it can, down the identical code path.
+export const PRESEASON_FIXTURES = [
+  // ── Preseason Week 1 ────────────────────────────────────────────────────
+  { id: "pre1_1", preseason: true, preWeek: 1, home: "CIN", away: "DET", kickoffUTC: "2026-08-13T23:00:00Z" },
+  { id: "pre1_2", preseason: true, preWeek: 1, home: "PIT", away: "GB", kickoffUTC: "2026-08-13T23:00:00Z" },
+  { id: "pre1_3", preseason: true, preWeek: 1, home: "NE", away: "IND", kickoffUTC: "2026-08-13T23:30:00Z" },
+  { id: "pre1_4", preseason: true, preWeek: 1, home: "LV", away: "ARI", kickoffUTC: "2026-08-14T00:00:00Z" },
+  { id: "pre1_5", preseason: true, preWeek: 1, home: "HOU", away: "LAC", kickoffUTC: "2026-08-14T00:00:00Z" },
+  { id: "pre1_6", preseason: true, preWeek: 1, home: "SF", away: "TEN", kickoffUTC: "2026-08-14T01:00:00Z" },
+  { id: "pre1_7", preseason: true, preWeek: 1, home: "ATL", away: "DEN", kickoffUTC: "2026-08-14T23:00:00Z" },
+  { id: "pre1_8", preseason: true, preWeek: 1, home: "NYJ", away: "TB", kickoffUTC: "2026-08-14T23:00:00Z" },
+  { id: "pre1_9", preseason: true, preWeek: 1, home: "WAS", away: "MIA", kickoffUTC: "2026-08-14T23:00:00Z" },
+  { id: "pre1_10", preseason: true, preWeek: 1, home: "BUF", away: "CAR", kickoffUTC: "2026-08-15T17:00:00Z" },
+  { id: "pre1_11", preseason: true, preWeek: 1, home: "CHI", away: "CLE", kickoffUTC: "2026-08-15T17:00:00Z" },
+  { id: "pre1_12", preseason: true, preWeek: 1, home: "NYG", away: "MIN", kickoffUTC: "2026-08-15T17:00:00Z" },
+  { id: "pre1_13", preseason: true, preWeek: 1, home: "KC", away: "LAR", kickoffUTC: "2026-08-15T20:00:00Z" },
+  { id: "pre1_14", preseason: true, preWeek: 1, home: "NO", away: "JAX", kickoffUTC: "2026-08-15T20:00:00Z" },
+  { id: "pre1_15", preseason: true, preWeek: 1, home: "BAL", away: "PHI", kickoffUTC: "2026-08-15T23:00:00Z" },
+  { id: "pre1_16", preseason: true, preWeek: 1, home: "SEA", away: "DAL", kickoffUTC: "2026-08-16T00:00:00Z" },
+
+  // ── Preseason Week 2 ────────────────────────────────────────────────────
+  { id: "pre2_1", preseason: true, preWeek: 2, home: "HOU", away: "LV", kickoffUTC: "2026-08-21T00:00:00Z" },
+  { id: "pre2_2", preseason: true, preWeek: 2, home: "LAC", away: "SF", kickoffUTC: "2026-08-21T02:00:00Z" },
+  { id: "pre2_3", preseason: true, preWeek: 2, home: "PIT", away: "NYJ", kickoffUTC: "2026-08-21T23:00:00Z" },
+  { id: "pre2_4", preseason: true, preWeek: 2, home: "JAX", away: "CAR", kickoffUTC: "2026-08-21T23:30:00Z" },
+  { id: "pre2_5", preseason: true, preWeek: 2, home: "DEN", away: "GB", kickoffUTC: "2026-08-22T01:00:00Z" },
+  { id: "pre2_6", preseason: true, preWeek: 2, home: "DET", away: "WAS", kickoffUTC: "2026-08-22T16:00:00Z" },
+  { id: "pre2_7", preseason: true, preWeek: 2, home: "CLE", away: "BUF", kickoffUTC: "2026-08-22T17:00:00Z" },
+  { id: "pre2_8", preseason: true, preWeek: 2, home: "IND", away: "ATL", kickoffUTC: "2026-08-22T17:00:00Z" },
+  { id: "pre2_9", preseason: true, preWeek: 2, home: "MIN", away: "BAL", kickoffUTC: "2026-08-22T17:00:00Z" },
+  { id: "pre2_10", preseason: true, preWeek: 2, home: "LAR", away: "NO", kickoffUTC: "2026-08-22T20:00:00Z" },
+  { id: "pre2_11", preseason: true, preWeek: 2, home: "MIA", away: "NYG", kickoffUTC: "2026-08-22T20:00:00Z" },
+  { id: "pre2_12", preseason: true, preWeek: 2, home: "CIN", away: "CHI", kickoffUTC: "2026-08-22T23:00:00Z" },
+  { id: "pre2_13", preseason: true, preWeek: 2, home: "NE", away: "PHI", kickoffUTC: "2026-08-22T23:00:00Z" },
+  { id: "pre2_14", preseason: true, preWeek: 2, home: "TB", away: "KC", kickoffUTC: "2026-08-22T23:30:00Z" },
+  { id: "pre2_15", preseason: true, preWeek: 2, home: "ARI", away: "DAL", kickoffUTC: "2026-08-23T02:00:00Z" },
+  { id: "pre2_16", preseason: true, preWeek: 2, home: "TEN", away: "SEA", kickoffUTC: "2026-08-24T00:00:00Z" },
+
+  // ── Preseason Week 3 ────────────────────────────────────────────────────
+  { id: "pre3_1", preseason: true, preWeek: 3, home: "BUF", away: "PIT", kickoffUTC: "2026-08-27T23:00:00Z" },
+  { id: "pre3_2", preseason: true, preWeek: 3, home: "CLE", away: "NE", kickoffUTC: "2026-08-28T00:00:00Z" },
+  { id: "pre3_3", preseason: true, preWeek: 3, home: "LV", away: "SF", kickoffUTC: "2026-08-28T00:00:00Z" },
+  { id: "pre3_4", preseason: true, preWeek: 3, home: "LAC", away: "LAR", kickoffUTC: "2026-08-28T02:00:00Z" },
+  { id: "pre3_5", preseason: true, preWeek: 3, home: "BAL", away: "WAS", kickoffUTC: "2026-08-28T22:00:00Z" },
+  { id: "pre3_6", preseason: true, preWeek: 3, home: "MIA", away: "ATL", kickoffUTC: "2026-08-28T23:00:00Z" },
+  { id: "pre3_7", preseason: true, preWeek: 3, home: "CAR", away: "HOU", kickoffUTC: "2026-08-28T23:00:00Z" },
+  { id: "pre3_8", preseason: true, preWeek: 3, home: "NYJ", away: "NYG", kickoffUTC: "2026-08-28T23:30:00Z" },
+  { id: "pre3_9", preseason: true, preWeek: 3, home: "JAX", away: "TB", kickoffUTC: "2026-08-28T23:30:00Z" },
+  { id: "pre3_10", preseason: true, preWeek: 3, home: "DAL", away: "NO", kickoffUTC: "2026-08-29T00:00:00Z" },
+  { id: "pre3_11", preseason: true, preWeek: 3, home: "GB", away: "ARI", kickoffUTC: "2026-08-29T00:00:00Z" },
+  { id: "pre3_12", preseason: true, preWeek: 3, home: "KC", away: "SEA", kickoffUTC: "2026-08-29T00:00:00Z" },
+  { id: "pre3_13", preseason: true, preWeek: 3, home: "PHI", away: "CIN", kickoffUTC: "2026-08-29T00:00:00Z" },
+  { id: "pre3_14", preseason: true, preWeek: 3, home: "DEN", away: "MIN", kickoffUTC: "2026-08-29T01:00:00Z" },
+  { id: "pre3_15", preseason: true, preWeek: 3, home: "IND", away: "DET", kickoffUTC: "2026-08-29T17:00:00Z" },
+  { id: "pre3_16", preseason: true, preWeek: 3, home: "TEN", away: "CHI", kickoffUTC: "2026-08-29T22:00:00Z" },
+];
 
 export const preseasonFixturesForWeek = (week) =>
   PRESEASON_FIXTURES.filter(f => f.preWeek === week);
+
+// ─── WEEK KEYS ──────────────────────────────────────────────────────────────
+//
+// A "week" is either a regular-season week number (1–18) or a trial week
+// ("pre1"–"pre3"). Everything that scores a week — bonuses, medals, the weekly
+// table — asks this for its fixture list and otherwise doesn't care which kind
+// it got. That's what makes the rehearsal run down the same code path as the
+// real thing rather than a parallel one.
+//
+// Numbers stay numbers. Trial weeks are strings so they can never be compared,
+// sorted or incremented alongside real week numbers by accident.
+export const TRIAL_WEEK_KEYS = PRESEASON_WEEKS.map(w => `pre${w}`);
+
+export const isTrialWeek = (weekKey) =>
+  typeof weekKey === "string" && /^pre[1-9]\d*$/.test(weekKey);
+
+export function fixturesForWeek(weekKey) {
+  if (isTrialWeek(weekKey)) return preseasonFixturesForWeek(Number(weekKey.slice(3)));
+  return REGULAR_SEASON_FIXTURES.filter(f => f.week === weekKey);
+}
+
+export function weekLabel(weekKey) {
+  return isTrialWeek(weekKey) ? `Preseason Week ${weekKey.slice(3)}` : `Week ${weekKey}`;
+}
 
 // Everything that can carry a prediction and a result. Scoring walks this,
 // not just the regular season, so playoff picks count towards the table.
@@ -405,11 +486,6 @@ export const isPlayoffFixture = (id) => typeof id === "string" && id.startsWith(
 // Ids look like "pre2_7" — the week matters, so this can't be a plain prefix
 // check against "pre_".
 export const isPreseasonFixture = (id) => typeof id === "string" && /^pre\d+_\d+$/.test(id);
-
-// Same rule as a playoff slot: teams AND a kickoff, or it stays shut. Without
-// a kickoff there is nothing to lock against and the game would stay editable
-// while it was being played.
-export const isPreseasonGameReady = (matchup) => isPlayoffMatchupReady(matchup);
 
 // Special preseason picks, made once per season, locked 15 min before the
 // season opener kickoff (SEASON.openerKickoffUTC).

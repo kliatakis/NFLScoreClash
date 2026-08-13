@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS,
   PRESEASON_FIXTURES, PRESEASON_WEEKS, preseasonFixturesForWeek,
-  isPlayoffMatchupReady, isPreseasonGameReady,
+  isPlayoffMatchupReady,
 } from "../data/fixtures.js";
 import { TEAMS, TEAM_CODES, teamsByConference, teamsForSpecialPick } from "../data/teams.js";
 import {
@@ -11,11 +11,10 @@ import {
   fsSubscribeResults, fsSubscribeSpecialResults, fsSubscribeAllPredictions,
   fsSetPlayoffFixture, fsClearPlayoffFixture, fsSubscribePlayoffFixtures,
   fsLogChange, fsSubscribeFetchHealth,
-  fsSetPreseasonFixture, fsClearPreseasonFixture, fsSubscribePreseasonFixtures,
+  fsSetTrialActive, fsSubscribeTrialActive,
   fsClearPreseasonTrial, fsWipeSeasonPlay, fsReadEverything,
 } from "../firebase.js";
 import { buildBackup, backupFilename } from "../lib/backup.js";
-import { planPreseasonImport, describeImport, importIsSafe } from "../lib/preseasonImport.js";
 import { assessFetchHealth } from "../lib/fetchHealth.js";
 import { getScoringSettings, pickWinner } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
@@ -173,32 +172,21 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
 // default they'd happen again by themselves next August. This just makes sure
 // nobody has to know the feature exists to find it.
 function TrialPrompt({ onGo }) {
-  const [count, setCount] = useState(0);
-  const [slots, setSlots] = useState({});
+  const [active, setActive] = useState(false);
   const [dismissed, setDismissed] = useState(() => {
     try { return sessionStorage.getItem("sc_hideTrialPrompt") === "true"; } catch { return false; }
   });
+  useEffect(() => fsSubscribeTrialActive(setActive), []);
 
-  useEffect(() => fsSubscribePreseasonFixtures(setSlots), []);
-
-  useEffect(() => {
-    let alive = true;
-    // Quietly. A failure here means no prompt, which is exactly the state
-    // everything was in before it existed.
-    fetch("/api/preseason-schedule?days=24")
-      .then(r => r.json())
-      .then(d => { if (alive && d?.success) setCount(d.games?.length || 0); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
-
-  const alreadyRunning = PRESEASON_FIXTURES.some(f => isPreseasonGameReady(slots[f.id]));
-  if (dismissed || alreadyRunning || count === 0) return null;
+  // The schedule is a constant now, so this needs no network call at all —
+  // just "are there preseason games still to come?"
+  const upcoming = PRESEASON_FIXTURES.filter(f => new Date(f.kickoffUTC).getTime() > Date.now());
+  if (dismissed || active || upcoming.length === 0) return null;
 
   const hide = () => {
     setDismissed(true);
-    // Session-scoped, not permanent: it should come back tomorrow if the
-    // trial still hasn't been set up and the games are still coming.
+    // Session-scoped, not permanent: it should come back tomorrow if there's
+    // still time to rehearse and nobody has.
     try { sessionStorage.setItem("sc_hideTrialPrompt", "true"); } catch { /* nothing to do */ }
   };
 
@@ -207,7 +195,7 @@ function TrialPrompt({ onGo }) {
       <span className="fetch-health-icon" aria-hidden="true">🧪</span>
       <div className="fetch-health-body">
         <div className="fetch-health-head">
-          ESPN is showing {count} preseason game{count === 1 ? "" : "s"} coming up
+          {upcoming.length} preseason game{upcoming.length === 1 ? "" : "s"} still to come
         </div>
         <div className="fetch-health-line">
           A live rehearsal — everyone picks real games and the standings move for real, then you
@@ -261,12 +249,10 @@ function ResultsEntry({ timezone, logChange }) {
   const [period, setPeriod] = useState("1");
   const [results, setResults] = useState({});
   const [matchups, setMatchups] = useState({});
-  const [preseason, setPreseason] = useState({});
   // Live, so the admin can SEE what's already entered (by hand or by the
   // auto-fetch cron) instead of typing blind into empty boxes.
   useEffect(() => fsSubscribeResults(setResults), []);
   useEffect(() => fsSubscribePlayoffFixtures(setMatchups), []);
-  useEffect(() => fsSubscribePreseasonFixtures(setPreseason), []);
 
   const isPlayoffRound = PLAYOFF_ROUNDS.some(r => r.id === period);
   const isPreseason = period === "preseason";
@@ -275,8 +261,7 @@ function ResultsEntry({ timezone, logChange }) {
   // there's no sensible way to record a score for an unknown game.
   const fixtures = isPreseason
     ? PRESEASON_FIXTURES
-        .filter(f => preseason[f.id]?.home && preseason[f.id]?.away)
-        .map(f => ({ ...f, ...preseason[f.id], note: f.label }))
+        .map(f => ({ ...f, note: `Preseason Week ${f.preWeek}` }))
     : isPlayoffRound
       ? PLAYOFF_FIXTURES
           .filter(f => f.round === period && matchups[f.id]?.home && matchups[f.id]?.away)
@@ -313,7 +298,7 @@ function ResultsEntry({ timezone, logChange }) {
       {fixtures.length === 0 && (
         <div style={{ color: "var(--muted)", fontSize: 14 }}>
           {isPreseason
-            ? "No trial games set up yet — add them in the Preseason Trial tab first."
+            ? "No preseason games loaded."
             : isPlayoffRound
               ? "No matchups set for this round yet — set them in the Playoffs tab first."
               : "No fixtures loaded for this week yet."}
@@ -463,102 +448,64 @@ function ResultRow({ fixture, result, timezone, logChange }) {
 // standings. "Clear the trial" then removes every trace so Week 1 starts from
 // zero, and the dashboard nags everyone until it's been done.
 function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
-  const [slots, setSlots] = useState({});
   const [results, setResults] = useState({});
   const [allPredictions, setAllPredictions] = useState({});
-  // null = not confirming; a number = that week; "all" = the lot
-  const [confirming, setConfirming] = useState(null);
-  const [week, setWeek] = useState(PRESEASON_WEEKS[PRESEASON_WEEKS.length - 1]);
+  const [active, setActive] = useState(false);
+  const [confirming, setConfirming] = useState(null);   // week number | "all"
+  const [week, setWeek] = useState(PRESEASON_WEEKS[0]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => fsSubscribePreseasonFixtures(setSlots), []);
   useEffect(() => fsSubscribeResults(setResults), []);
   useEffect(() => fsSubscribeAllPredictions(setAllPredictions), []);
+  useEffect(() => fsSubscribeTrialActive(setActive), []);
 
   const picksFor = (f) => Object.values(allPredictions)
     .filter(p => (p?.picks || {})[f.id] !== undefined).length;
 
-  // Counts per week, so each week can report and clear on its own.
   const tally = (fixtures) => ({
-    set: fixtures.filter(f => isPreseasonGameReady(slots[f.id])).length,
+    games: fixtures.length,
     scored: fixtures.filter(f => results[f.id]).length,
     picks: fixtures.reduce((n, f) => n + picksFor(f), 0),
   });
   const weekFixtures = preseasonFixturesForWeek(week);
   const weekCounts = tally(weekFixtures);
   const allCounts = tally(PRESEASON_FIXTURES);
-  const weekHasAnything = weekCounts.set > 0 || weekCounts.scored > 0 || weekCounts.picks > 0;
-  const anyAnything = allCounts.set > 0 || allCounts.scored > 0 || allCounts.picks > 0;
+  const weekHasData = weekCounts.scored > 0 || weekCounts.picks > 0;
+  const anyData = allCounts.scored > 0 || allCounts.picks > 0;
 
-  // ── Import from ESPN ─────────────────────────────────────────────────────
-  // The whole point of a live rehearsal is that it uses real, upcoming games.
-  // Typing sixteen matchups and kickoff times out of another browser tab is
-  // both tedious and the easiest place to fat-finger a time — which would
-  // produce a game that opens for picks and locks at the wrong moment.
-  const [importing, setImporting] = useState(false);
-  const [importPlan, setImportPlan] = useState(null);
-
-  const loadSchedule = async () => {
-    setImporting(true); setError(""); setMsg("");
-    try {
-      const res = await fetch("/api/preseason-schedule?days=24");
-      const data = await res.json();
-      if (!data.success) { setError(data.error || "Couldn't read the schedule."); return; }
-      // Batches fill from the week you're looking at, in date order — the
-      // earliest weekend into that week, the next into the one after.
-      const plan = planPreseasonImport(data.games, slots, { startWeek: week });
-      if (plan.writes.length === 0) {
-        setError(plan.skipped.length > 0
-          ? "Nothing new to add — everything ESPN is showing in the next 10 days is already set up."
-          : "ESPN isn't listing any upcoming preseason games in the next 10 days.");
-        return;
-      }
-      // A part-filled slot would open for picks and never lock. Refuse rather
-      // than write something that behaves badly later.
-      if (!importIsSafe(plan)) { setError("That schedule came back incomplete — nothing was added."); return; }
-      setImportPlan(plan);
-    } catch (err) {
-      console.error("Couldn't load the preseason schedule", err);
-      setError("Couldn't reach the schedule service. Try again, or set the games up by hand.");
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const applyImport = async () => {
-    if (!importPlan) return;
+  const toggle = async (on) => {
     setBusy(true); setError("");
-    const done = [], failed = [];
-    for (const w of importPlan.writes) {
-      try { await fsSetPreseasonFixture(w.fixtureId, w.matchup); done.push(w); }
-      catch (err) { console.error("Couldn't set trial game", w.fixtureId, err); failed.push(w.label); }
-    }
-    logChange("playoff_set", {
-      target: "preseason-import",
-      summary: `Imported ${done.length} preseason game(s) from ESPN · ${done.map(w => w.label).slice(0, 6).join(", ")}`
-        + (done.length > 6 ? `, +${done.length - 6} more` : ""),
-      detail: { added: done.map(w => ({ fixtureId: w.fixtureId, week: w.week, ...w.matchup })), failed },
-    });
-    setImportPlan(null);
-    setBusy(false);
-    if (done.length > 0 && importPlan.weeks.length === 1) setWeek(importPlan.weeks[0]);
-    setMsg(failed.length === 0
-      ? `Added ${done.length} game${done.length === 1 ? "" : "s"} from ESPN — kickoff times included. Check them, then tell everyone to pick.`
-      : `Added ${done.length}, but ${failed.length} failed: ${failed.join(", ")}.`);
-    setTimeout(() => setMsg(""), 12000);
+    try {
+      await fsSetTrialActive(on);
+      logChange("scoring_changed", {
+        global: true, target: "preseason-trial",
+        summary: on ? "Preseason trial started — regular season closed for picks"
+                    : "Preseason trial ended — regular season reopened",
+        detail: { trialActive: on },
+      });
+      setMsg(on
+        ? "Trial running. Everyone can pick the preseason games; the regular season is closed until you end it."
+        : "Trial ended. The regular season is open again.");
+      setTimeout(() => setMsg(""), 10000);
+    } catch (err) {
+      console.error("Couldn't switch the trial", err);
+      setError("Couldn't change that — check your connection and try again.");
+    } finally { setBusy(false); }
   };
 
-  // One code path for both buttons — "clear week 2" and "clear everything"
-  // differ only in which ids they're handed.
   const clearTrial = async (scope) => {
     const fixtures = scope === "all" ? PRESEASON_FIXTURES : preseasonFixturesForWeek(scope);
     const what = scope === "all" ? "the whole trial" : `Preseason Week ${scope}`;
     setBusy(true); setError("");
     try {
       const report = await fsClearPreseasonTrial(fixtures.map(f => f.id));
+      // Clearing everything also ends the trial — leaving it running with no
+      // data would keep the regular season shut for no reason.
+      if (scope === "all" && active) await fsSetTrialActive(false);
       logChange("result_cleared", {
+        global: true,
         target: scope === "all" ? "preseason-trial" : `preseason-week-${scope}`,
         summary: `${what} cleared — ${report.scoresCleared} score slot(s), ${report.picksCleared} pick(s)`,
         detail: { scope, ...report },
@@ -571,114 +518,91 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
     } catch (err) {
       console.error("Couldn't clear the preseason trial", err);
       setError("Couldn't clear it — check your connection and try again.");
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
   return (
     <div>
       <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14, lineHeight: 1.55 }}>
-        A dress rehearsal on real preseason games. Point a slot at a game, everyone picks it, the
-        score arrives from ESPN or you type it in — the full machine, points and all.
-        {" "}<b>These count while the trial is running</b>, which is the point. Clear it below before
-        Week 1 and the table goes back to zero.
+        A dress rehearsal on the real preseason — all 48 games are already here, three weeks of
+        sixteen. Turn it on and everyone picks for real: points, medals, week bonuses, the lot.
+        Clear it before Week 1 and the table goes back to zero.
       </p>
 
       {msg && <div className="success-msg">{msg}</div>}
       {error && <div className="error-msg">{error}</div>}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-        <select className="form-select" style={{ maxWidth: 220 }} value={week}
+      <div className={`fetch-health ${active ? "warn" : "good"}`}>
+        <span className="fetch-health-icon" aria-hidden="true">{active ? "🧪" : "💤"}</span>
+        <div className="fetch-health-body">
+          <div className="fetch-health-head">
+            {active ? "Trial is RUNNING — the regular season is closed for picks" : "No trial running"}
+          </div>
+          <div className="fetch-health-line">
+            {active
+              ? "Preseason games are pickable and scoring for real. End it to reopen the regular season."
+              : "Preseason games are visible but nobody can pick them, and the regular season is open as normal."}
+          </div>
+          {isSuperAdmin && (
+            <div style={{ marginTop: 9 }}>
+              <button className={`btn btn-sm ${active ? "btn-ghost" : "btn-primary"}`}
+                disabled={busy} onClick={() => toggle(!active)}>
+                {active ? "End the trial" : "Start the trial"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "14px 0", flexWrap: "wrap" }}>
+        <select className="form-select" style={{ maxWidth: 240 }} value={week}
           onChange={e => setWeek(Number(e.target.value))}>
-          {PRESEASON_WEEKS.map(w => {
-            const c = tally(preseasonFixturesForWeek(w));
-            return (
-              <option key={w} value={w}>
-                Preseason Week {w}{c.set ? ` · ${c.set} set` : ""}
-              </option>
-            );
-          })}
+          {PRESEASON_WEEKS.map(w => <option key={w} value={w}>Preseason Week {w}</option>)}
         </select>
         <span style={{ fontSize: 13.5, color: "var(--muted)" }}>
-          <b>{weekCounts.set} of {weekFixtures.length}</b> set · {weekCounts.scored} scored · {weekCounts.picks} pick(s)
+          {weekCounts.games} games · {weekCounts.scored} scored · {weekCounts.picks} pick(s)
         </span>
       </div>
 
-      <div className="backup-block">
-        <div className="form-label">Set the games up</div>
-        <p className="backup-note">
-          Pull the next ten days of preseason fixtures straight from ESPN — teams and kickoff times,
-          already in the right week. Games that have kicked off are skipped, and nothing already set
-          up is touched. Or fill the rows in by hand below.
-        </p>
-        <button className="btn btn-primary btn-sm" disabled={importing || busy} onClick={loadSchedule}>
-          {importing ? "Reading ESPN…" : "Import from ESPN"}
-        </button>
-      </div>
-
-      <p className="backup-note" style={{ marginBottom: 12 }}>
-        Teams AND a kickoff time, or the game stays closed — without a time there's nothing to lock
-        against. Enter the scores in the Results tab under “Preseason Trial”, or let the daily fetch
-        find them.
-      </p>
-
       {weekFixtures.map(f => (
-        <PlayoffRow
-          key={f.id} fixture={f} matchup={slots[f.id]} result={results[f.id]}
-          timezone={timezone} logChange={logChange}
-          pickedCount={picksFor(f)}
-          onSave={(next) => fsSetPreseasonFixture(f.id, next)}
-          onClear={() => fsClearPreseasonFixture(f.id)}
-          anyTeam
-        />
+        <div key={f.id} className="standings-row" style={{ flexWrap: "wrap" }}>
+          <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {formatKickoff(f.kickoffUTC, timezone)}
+            {results[f.id] && <span className="chip active">Final {results[f.id].awayScore}–{results[f.id].homeScore}</span>}
+            {picksFor(f) > 0 && <span className="chip">{picksFor(f)} picked</span>}
+          </span>
+          <span style={{ flex: 1, fontSize: 15 }}>
+            <TeamBadge code={f.away} /> @ <TeamBadge code={f.home} />
+          </span>
+        </div>
       ))}
 
-      {/* Per week, so you can rehearse in Week 2, wipe it, and go again in
-          Week 3 from a clean table — without losing the setup for a week you
-          haven't run yet. */}
+      <p className="backup-note" style={{ marginTop: 10 }}>
+        Scores arrive from ESPN on their own, or type them in under Results → “Preseason Trial”.
+      </p>
+
       <div className="backup-block danger" style={{ marginTop: 18 }}>
         <div className="form-label">Clear</div>
         <p className="backup-note">
-          Deletes the trial scores, everyone's trial picks and the games themselves. Nothing else is
-          touched — regular-season picks, season picks and scoring settings are left exactly as they
-          are. Clear everything before the season opener.
+          Deletes the trial scores and everyone's trial picks. The games stay — they're part of the
+          schedule — but they score nothing without picks. Regular-season picks, season picks and
+          scoring settings are untouched. Clear everything before the season opener.
         </p>
         {!isSuperAdmin ? (
           <p className="backup-note">Only the league's super admin can clear a trial.</p>
         ) : (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn btn-danger btn-sm" disabled={!weekHasAnything || busy}
+            <button className="btn btn-danger btn-sm" disabled={!weekHasData || busy}
               onClick={() => setConfirming(week)}>
-              {weekHasAnything ? `Clear Preseason Week ${week}` : `Nothing in Week ${week}`}
+              {weekHasData ? `Clear Preseason Week ${week}` : `Nothing in Week ${week}`}
             </button>
-            <button className="btn btn-ghost btn-sm" disabled={!anyAnything || busy}
+            <button className="btn btn-ghost btn-sm" disabled={!anyData || busy}
               onClick={() => setConfirming("all")}>
               Clear all three weeks
             </button>
           </div>
         )}
       </div>
-
-      {importPlan && (() => {
-        const { lines, notes } = describeImport(importPlan, timezone);
-        return (
-          <ConfirmDialog
-            tone="warn"
-            title={`Add ${importPlan.writes.length} game${importPlan.writes.length === 1 ? "" : "s"} from ESPN?`}
-            lines={[...lines.slice(0, 22), ...(lines.length > 22 ? [`…and ${lines.length - 22} more`] : [])]}
-            note={
-              "Kickoff times come straight from ESPN. Weeks are worked out from the dates above — "
-              + "check they look right. Nothing already set up is changed."
-              + (notes.length ? ` (${notes.join("; ")}.)` : "")
-            }
-            confirmLabel={`Add ${importPlan.writes.length}`}
-            busy={busy}
-            onConfirm={applyImport}
-            onCancel={() => setImportPlan(null)}
-          />
-        );
-      })()}
 
       {confirming != null && (() => {
         const scope = confirming;
@@ -688,16 +612,16 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
             tone="danger"
             title={scope === "all" ? "Clear the whole preseason trial?" : `Clear Preseason Week ${scope}?`}
             lines={[
-              `${c.set} trial game${c.set === 1 ? "" : "s"}`,
               `${c.scored} score${c.scored === 1 ? "" : "s"} · ${c.picks} pick${c.picks === 1 ? "" : "s"}`,
+              scope === "all" ? "All three preseason weeks" : `Preseason Week ${scope} only`,
             ]}
             note={
               (scope === "all"
-                ? "Every trial week goes. "
+                ? "This also ends the trial and reopens the regular season. "
                 : `Only Week ${scope} goes — the other preseason weeks are left alone. `)
-              + "Those trial points disappear from the standings. Regular-season picks, season picks and scoring settings are untouched. This can't be undone, but it's exactly what the trial is for."
+              + "Those points, medals and week bonuses disappear from the standings. Regular-season picks, season picks and scoring settings are untouched."
             }
-            confirmLabel={scope === "all" ? "Clear all three" : `Clear Week ${scope}`}
+            confirmLabel={scope === "all" ? "Clear and end the trial" : `Clear Week ${scope}`}
             busy={busy}
             onConfirm={() => clearTrial(scope)}
             onCancel={() => setConfirming(null)}

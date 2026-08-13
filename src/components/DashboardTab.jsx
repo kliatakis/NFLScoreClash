@@ -1,11 +1,11 @@
 import { useMemo, useState, useEffect } from "react";
 import {
   calcStandings, getScoringSettings, pickWinner, pickStreaks, liveWeekStatus,
-  pendingPickers, nextOpenWeek, calcMatchScore,
+  pendingPickers, nextOpenWeek, calcMatchScore, weekAccuracyBadge,
 } from "../lib/scoring.js";
 import {
   REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, PLAYOFF_FIXTURES, PRESEASON_FIXTURES,
-  isPlayoffMatchupReady,
+  isPlayoffMatchupReady, TRIAL_WEEK_KEYS,
 } from "../data/fixtures.js";
 import { fsSubscribePlayoffFixtures } from "../firebase.js";
 import { teamTint } from "../data/teams.js";
@@ -86,13 +86,20 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
   // How much of the table is rehearsal. Counted across the whole league, not
   // just you, because the warning is about the standings being wrong for
   // everybody.
+  //
+  // Both halves, because a trial week is a real week to the scoring core: the
+  // per-game points AND the week bonus it can earn. Counting only the games
+  // would understate the damage by up to a bonus per person per week, and the
+  // number is the entire argument for clearing the trial before Week 1.
   const trialPoints = useMemo(() => {
     let n = 0;
-    for (const f of PRESEASON_FIXTURES) {
-      const r = results[f.id];
-      if (!r) continue;
-      for (const uid of (league?.members || [])) {
-        n += calcMatchScore((allPredictions[uid]?.picks || {})[f.id], r, scoring);
+    for (const uid of (league?.members || [])) {
+      const picks = allPredictions[uid]?.picks || {};
+      for (const f of PRESEASON_FIXTURES) {
+        if (results[f.id]) n += calcMatchScore(picks[f.id], results[f.id], scoring);
+      }
+      for (const week of TRIAL_WEEK_KEYS) {
+        n += weekAccuracyBadge(uid, week, allPredictions, results, scoring)?.points || 0;
       }
     }
     return n;

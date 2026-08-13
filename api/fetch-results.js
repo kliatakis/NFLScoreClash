@@ -22,7 +22,7 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { SEASON, PLAYOFF_FIXTURES, PRESEASON_FIXTURES } from "../src/data/fixtures.js";
+import { SEASON, PLAYOFF_FIXTURES } from "../src/data/fixtures.js";
 import { espnProvider } from "../src/lib/resultsProviders.js";
 import { planResultWrites } from "../src/lib/resultsMatching.js";
 import { ALARMING_SKIPS } from "../src/lib/fetchHealth.js";
@@ -79,20 +79,13 @@ export default async function handler(req, res) {
       .map(f => ({ ...f, ...(stored[f.id] || {}) }))
       .filter(f => f.home && f.away);
 
-    // Preseason trial slots, same shape. Empty for all but the couple of
-    // weeks before the season, and empty again the moment the trial is
-    // cleared — at which point preseason games stop matching anything.
-    const storedPre = data.preseasonFixtures || {};
-    const preseasonSlots = PRESEASON_FIXTURES
-      .map(f => ({ ...f, ...(storedPre[f.id] || {}) }))
-      .filter(f => f.home && f.away);
-
+    // The preseason schedule is a constant, so nothing to assemble — the
+    // matcher defaults to it.
     const { writes, details, skipped, updatedCount } = planResultWrites({
       games,
       currentScores,
       seasonYear: SEASON.year,
       playoffSlots,
-      preseasonSlots,
     });
 
     if (updatedCount > 0) {
@@ -151,7 +144,6 @@ export default async function handler(req, res) {
       checked: fetchedCount,
       updated: updatedCount,
       playoffSlotsKnown: playoffSlots.length,
-      preseasonSlotsKnown: preseasonSlots.length,
       skipped,
       unmatched,
       error: null,

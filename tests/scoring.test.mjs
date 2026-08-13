@@ -10,8 +10,8 @@
 import {
   REGULAR_SEASON_FIXTURES, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, PRESEASON_FIXTURES,
   SCORABLE_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC,
-  isPlayoffMatchupReady, isPreseasonFixture, isPreseasonGameReady,
-  PRESEASON_WEEKS, preseasonFixturesForWeek,
+  isPlayoffMatchupReady, isPreseasonFixture, PRESEASON_WEEKS, preseasonFixturesForWeek,
+  fixturesForWeek, isTrialWeek, weekLabel, TRIAL_WEEK_KEYS,
 } from "../src/data/fixtures.js";
 import { AVATAR_GROUPS, PRESET_AVATARS } from "../src/data/avatars.js";
 import {
@@ -19,27 +19,22 @@ import {
   calcMatchScore, weekAccuracyBadge, calcStandings, calcWeeklyStandings,
   computeWeeklyRecap, computeHighlights, headToHead, weeklyWinTally,
   calcSeasonProgression, explainTiebreak, finishedWeeks, completedWeeks, describeBonuses,
-  pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek, MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS,
-  currentWeekByDate, openPickWeeks, weekPickState, PICK_WEEKS_AHEAD,
+  pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek, currentWeekByDate, openPickWeeks, weekPickState, finishedTrialWeeks, allFinishedWeeks,
 } from "../src/lib/scoring.js";
 import { TEAMS, TEAM_CODES, teamsForSpecialPick } from "../src/data/teams.js";
 import { css } from "../src/theme.js";
 import {
-  buildBackup, validateBackup, planRestore, describePlan, countBackup,
-  backupFilename, BACKUP_VERSION, BACKUP_APP, RESTORABLE,
+  buildBackup, validateBackup, planRestore, describePlan, backupFilename, BACKUP_VERSION, BACKUP_APP, RESTORABLE,
 } from "../src/lib/backup.js";
-import { planResultWrites, findFixture, findPlayoffSlot } from "../src/lib/resultsMatching.js";
+import { planResultWrites, findFixture } from "../src/lib/resultsMatching.js";
 import { assessFetchHealth, describeAge } from "../src/lib/fetchHealth.js";
-import {
-  planPreseasonImport, describeImport, importIsSafe, groupByMatchWeek,
-} from "../src/lib/preseasonImport.js";
 import { computeSeasonAwards, isSeasonComplete } from "../src/lib/awards.js";
 import { espnDateRange } from "../src/lib/resultsProviders.js";
 import {
   SOLO_MISS, GROUP_MISS, LONE_CALL, SWEEP_LINES, NEAR_LINES, SHARP_LINES,
 } from "../src/data/roasts.js";
 import { hashSeed, pickLine, templateParts, fillTemplate, usablePool } from "../src/lib/shoutouts.js";
-import { planUndo, undoTargetOf, hasUndoDetail, NOT_UNDOABLE, sameValue } from "../src/lib/undo.js";
+import { planUndo, undoTargetOf, hasUndoDetail, NOT_UNDOABLE } from "../src/lib/undo.js";
 import {
   csvEscape, toCsv, buildStandingsCsv, buildPicksCsv, buildSeasonPicksCsv, csvFilename,
 } from "../src/lib/csv.js";
@@ -1118,208 +1113,144 @@ group("How far ahead you can pick");
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-group("Preseason trial");
+group("Preseason trial — a real week, on the real code path");
 {
-  const slot = PRESEASON_FIXTURES[0];
-  const trial = [{ ...slot, home: "KC", away: "SF" }];
-  const preGame = {
-    homeAbbr: "KC", awayAbbr: "SF", homeScore: 17, awayScore: 13, completed: true,
-    isRegularSeason: false, isPostSeason: false, isPreSeason: true, seasonYear: 2026, week: 3,
-  };
-  const run = (games, opts = {}) => planResultWrites({
-    games, currentScores: {}, seasonYear: 2026, preseasonSlots: trial, ...opts,
-  });
-
-  t("three preseason weeks, 16 slots each, all empty",
-    PRESEASON_FIXTURES.length === 48
-    && PRESEASON_WEEKS.length === 3
-    && PRESEASON_FIXTURES.every(f => !f.home && !f.away && !f.kickoffUTC));
-  t("their ids are unique and their own",
+  // ── The schedule is a CONSTANT, like the regular season ──────────────────
+  // That's the whole point of it: a week bonus asks "has every game in this
+  // week finished?", which is only answerable when the week's fixture list is
+  // known in advance. Admin-entered slots couldn't answer it.
+  t("48 preseason fixtures, three weeks of sixteen",
+    PRESEASON_FIXTURES.length === 48 && PRESEASON_WEEKS.length === 3
+    && PRESEASON_WEEKS.every(w => preseasonFixturesForWeek(w).length === 16));
+  t("every one has teams and a kickoff, like a real fixture",
+    PRESEASON_FIXTURES.every(f => f.home && f.away && f.kickoffUTC
+      && !isNaN(new Date(f.kickoffUTC))));
+  t("all 32 teams play once a week", PRESEASON_WEEKS.every(w => {
+    const teams = preseasonFixturesForWeek(w).flatMap(f => [f.home, f.away]);
+    return teams.length === 32 && new Set(teams).size === 32;
+  }));
+  t("ids are unique and never collide with the season",
     new Set(PRESEASON_FIXTURES.map(f => f.id)).size === 48
-    && PRESEASON_FIXTURES.every(f => isPreseasonFixture(f.id)));
-  t("every slot knows its week",
-    PRESEASON_FIXTURES.every(f => PRESEASON_WEEKS.includes(f.preWeek)));
-  for (const w of PRESEASON_WEEKS) {
-    t(`week ${w} has its own 16 slots`, preseasonFixturesForWeek(w).length === 16);
-  }
-  // Clearing one week must not take another with it — the ids are what the
-  // wipe is handed, so they must not overlap between weeks.
-  t("no slot belongs to two weeks", PRESEASON_WEEKS.every(w =>
-    preseasonFixturesForWeek(w).every(f => !PRESEASON_WEEKS
-      .filter(o => o !== w)
-      .some(o => preseasonFixturesForWeek(o).some(x => x.id === f.id)))));
-  t("a playoff id is not mistaken for a preseason one",
-    PLAYOFF_FIXTURES.every(f => !isPreseasonFixture(f.id))
-    && REGULAR_SEASON_FIXTURES.every(f => !isPreseasonFixture(f.id)));
-  t("no id collides with a real fixture", PRESEASON_FIXTURES.every(f =>
-    !REGULAR_SEASON_FIXTURES.some(x => x.id === f.id) && !PLAYOFF_FIXTURES.some(x => x.id === f.id)));
-  t("trial games score like anything else", PRESEASON_FIXTURES.every(f =>
-    SCORABLE_FIXTURES.some(x => x.id === f.id)));
+    && !PRESEASON_FIXTURES.some(f =>
+      REGULAR_SEASON_FIXTURES.some(x => x.id === f.id) || PLAYOFF_FIXTURES.some(x => x.id === f.id)));
+  t("every team code is one we know", PRESEASON_FIXTURES.every(f => TEAMS[f.home] && TEAMS[f.away]));
+  // The fetcher matches preseason games on TEAMS ALONE — ESPN counts the Hall
+  // of Fame game as preseason week 1, so its week numbers are offset from ours
+  // and can't be trusted. That's only safe while no matchup repeats: if two
+  // preseason weeks had the same pairing, a result could land in the wrong one.
+  t("no matchup is played twice all preseason",
+    new Set(PRESEASON_FIXTURES.map(f => `${f.away}@${f.home}`)).size === 48);
+  t("...not even with the sides reversed",
+    new Set(PRESEASON_FIXTURES.map(f => [f.home, f.away].sort().join("-"))).size === 48);
+  t("they're scorable", PRESEASON_FIXTURES.every(f => SCORABLE_FIXTURES.some(x => x.id === f.id)));
 
-  // Fetching
-  const out = run([preGame]);
-  t("a preseason game lands in the trial slot an admin set", out.updatedCount === 1);
-  t("...in the right slot", !!out.writes[`scores.${slot.id}`]);
-  t("with no trial running, a preseason game is skipped",
-    run([preGame], { preseasonSlots: [] }).skipped.no_preseason_trial === 1);
-  t("...and writes absolutely nothing",
-    run([preGame], { preseasonSlots: [] }).updatedCount === 0);
+  // ── Week keys ────────────────────────────────────────────────────────────
+  t("a trial week resolves to its sixteen games", fixturesForWeek("pre1").length === 16);
+  t("a regular week still resolves as before",
+    fixturesForWeek(1).length === REGULAR_SEASON_FIXTURES.filter(f => f.week === 1).length);
+  t("trial keys are recognised, numbers aren't",
+    isTrialWeek("pre2") && !isTrialWeek(2) && !isTrialWeek("2") && !isTrialWeek(null));
+  t("weeks label themselves",
+    weekLabel("pre3") === "Preseason Week 3" && weekLabel(7) === "Week 7");
 
-  // THE separation. Three competitions, three pools, no leakage in any
-  // direction — this is what stops an August friendly scoring in September.
-  {
-    const real = REGULAR_SEASON_FIXTURES.find(f => f.home === "KC" && f.away === "SF")
-      || REGULAR_SEASON_FIXTURES[0];
-    const sameTeams = { ...preGame, homeAbbr: real.home, awayAbbr: real.away };
-    const slots = [{ ...slot, home: real.home, away: real.away }];
-    const po = PLAYOFF_FIXTURES[0];
-    const poSlots = [{ ...po, home: real.home, away: real.away }];
-
-    const asPre = planResultWrites({
-      games: [sameTeams], currentScores: {}, seasonYear: 2026,
-      preseasonSlots: slots, playoffSlots: poSlots,
-    });
-    t("a preseason game never touches the regular-season fixture",
-      !asPre.writes[`scores.${real.id}`]);
-    t("...and never touches a playoff slot", !asPre.writes[`scores.${po.id}`]);
-    t("...only the trial slot", !!asPre.writes[`scores.${slot.id}`]);
-
-    const asReg = planResultWrites({
-      games: [{ ...sameTeams, isRegularSeason: true, isPreSeason: false, week: real.week }],
-      currentScores: {}, seasonYear: 2026, preseasonSlots: slots, playoffSlots: poSlots,
-    });
-    t("a regular-season game never lands in a trial slot",
-      !!asReg.writes[`scores.${real.id}`] && !asReg.writes[`scores.${slot.id}`]);
-
-    const asPlayoff = planResultWrites({
-      games: [{ ...sameTeams, isPreSeason: false, isPostSeason: true }],
-      currentScores: {}, seasonYear: 2026, preseasonSlots: slots, playoffSlots: poSlots,
-    });
-    t("a playoff game never lands in a trial slot",
-      !!asPlayoff.writes[`scores.${po.id}`] && !asPlayoff.writes[`scores.${slot.id}`]);
-  }
-
-  // Trial results must never earn a week bonus — those are regular season
-  // only, and a trial game belongs to no week.
-  {
+  // ── THE POINT: a trial week earns the same bonuses ───────────────────────
+  const trial = (misses) => {
+    const fixtures = preseasonFixturesForWeek(1);
     const league = { members: ["a"] }, users = { a: { username: "A" } };
-    const preds = { a: { picks: { [slot.id]: { winner: "H" } }, specials: {} } };
-    const results = { [slot.id]: { homeScore: 24, awayScore: 10 } };
-    const row = calcStandings(league, users, preds, results, {}, SC)[0];
-    t("a trial pick scores normally while the trial runs", row.points === SC.correctPoints);
-    t("...but never earns a week bonus", row.bonusPoints === 0 && row.badges.length === 0);
-    t("...and once cleared, the points are gone",
-      calcStandings(league, users, { a: { picks: {}, specials: {} } }, {}, {}, SC)[0].points === 0);
+    const results = {}, picks = {};
+    fixtures.forEach((f, i) => {
+      results[f.id] = { homeScore: 24, awayScore: 10 };
+      picks[f.id] = { winner: i < misses ? "A" : "H" };
+    });
+    return { league, users, results, preds: { a: { picks, specials: {} } } };
+  };
+
+  for (const [misses, id] of [[0, "sweep"], [1, "near"], [2, "sharp"]]) {
+    const g = trial(misses);
+    const badge = weekAccuracyBadge("a", "pre1", g.preds, g.results, SC);
+    t(`${misses} miss(es) in a trial week earns ${id}`, badge?.id === id);
+    t(`...over all 16 games, exactly like a real week`, badge?.games === 16);
+  }
+  {
+    const g = trial(3);
+    t("three misses earns nothing, same as the season",
+      weekAccuracyBadge("a", "pre1", g.preds, g.results, SC) === null);
   }
 
-  t("a trial slot needs teams AND a kickoff, same as a playoff slot",
-    !isPreseasonGameReady({ home: "KC", away: "SF" })
-    && isPreseasonGameReady({ home: "KC", away: "SF", kickoffUTC: "2026-08-28T23:00:00Z" }));
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-group("Importing the preseason schedule");
-{
-  const D = (iso) => new Date(iso).toISOString();
-  const g = (away, home, iso) => ({ away, home, kickoffUTC: D(iso) });
-
-  // Three real preseason weekends, a week apart.
-  const wk1 = [g("KC", "SF", "2026-08-13T23:00:00Z"), g("BUF", "NYJ", "2026-08-15T17:00:00Z")];
-  const wk2 = [g("DAL", "PHI", "2026-08-21T23:00:00Z"), g("GB", "CHI", "2026-08-22T17:00:00Z")];
-  const wk3 = [g("MIA", "NE", "2026-08-28T23:00:00Z")];
-
-  // ── THE REGRESSION ──────────────────────────────────────────────────────
-  // Weeks used to come from ESPN's week number. ESPN counts the Hall of Fame
-  // game as preseason week 1, so the first real weekend arrives labelled
-  // week 2 — tonight's games landed in the slot marked "Week 2", Week 1 sat
-  // empty, and the last weekend fell off the end.
+  // The guard that made this worth doing: a part-played trial week settles
+  // nothing, exactly as a real one doesn't.
   {
-    const plan = planPreseasonImport([...wk1, ...wk2, ...wk3], {}, { startWeek: 1 });
-    t("the earliest weekend goes into Week 1",
-      plan.writes.filter(w => w.week === 1).length === 2);
-    t("...the next into Week 2", plan.writes.filter(w => w.week === 2).length === 2);
-    t("...and the last into Week 3", plan.writes.filter(w => w.week === 3).length === 1);
-    t("no week is left empty when games exist for it", plan.weeks.join() === "1,2,3");
-    t("tonight's game really is in Week 1",
-      plan.writes.find(w => w.label === "KC @ SF").week === 1);
+    const g = trial(0);
+    const fixtures = preseasonFixturesForWeek(1);
+    delete g.results[fixtures[15].id];
+    t("a trial week in progress awards no badge",
+      weekAccuracyBadge("a", "pre1", g.preds, g.results, SC) === null);
+    t("...and isn't counted as finished", !finishedTrialWeeks(g.results).includes("pre1"));
+    t("...and no phantom bonus reaches the table",
+      calcStandings(g.league, g.users, g.preds, g.results, {}, SC)[0].bonusPoints === 0);
   }
 
-  // An ESPN week number, whatever it says, must not influence anything.
+  // And it reaches the standings.
   {
-    const withEspnWeeks = [
-      { ...wk1[0], espnWeek: 2 }, { ...wk1[1], espnWeek: 2 },
-      { ...wk2[0], espnWeek: 3 }, { ...wk3[0], espnWeek: 4 },
-    ];
-    const plan = planPreseasonImport(withEspnWeeks, {}, { startWeek: 1 });
-    t("ESPN's own week numbering is ignored entirely",
-      plan.writes.find(w => w.label === "KC @ SF").week === 1
-      && plan.writes.find(w => w.label === "MIA @ NE").week === 3);
+    const g = trial(0);
+    const row = calcStandings(g.league, g.users, g.preds, g.results, {}, SC)[0];
+    t("a trial sweep pays its bonus into the standings", row.bonusPoints === SC.sweepBonus);
+    t("...and shows in the badge cabinet", row.sweepWeeks === 1);
+    t("...and wins a medal", row.medals === 1);
+    t("...and the points are the 16 correct picks plus the bonus",
+      row.points === 16 * SC.correctPoints + SC.sweepBonus);
   }
 
-  // Grouping
+  // Clearing puts it all back.
   {
-    const groups = groupByMatchWeek([...wk3, ...wk1, ...wk2]);   // deliberately unsorted
-    t("games group into weekends regardless of input order", groups.length === 3);
-    t("...in date order", groups[0].startsAt < groups[1].startsAt && groups[1].startsAt < groups[2].startsAt);
-    t("games on the same weekend stay together", groups[0].games.length === 2);
-    t("an empty list groups into nothing", groupByMatchWeek([]).length === 0);
-    t("a game with a nonsense kickoff is dropped, not grouped",
-      groupByMatchWeek([{ away: "A", home: "B", kickoffUTC: "not a date" }]).length === 0);
+    const g = trial(0);
+    const empty = calcStandings(g.league, g.users, { a: { picks: {}, specials: {} } }, {}, {}, SC)[0];
+    t("clearing the trial removes the points", empty.points === 0);
+    t("...the bonus", empty.bonusPoints === 0);
+    t("...and the medal", empty.medals === 0);
   }
 
-  // Filling starts from the week on screen.
+  // A trial week must never be mistaken for a real one by anything that
+  // reasons about the season itself.
   {
-    const plan = planPreseasonImport([...wk1, ...wk2], {}, { startWeek: 2 });
-    t("importing while on Week 2 starts there", plan.weeks.join() === "2,3");
-    const overflow = planPreseasonImport([...wk1, ...wk2, ...wk3], {}, { startWeek: 3 });
-    t("batches with no trial week left are reported, not dropped silently",
-      overflow.skipped.some(s => s.reason === "no_week_left"));
+    const g = trial(0);
+    t("trial weeks aren't regular finished weeks", finishedWeeks(g.results).length === 0);
+    t("...but do count as finished trial weeks", finishedTrialWeeks(g.results).join() === "pre1");
+    t("...and the two are kept apart in the combined list",
+      allFinishedWeeks(g.results).join() === "pre1");
+    t("the highlights board ignores them entirely",
+      computeHighlights(g.league, g.users, g.preds, g.results, null, SC).week === null);
   }
 
-  // Slot mechanics
+  // ── The wipe's safety rail ───────────────────────────────────────────────
+  // fsClearPreseasonTrial deletes scores and picks by id, and is the only
+  // irreversible thing in the trial. It refuses any id this predicate rejects,
+  // so the predicate is what stands between a mis-wired button and Week 1.
+  t("every preseason id is recognised as one", PRESEASON_FIXTURES.every(f => isPreseasonFixture(f.id)));
+  t("no regular-season id is", !REGULAR_SEASON_FIXTURES.some(f => isPreseasonFixture(f.id)));
+  t("no playoff id is", !PLAYOFF_FIXTURES.some(f => isPreseasonFixture(f.id)));
+  t("and nothing else sneaks through", ["w1_1", "sb", "pre", "pre1", "prex_1", "", null,
+    undefined, 0, "PRE1_1", " pre1_1"].every(x => !isPreseasonFixture(x)));
+
+  t("the trial week keys line up with the schedule",
+    TRIAL_WEEK_KEYS.join() === "pre1,pre2,pre3"
+    && TRIAL_WEEK_KEYS.every(k => fixturesForWeek(k).length === 16));
+
+  // Fetching: preseason games match the constant schedule.
   {
-    const plan = planPreseasonImport(wk1, {});
-    t("games are written into free slots", plan.writes.length === 2);
-    t("...with the kickoff carried through", plan.writes[0].matchup.kickoffUTC === wk1[0].kickoffUTC);
-    t("...into distinct slots", plan.writes[0].fixtureId !== plan.writes[1].fixtureId);
-    t("every planned write is complete enough to lock", importIsSafe(plan));
-
-    const slots = { [plan.writes[0].fixtureId]: plan.writes[0].matchup };
-    const again = planPreseasonImport(wk1, slots);
-    t("a second import doesn't duplicate", again.writes.length === 1);
-    t("...and says why the other was skipped", again.skipped[0].reason === "already_set");
-    t("...and never reuses a taken slot", again.writes[0].fixtureId !== plan.writes[0].fixtureId);
-  }
-
-  t("a half-filled slot is left alone rather than completed",
-    planPreseasonImport(wk1, { pre1_1: { home: "DAL" } }).writes[0].fixtureId !== "pre1_1");
-
-  // Rubbish in
-  t("a game missing a kickoff is skipped",
-    planPreseasonImport([{ away: "KC", home: "SF" }], {}).skipped[0].reason === "incomplete");
-  t("a team playing itself is skipped",
-    planPreseasonImport([g("KC", "KC", "2026-08-13T23:00:00Z")], {}).skipped[0].reason === "same_team_twice");
-  t("nulls don't throw", planPreseasonImport([null, undefined], {}).writes.length === 0);
-  t("an empty list is fine", planPreseasonImport([], {}).writes.length === 0);
-
-  {
-    const many = Array.from({ length: 20 }, (_, i) =>
-      g(TEAM_CODES[i], TEAM_CODES[(i + 16) % 32], "2026-08-13T23:00:00Z"));
-    const plan = planPreseasonImport(many, {});
-    t("a week never takes more than its 16 slots", plan.writes.length <= 16);
-    t("...and the overflow is reported", plan.skipped.some(s => s.reason === "week_full"));
-  }
-
-  // The dialog has to make the grouping checkable — that's how this bug
-  // would have been caught before it was written.
-  {
-    const plan = planPreseasonImport([...wk1, ...wk2], {}, { startWeek: 1 });
-    const { lines, notes } = describeImport(plan, "Europe/Athens");
-    t("the dialog groups under a dated week heading",
-      lines[0].includes("Preseason Week 1") && /\d/.test(lines[0]));
-    t("...and lists the games under it", lines.some(l => l.includes("KC @ SF")));
-    t("skips are reported honestly",
-      describeImport(planPreseasonImport([{ away: "KC", home: "SF" }], {}), "UTC").notes.join(" ").includes("skipped"));
+    const f = PRESEASON_FIXTURES[0];
+    const game = {
+      homeAbbr: f.home, awayAbbr: f.away, homeScore: 17, awayScore: 13, completed: true,
+      isRegularSeason: false, isPostSeason: false, isPreSeason: true, seasonYear: 2026, week: 2,
+    };
+    const out = planResultWrites({ games: [game], currentScores: {}, seasonYear: 2026 });
+    t("a preseason result lands in its fixture", !!out.writes[`scores.${f.id}`]);
+    t("...and nowhere else", Object.keys(out.writes).length === 1);
+    t("an existing preseason score is never overwritten",
+      planResultWrites({ games: [game], currentScores: { [f.id]: { homeScore: 1, awayScore: 0 } }, seasonYear: 2026 })
+        .skipped.already_exists === 1);
+    t("a preseason game still can't reach a regular-season fixture",
+      !Object.keys(out.writes).some(k => k.includes("w1_")));
   }
 }
 
