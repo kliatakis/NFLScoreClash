@@ -1042,6 +1042,13 @@ export const css = (dark = true) => `
   .fetch-health-head { font-size: 13px; font-weight: 800; margin-bottom: 2px; }
   .fetch-health-line { font-size: 11.5px; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
 
+  .trial-prompt {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 12px 14px; margin-bottom: 16px; border-radius: 12px;
+    background: rgba(59,130,246,0.09); border: 1px solid rgba(59,130,246,0.32);
+    border-left: 3px solid var(--accent);
+  }
+
   /* ── Season awards ────────────────────────────────────────────────────── */
   .awards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
   .award {

@@ -127,6 +127,8 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
 
   return (
     <div className="admin-panel">
+      <TrialPrompt onGo={() => setSection("Preseason Trial")} />
+
       <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
         {SECTIONS.filter(s => s !== "Danger Zone" || isSuperAdmin).map(s => (
           <button key={s} className={`chip ${section === s ? "active" : ""}`} style={{ cursor: "pointer" }} onClick={() => setSection(s)}>{s}</button>
@@ -159,6 +161,63 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
       {section === "Danger Zone" && isSuperAdmin && (
         <DangerZone league={league} user={user} logChange={logChange} onLeagueDeleted={onLeagueDeleted} />
       )}
+    </div>
+  );
+}
+
+// "There are preseason games coming — want to rehearse?"
+//
+// Discovery only. The trial is NOT set up automatically, and that's the whole
+// design: starting one closes the regular season, awards real points and has
+// to be wiped afterwards. Those are decisions, not defaults — and left to a
+// default they'd happen again by themselves next August. This just makes sure
+// nobody has to know the feature exists to find it.
+function TrialPrompt({ onGo }) {
+  const [count, setCount] = useState(0);
+  const [slots, setSlots] = useState({});
+  const [dismissed, setDismissed] = useState(() => {
+    try { return sessionStorage.getItem("sc_hideTrialPrompt") === "true"; } catch { return false; }
+  });
+
+  useEffect(() => fsSubscribePreseasonFixtures(setSlots), []);
+
+  useEffect(() => {
+    let alive = true;
+    // Quietly. A failure here means no prompt, which is exactly the state
+    // everything was in before it existed.
+    fetch("/api/preseason-schedule?days=24")
+      .then(r => r.json())
+      .then(d => { if (alive && d?.success) setCount(d.games?.length || 0); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const alreadyRunning = PRESEASON_FIXTURES.some(f => isPreseasonGameReady(slots[f.id]));
+  if (dismissed || alreadyRunning || count === 0) return null;
+
+  const hide = () => {
+    setDismissed(true);
+    // Session-scoped, not permanent: it should come back tomorrow if the
+    // trial still hasn't been set up and the games are still coming.
+    try { sessionStorage.setItem("sc_hideTrialPrompt", "true"); } catch { /* nothing to do */ }
+  };
+
+  return (
+    <div className="trial-prompt">
+      <span className="fetch-health-icon" aria-hidden="true">🧪</span>
+      <div className="fetch-health-body">
+        <div className="fetch-health-head">
+          ESPN is showing {count} preseason game{count === 1 ? "" : "s"} coming up
+        </div>
+        <div className="fetch-health-line">
+          A live rehearsal — everyone picks real games and the standings move for real, then you
+          clear it before Week 1. Nothing starts until you say so.
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
+          <button className="btn btn-primary btn-sm" onClick={onGo}>Set up a trial</button>
+          <button className="btn btn-ghost btn-sm" onClick={hide}>Not now</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -444,10 +503,12 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
   const loadSchedule = async () => {
     setImporting(true); setError(""); setMsg("");
     try {
-      const res = await fetch("/api/preseason-schedule?days=10");
+      const res = await fetch("/api/preseason-schedule?days=24");
       const data = await res.json();
       if (!data.success) { setError(data.error || "Couldn't read the schedule."); return; }
-      const plan = planPreseasonImport(data.games, slots, { defaultWeek: week });
+      // Batches fill from the week you're looking at, in date order — the
+      // earliest weekend into that week, the next into the one after.
+      const plan = planPreseasonImport(data.games, slots, { startWeek: week });
       if (plan.writes.length === 0) {
         setError(plan.skipped.length > 0
           ? "Nothing new to add — everything ESPN is showing in the next 10 days is already set up."
@@ -600,15 +661,15 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
       </div>
 
       {importPlan && (() => {
-        const { lines, notes } = describeImport(importPlan);
+        const { lines, notes } = describeImport(importPlan, timezone);
         return (
           <ConfirmDialog
             tone="warn"
             title={`Add ${importPlan.writes.length} game${importPlan.writes.length === 1 ? "" : "s"} from ESPN?`}
-            lines={[...lines.slice(0, 10), ...(lines.length > 10 ? [`…and ${lines.length - 10} more`] : [])]}
+            lines={[...lines.slice(0, 22), ...(lines.length > 22 ? [`…and ${lines.length - 22} more`] : [])]}
             note={
-              "Kickoff times come straight from ESPN, so they're right. Nothing already set up is "
-              + "changed, and each game goes into the preseason week ESPN says it belongs to."
+              "Kickoff times come straight from ESPN. Weeks are worked out from the dates above — "
+              + "check they look right. Nothing already set up is changed."
               + (notes.length ? ` (${notes.join("; ")}.)` : "")
             }
             confirmLabel={`Add ${importPlan.writes.length}`}

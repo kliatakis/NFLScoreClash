@@ -19,7 +19,10 @@ import { espnProvider } from "../src/lib/resultsProviders.js";
 const provider = espnProvider;
 
 export default async function handler(req, res) {
-  const days = Math.min(Math.max(Number(req.query?.days) || 10, 1), 30);
+  // 24 by default: the whole preseason is about three weekends, and a short
+  // window was part of why the first import looked wrong — it reached the
+  // later weeks but not far enough to show all three together.
+  const days = Math.min(Math.max(Number(req.query?.days) || 24, 1), 40);
   // Include games that have already kicked off only if asked — a trial is
   // built from games nobody can have watched yet.
   const includeStarted = req.query?.includeStarted === "true";
@@ -48,10 +51,13 @@ export default async function handler(req, res) {
         home: g.homeAbbr,
         away: g.awayAbbr,
         kickoffUTC: new Date(t).toISOString(),
-        // ESPN numbers the preseason weeks 1–3 the same way we do. Anything
-        // outside that is reported as null and the caller decides.
-        preWeek: g.week >= 1 && g.week <= 3 ? g.week : null,
         completed: g.completed === true,
+        // Reported but NOT used to decide which trial week a game belongs to.
+        // ESPN counts the Hall of Fame game as preseason week 1, so the first
+        // real weekend comes back as week 2 — trusting this put tonight's
+        // games in the wrong slot and left Week 1 empty. The importer groups
+        // by kickoff date instead. Kept here purely for diagnostics.
+        espnWeek: g.week ?? null,
       });
     }
 

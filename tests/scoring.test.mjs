@@ -30,7 +30,9 @@ import {
 } from "../src/lib/backup.js";
 import { planResultWrites, findFixture, findPlayoffSlot } from "../src/lib/resultsMatching.js";
 import { assessFetchHealth, describeAge } from "../src/lib/fetchHealth.js";
-import { planPreseasonImport, describeImport, importIsSafe } from "../src/lib/preseasonImport.js";
+import {
+  planPreseasonImport, describeImport, importIsSafe, groupByMatchWeek,
+} from "../src/lib/preseasonImport.js";
 import { computeSeasonAwards, isSeasonComplete } from "../src/lib/awards.js";
 import { espnDateRange } from "../src/lib/resultsProviders.js";
 import {
@@ -1218,71 +1220,106 @@ group("Preseason trial");
 // ────────────────────────────────────────────────────────────────────────────
 group("Importing the preseason schedule");
 {
-  const game = (away, home, preWeek, iso) => ({ away, home, preWeek, kickoffUTC: iso });
-  const T = "2026-08-28T23:00:00Z";
+  const D = (iso) => new Date(iso).toISOString();
+  const g = (away, home, iso) => ({ away, home, kickoffUTC: D(iso) });
 
+  // Three real preseason weekends, a week apart.
+  const wk1 = [g("KC", "SF", "2026-08-13T23:00:00Z"), g("BUF", "NYJ", "2026-08-15T17:00:00Z")];
+  const wk2 = [g("DAL", "PHI", "2026-08-21T23:00:00Z"), g("GB", "CHI", "2026-08-22T17:00:00Z")];
+  const wk3 = [g("MIA", "NE", "2026-08-28T23:00:00Z")];
+
+  // ── THE REGRESSION ──────────────────────────────────────────────────────
+  // Weeks used to come from ESPN's week number. ESPN counts the Hall of Fame
+  // game as preseason week 1, so the first real weekend arrives labelled
+  // week 2 — tonight's games landed in the slot marked "Week 2", Week 1 sat
+  // empty, and the last weekend fell off the end.
   {
-    const plan = planPreseasonImport([game("KC", "SF", 1, T), game("BUF", "NYJ", 1, T)], {});
-    t("games are written into free slots", plan.writes.length === 2);
-    t("...in the week ESPN reported", plan.writes.every(w => w.week === 1));
-    t("...with the kickoff carried through", plan.writes[0].matchup.kickoffUTC === T);
-    t("...into distinct slots", plan.writes[0].fixtureId !== plan.writes[1].fixtureId);
-    t("every planned write is complete enough to lock", importIsSafe(plan));
+    const plan = planPreseasonImport([...wk1, ...wk2, ...wk3], {}, { startWeek: 1 });
+    t("the earliest weekend goes into Week 1",
+      plan.writes.filter(w => w.week === 1).length === 2);
+    t("...the next into Week 2", plan.writes.filter(w => w.week === 2).length === 2);
+    t("...and the last into Week 3", plan.writes.filter(w => w.week === 3).length === 1);
+    t("no week is left empty when games exist for it", plan.weeks.join() === "1,2,3");
+    t("tonight's game really is in Week 1",
+      plan.writes.find(w => w.label === "KC @ SF").week === 1);
   }
 
-  // THE rule: pressing the button twice must not duplicate or overwrite.
+  // An ESPN week number, whatever it says, must not influence anything.
   {
-    const first = planPreseasonImport([game("KC", "SF", 1, T)], {});
-    const slots = { [first.writes[0].fixtureId]: first.writes[0].matchup };
-    const again = planPreseasonImport([game("KC", "SF", 1, T)], slots);
-    t("a second import adds nothing", again.writes.length === 0);
-    t("...and says why", again.skipped[0].reason === "already_set");
+    const withEspnWeeks = [
+      { ...wk1[0], espnWeek: 2 }, { ...wk1[1], espnWeek: 2 },
+      { ...wk2[0], espnWeek: 3 }, { ...wk3[0], espnWeek: 4 },
+    ];
+    const plan = planPreseasonImport(withEspnWeeks, {}, { startWeek: 1 });
+    t("ESPN's own week numbering is ignored entirely",
+      plan.writes.find(w => w.label === "KC @ SF").week === 1
+      && plan.writes.find(w => w.label === "MIA @ NE").week === 3);
+  }
 
-    // A game an admin typed in by hand is equally untouchable.
-    const other = planPreseasonImport([game("BUF", "NYJ", 1, T)], slots);
-    t("a new game still lands alongside it", other.writes.length === 1);
-    t("...without reusing the taken slot", other.writes[0].fixtureId !== first.writes[0].fixtureId);
+  // Grouping
+  {
+    const groups = groupByMatchWeek([...wk3, ...wk1, ...wk2]);   // deliberately unsorted
+    t("games group into weekends regardless of input order", groups.length === 3);
+    t("...in date order", groups[0].startsAt < groups[1].startsAt && groups[1].startsAt < groups[2].startsAt);
+    t("games on the same weekend stay together", groups[0].games.length === 2);
+    t("an empty list groups into nothing", groupByMatchWeek([]).length === 0);
+    t("a game with a nonsense kickoff is dropped, not grouped",
+      groupByMatchWeek([{ away: "A", home: "B", kickoffUTC: "not a date" }]).length === 0);
+  }
+
+  // Filling starts from the week on screen.
+  {
+    const plan = planPreseasonImport([...wk1, ...wk2], {}, { startWeek: 2 });
+    t("importing while on Week 2 starts there", plan.weeks.join() === "2,3");
+    const overflow = planPreseasonImport([...wk1, ...wk2, ...wk3], {}, { startWeek: 3 });
+    t("batches with no trial week left are reported, not dropped silently",
+      overflow.skipped.some(s => s.reason === "no_week_left"));
+  }
+
+  // Slot mechanics
+  {
+    const plan = planPreseasonImport(wk1, {});
+    t("games are written into free slots", plan.writes.length === 2);
+    t("...with the kickoff carried through", plan.writes[0].matchup.kickoffUTC === wk1[0].kickoffUTC);
+    t("...into distinct slots", plan.writes[0].fixtureId !== plan.writes[1].fixtureId);
+    t("every planned write is complete enough to lock", importIsSafe(plan));
+
+    const slots = { [plan.writes[0].fixtureId]: plan.writes[0].matchup };
+    const again = planPreseasonImport(wk1, slots);
+    t("a second import doesn't duplicate", again.writes.length === 1);
+    t("...and says why the other was skipped", again.skipped[0].reason === "already_set");
+    t("...and never reuses a taken slot", again.writes[0].fixtureId !== plan.writes[0].fixtureId);
   }
 
   t("a half-filled slot is left alone rather than completed",
-    planPreseasonImport([game("KC", "SF", 1, T)], { pre1_1: { home: "DAL" } })
-      .writes[0].fixtureId !== "pre1_1");
-
-  // Week routing — if this were wrong, "clear Week 2" would clear the wrong
-  // games.
-  {
-    const plan = planPreseasonImport([game("KC", "SF", 2, T), game("BUF", "NYJ", 3, T)], {});
-    t("each game goes to its own preseason week",
-      plan.writes.find(w => w.label === "KC @ SF").week === 2
-      && plan.writes.find(w => w.label === "BUF @ NYJ").week === 3);
-    t("the plan reports which weeks it touched", plan.weeks.join() === "2,3");
-  }
-  t("a game with no week falls back to the one on screen",
-    planPreseasonImport([game("KC", "SF", null, T)], {}, { defaultWeek: 3 }).writes[0].week === 3);
+    planPreseasonImport(wk1, { pre1_1: { home: "DAL" } }).writes[0].fixtureId !== "pre1_1");
 
   // Rubbish in
   t("a game missing a kickoff is skipped",
-    planPreseasonImport([{ away: "KC", home: "SF", preWeek: 1 }], {}).skipped[0].reason === "incomplete");
+    planPreseasonImport([{ away: "KC", home: "SF" }], {}).skipped[0].reason === "incomplete");
   t("a team playing itself is skipped",
-    planPreseasonImport([game("KC", "KC", 1, T)], {}).skipped[0].reason === "same_team_twice");
+    planPreseasonImport([g("KC", "KC", "2026-08-13T23:00:00Z")], {}).skipped[0].reason === "same_team_twice");
   t("nulls don't throw", planPreseasonImport([null, undefined], {}).writes.length === 0);
   t("an empty list is fine", planPreseasonImport([], {}).writes.length === 0);
 
-  // A week only holds 16.
   {
-    const many = Array.from({ length: 20 }, (_, i) => game(TEAM_CODES[i], TEAM_CODES[i + 20] || "KC", 1, T));
+    const many = Array.from({ length: 20 }, (_, i) =>
+      g(TEAM_CODES[i], TEAM_CODES[(i + 16) % 32], "2026-08-13T23:00:00Z"));
     const plan = planPreseasonImport(many, {});
     t("a week never takes more than its 16 slots", plan.writes.length <= 16);
     t("...and the overflow is reported", plan.skipped.some(s => s.reason === "week_full"));
   }
 
-  // The confirmation has to be honest about what it isn't doing.
+  // The dialog has to make the grouping checkable — that's how this bug
+  // would have been caught before it was written.
   {
-    const plan = planPreseasonImport(
-      [game("KC", "SF", 1, T), { away: "BUF", home: "NYJ", preWeek: 1 }], {});
-    const { lines, notes } = describeImport(plan);
-    t("the dialog lists what will be added", lines.length === 1 && lines[0].includes("KC @ SF"));
-    t("...and mentions what was skipped", notes.join(" ").includes("skipped"));
+    const plan = planPreseasonImport([...wk1, ...wk2], {}, { startWeek: 1 });
+    const { lines, notes } = describeImport(plan, "Europe/Athens");
+    t("the dialog groups under a dated week heading",
+      lines[0].includes("Preseason Week 1") && /\d/.test(lines[0]));
+    t("...and lists the games under it", lines.some(l => l.includes("KC @ SF")));
+    t("skips are reported honestly",
+      describeImport(planPreseasonImport([{ away: "KC", home: "SF" }], {}), "UTC").notes.join(" ").includes("skipped"));
   }
 }
 
