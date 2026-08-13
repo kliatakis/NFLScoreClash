@@ -30,6 +30,7 @@ import {
 } from "../src/lib/backup.js";
 import { planResultWrites, findFixture, findPlayoffSlot } from "../src/lib/resultsMatching.js";
 import { assessFetchHealth, describeAge } from "../src/lib/fetchHealth.js";
+import { planPreseasonImport, describeImport, importIsSafe } from "../src/lib/preseasonImport.js";
 import { computeSeasonAwards, isSeasonComplete } from "../src/lib/awards.js";
 import { espnDateRange } from "../src/lib/resultsProviders.js";
 import {
@@ -1212,6 +1213,77 @@ group("Preseason trial");
   t("a trial slot needs teams AND a kickoff, same as a playoff slot",
     !isPreseasonGameReady({ home: "KC", away: "SF" })
     && isPreseasonGameReady({ home: "KC", away: "SF", kickoffUTC: "2026-08-28T23:00:00Z" }));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+group("Importing the preseason schedule");
+{
+  const game = (away, home, preWeek, iso) => ({ away, home, preWeek, kickoffUTC: iso });
+  const T = "2026-08-28T23:00:00Z";
+
+  {
+    const plan = planPreseasonImport([game("KC", "SF", 1, T), game("BUF", "NYJ", 1, T)], {});
+    t("games are written into free slots", plan.writes.length === 2);
+    t("...in the week ESPN reported", plan.writes.every(w => w.week === 1));
+    t("...with the kickoff carried through", plan.writes[0].matchup.kickoffUTC === T);
+    t("...into distinct slots", plan.writes[0].fixtureId !== plan.writes[1].fixtureId);
+    t("every planned write is complete enough to lock", importIsSafe(plan));
+  }
+
+  // THE rule: pressing the button twice must not duplicate or overwrite.
+  {
+    const first = planPreseasonImport([game("KC", "SF", 1, T)], {});
+    const slots = { [first.writes[0].fixtureId]: first.writes[0].matchup };
+    const again = planPreseasonImport([game("KC", "SF", 1, T)], slots);
+    t("a second import adds nothing", again.writes.length === 0);
+    t("...and says why", again.skipped[0].reason === "already_set");
+
+    // A game an admin typed in by hand is equally untouchable.
+    const other = planPreseasonImport([game("BUF", "NYJ", 1, T)], slots);
+    t("a new game still lands alongside it", other.writes.length === 1);
+    t("...without reusing the taken slot", other.writes[0].fixtureId !== first.writes[0].fixtureId);
+  }
+
+  t("a half-filled slot is left alone rather than completed",
+    planPreseasonImport([game("KC", "SF", 1, T)], { pre1_1: { home: "DAL" } })
+      .writes[0].fixtureId !== "pre1_1");
+
+  // Week routing — if this were wrong, "clear Week 2" would clear the wrong
+  // games.
+  {
+    const plan = planPreseasonImport([game("KC", "SF", 2, T), game("BUF", "NYJ", 3, T)], {});
+    t("each game goes to its own preseason week",
+      plan.writes.find(w => w.label === "KC @ SF").week === 2
+      && plan.writes.find(w => w.label === "BUF @ NYJ").week === 3);
+    t("the plan reports which weeks it touched", plan.weeks.join() === "2,3");
+  }
+  t("a game with no week falls back to the one on screen",
+    planPreseasonImport([game("KC", "SF", null, T)], {}, { defaultWeek: 3 }).writes[0].week === 3);
+
+  // Rubbish in
+  t("a game missing a kickoff is skipped",
+    planPreseasonImport([{ away: "KC", home: "SF", preWeek: 1 }], {}).skipped[0].reason === "incomplete");
+  t("a team playing itself is skipped",
+    planPreseasonImport([game("KC", "KC", 1, T)], {}).skipped[0].reason === "same_team_twice");
+  t("nulls don't throw", planPreseasonImport([null, undefined], {}).writes.length === 0);
+  t("an empty list is fine", planPreseasonImport([], {}).writes.length === 0);
+
+  // A week only holds 16.
+  {
+    const many = Array.from({ length: 20 }, (_, i) => game(TEAM_CODES[i], TEAM_CODES[i + 20] || "KC", 1, T));
+    const plan = planPreseasonImport(many, {});
+    t("a week never takes more than its 16 slots", plan.writes.length <= 16);
+    t("...and the overflow is reported", plan.skipped.some(s => s.reason === "week_full"));
+  }
+
+  // The confirmation has to be honest about what it isn't doing.
+  {
+    const plan = planPreseasonImport(
+      [game("KC", "SF", 1, T), { away: "BUF", home: "NYJ", preWeek: 1 }], {});
+    const { lines, notes } = describeImport(plan);
+    t("the dialog lists what will be added", lines.length === 1 && lines[0].includes("KC @ SF"));
+    t("...and mentions what was skipped", notes.join(" ").includes("skipped"));
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────────────

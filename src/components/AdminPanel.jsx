@@ -15,6 +15,7 @@ import {
   fsClearPreseasonTrial, fsWipeSeasonPlay, fsReadEverything,
 } from "../firebase.js";
 import { buildBackup, backupFilename } from "../lib/backup.js";
+import { planPreseasonImport, describeImport, importIsSafe } from "../lib/preseasonImport.js";
 import { assessFetchHealth } from "../lib/fetchHealth.js";
 import { getScoringSettings, pickWinner } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
@@ -432,6 +433,62 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
   const weekHasAnything = weekCounts.set > 0 || weekCounts.scored > 0 || weekCounts.picks > 0;
   const anyAnything = allCounts.set > 0 || allCounts.scored > 0 || allCounts.picks > 0;
 
+  // ── Import from ESPN ─────────────────────────────────────────────────────
+  // The whole point of a live rehearsal is that it uses real, upcoming games.
+  // Typing sixteen matchups and kickoff times out of another browser tab is
+  // both tedious and the easiest place to fat-finger a time — which would
+  // produce a game that opens for picks and locks at the wrong moment.
+  const [importing, setImporting] = useState(false);
+  const [importPlan, setImportPlan] = useState(null);
+
+  const loadSchedule = async () => {
+    setImporting(true); setError(""); setMsg("");
+    try {
+      const res = await fetch("/api/preseason-schedule?days=10");
+      const data = await res.json();
+      if (!data.success) { setError(data.error || "Couldn't read the schedule."); return; }
+      const plan = planPreseasonImport(data.games, slots, { defaultWeek: week });
+      if (plan.writes.length === 0) {
+        setError(plan.skipped.length > 0
+          ? "Nothing new to add — everything ESPN is showing in the next 10 days is already set up."
+          : "ESPN isn't listing any upcoming preseason games in the next 10 days.");
+        return;
+      }
+      // A part-filled slot would open for picks and never lock. Refuse rather
+      // than write something that behaves badly later.
+      if (!importIsSafe(plan)) { setError("That schedule came back incomplete — nothing was added."); return; }
+      setImportPlan(plan);
+    } catch (err) {
+      console.error("Couldn't load the preseason schedule", err);
+      setError("Couldn't reach the schedule service. Try again, or set the games up by hand.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const applyImport = async () => {
+    if (!importPlan) return;
+    setBusy(true); setError("");
+    const done = [], failed = [];
+    for (const w of importPlan.writes) {
+      try { await fsSetPreseasonFixture(w.fixtureId, w.matchup); done.push(w); }
+      catch (err) { console.error("Couldn't set trial game", w.fixtureId, err); failed.push(w.label); }
+    }
+    logChange("playoff_set", {
+      target: "preseason-import",
+      summary: `Imported ${done.length} preseason game(s) from ESPN · ${done.map(w => w.label).slice(0, 6).join(", ")}`
+        + (done.length > 6 ? `, +${done.length - 6} more` : ""),
+      detail: { added: done.map(w => ({ fixtureId: w.fixtureId, week: w.week, ...w.matchup })), failed },
+    });
+    setImportPlan(null);
+    setBusy(false);
+    if (done.length > 0 && importPlan.weeks.length === 1) setWeek(importPlan.weeks[0]);
+    setMsg(failed.length === 0
+      ? `Added ${done.length} game${done.length === 1 ? "" : "s"} from ESPN — kickoff times included. Check them, then tell everyone to pick.`
+      : `Added ${done.length}, but ${failed.length} failed: ${failed.join(", ")}.`);
+    setTimeout(() => setMsg(""), 12000);
+  };
+
   // One code path for both buttons — "clear week 2" and "clear everything"
   // differ only in which ids they're handed.
   const clearTrial = async (scope) => {
@@ -487,6 +544,18 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
         </span>
       </div>
 
+      <div className="backup-block">
+        <div className="form-label">Set the games up</div>
+        <p className="backup-note">
+          Pull the next ten days of preseason fixtures straight from ESPN — teams and kickoff times,
+          already in the right week. Games that have kicked off are skipped, and nothing already set
+          up is touched. Or fill the rows in by hand below.
+        </p>
+        <button className="btn btn-primary btn-sm" disabled={importing || busy} onClick={loadSchedule}>
+          {importing ? "Reading ESPN…" : "Import from ESPN"}
+        </button>
+      </div>
+
       <p className="backup-note" style={{ marginBottom: 12 }}>
         Teams AND a kickoff time, or the game stays closed — without a time there's nothing to lock
         against. Enter the scores in the Results tab under “Preseason Trial”, or let the daily fetch
@@ -529,6 +598,26 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
           </div>
         )}
       </div>
+
+      {importPlan && (() => {
+        const { lines, notes } = describeImport(importPlan);
+        return (
+          <ConfirmDialog
+            tone="warn"
+            title={`Add ${importPlan.writes.length} game${importPlan.writes.length === 1 ? "" : "s"} from ESPN?`}
+            lines={[...lines.slice(0, 10), ...(lines.length > 10 ? [`…and ${lines.length - 10} more`] : [])]}
+            note={
+              "Kickoff times come straight from ESPN, so they're right. Nothing already set up is "
+              + "changed, and each game goes into the preseason week ESPN says it belongs to."
+              + (notes.length ? ` (${notes.join("; ")}.)` : "")
+            }
+            confirmLabel={`Add ${importPlan.writes.length}`}
+            busy={busy}
+            onConfirm={applyImport}
+            onCancel={() => setImportPlan(null)}
+          />
+        );
+      })()}
 
       {confirming != null && (() => {
         const scope = confirming;

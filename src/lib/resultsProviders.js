@@ -78,6 +78,9 @@ function normalizeEspnEvent(event) {
     isPreSeason,
     seasonYear: toFiniteNumber(event?.season?.year),
     week: toFiniteNumber(event?.week?.number),
+    // Carried through for the schedule importer, which needs a kickoff to
+    // set a game up. Scoring ignores it — a result's time doesn't matter.
+    kickoffUTC: typeof event?.date === "string" ? event.date : null,
   };
 }
 
