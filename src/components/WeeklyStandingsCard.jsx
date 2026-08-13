@@ -1,12 +1,17 @@
 import { useMemo, useState } from "react";
-import { calcWeeklyStandings, weeklyWinTally, getScoringSettings, completedWeeks, weekAccuracyBadges } from "../lib/scoring.js";
+import { calcWeeklyStandings, weeklyWinTally, getScoringSettings, allCompletedWeeks, weekAccuracyBadges } from "../lib/scoring.js";
+import { weekLabel, weekShortLabel, isTrialWeek } from "../data/fixtures.js";
 import Avatar from "./Avatar.jsx";
 
 // Per-week race, separate from the cumulative season table — so there's still
 // something to win once someone has run away with the title.
 export default function WeeklyStandingsCard({ league, user, allUsers, allPredictions, results }) {
   const scoring = getScoringSettings(league);
-  const weeks = useMemo(() => completedWeeks(results), [results]);
+  // Trial weeks included. weeklyWinTally already counts them, so listing only
+  // real weeks here meant this tab said "no weeks played yet" during the trial
+  // while handing out medals for a week it refused to show — the one screen
+  // the rehearsal most needs to prove.
+  const weeks = useMemo(() => allCompletedWeeks(results), [results]);
   const [pickedWeek, setPickedWeek] = useState(null);
   const week = pickedWeek != null && weeks.includes(pickedWeek) ? pickedWeek : weeks[0];
 
@@ -38,11 +43,14 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
     <div>
       <div className="glass card" style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-          <div className="card-title" style={{ marginBottom: 0 }}>Week {week} Points</div>
+          <div className="card-title" style={{ marginBottom: 0 }}>{weekLabel(week)} Points</div>
           {weeks.length > 1 && (
-            <select className="form-select form-select-sm" style={{ maxWidth: 130 }}
-              value={week} onChange={e => setPickedWeek(Number(e.target.value))}>
-              {weeks.map(w => <option key={w} value={w}>Week {w}</option>)}
+            <select className="form-select form-select-sm" style={{ maxWidth: 160 }}
+              value={week}
+              // A select value is always a string. Number("pre1") is NaN, so
+              // coercing unconditionally made every trial week unselectable.
+              onChange={e => setPickedWeek(isTrialWeek(e.target.value) ? e.target.value : Number(e.target.value))}>
+              {weeks.map(w => <option key={w} value={w}>{weekLabel(w)}</option>)}
             </select>
           )}
         </div>
@@ -112,17 +120,21 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
             ) : (
               <>
                 <div className="badge-strip">
-                  {wins.slice().sort((a, b) => a - b).map(w => (
-                    <span key={`win-${w}`} className="badge-medal" title={`Top scorer in Week ${w}`}>
+                  {/* perWeek arrives newest-first, so reversing gives
+                      chronological order. It used to sort with `a - b`, which
+                      is NaN the moment a trial key is in the list — and a NaN
+                      comparator silently leaves the order alone. */}
+                  {wins.slice().reverse().map(w => (
+                    <span key={`win-${w}`} className="badge-medal" title={`Top scorer in ${weekLabel(w)}`}>
                       <span className="badge-medal-icon">🏅</span>
-                      <span className="badge-medal-week">WK {w}</span>
+                      <span className="badge-medal-week">{weekShortLabel(w)}</span>
                     </span>
                   ))}
                   {accuracy.slice().reverse().map(b => (
                     <span key={`acc-${b.week}`} className={`badge-medal acc-${b.id}`}
-                      title={`${b.label} in Week ${b.week} — ${b.blurb} of ${b.games} games, +${b.points} points`}>
+                      title={`${b.label} in ${weekLabel(b.week)} — ${b.blurb} of ${b.games} games, +${b.points} points`}>
                       <span className="badge-medal-icon">{b.icon}</span>
-                      <span className="badge-medal-week">WK {b.week}</span>
+                      <span className="badge-medal-week">{weekShortLabel(b.week)}</span>
                     </span>
                   ))}
                 </div>

@@ -218,6 +218,10 @@ export async function fsReadEverything({ includeHistory = false } = {}) {
       scores: raw.scores || {},
       specials: raw.specials || {},
       playoffFixtures: raw.playoffFixtures || {},
+      // Not data, and deliberately not written into backup files — carried
+      // here only so a replace-mode restore can put the switch back the way
+      // it found it. See planRestore.
+      trialActive: raw.trialActive === true,
     },
   };
 }

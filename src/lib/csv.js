@@ -102,7 +102,13 @@ export function buildPicksCsv({ fixtures = [], members = [], allPredictions = {}
       : r.homeScore > r.awayScore ? f.home : f.away;
 
     rows.push([
-      f.week != null ? f.week : (f.roundLabel || f.label || "Playoffs"),
+      // Three kinds of fixture end up in this column. Preseason games carry
+      // `preWeek`, not `week`, and without a case of their own they fell
+      // through to the playoff fallback and exported as "Playoffs" — a trial
+      // game filed under the postseason.
+      f.week != null ? f.week
+        : f.preWeek != null ? `Preseason ${f.preWeek}`
+        : (f.roundLabel || f.label || "Playoffs"),
       f.id,
       f.kickoffUTC || "",
       f.away ? teamName(f.away) : "",

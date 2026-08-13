@@ -1,5 +1,6 @@
 import { useEffect, useMemo, Fragment } from "react";
 import { calcStandingsWithMovement, getScoringSettings, explainTiebreak, hasCompletedWeek, weeklyWinTally, describeBonuses } from "../lib/scoring.js";
+import { weekLabel } from "../data/fixtures.js";
 import { useFlipRows } from "../lib/hooks.js";
 import { fsSaveLeagueStandingsSnapshot } from "../firebase.js";
 import Avatar from "./Avatar.jsx";
@@ -113,7 +114,7 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
                       const weeks = weeksWonBy(entry.uid);
                       if (weeks.length === 0) return null;
                       return (
-                        <span className="week-badge" title={`Top scorer in week${weeks.length === 1 ? "" : "s"} ${weeks.slice().reverse().join(", ")}`}>
+                        <span className="week-badge" title={`Top scorer in ${weeks.slice().reverse().map(weekLabel).join(", ")}`}>
                           🏅{weeks.length > 1 ? `×${weeks.length}` : ""}
                         </span>
                       );

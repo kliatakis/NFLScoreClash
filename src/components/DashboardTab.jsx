@@ -5,9 +5,10 @@ import {
 } from "../lib/scoring.js";
 import {
   REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, PLAYOFF_FIXTURES, PRESEASON_FIXTURES,
-  isPlayoffMatchupReady, TRIAL_WEEK_KEYS,
+  isPlayoffMatchupReady, TRIAL_WEEK_KEYS, PRESEASON_WEEKS, preseasonFixturesForWeek,
+  fixturesForWeek, weekLabel,
 } from "../data/fixtures.js";
-import { fsSubscribePlayoffFixtures } from "../firebase.js";
+import { fsSubscribePlayoffFixtures, fsSubscribeTrialActive } from "../firebase.js";
 import { teamTint } from "../data/teams.js";
 import { formatKickoff, formatDuration } from "../lib/time.js";
 import { useCountUp, useSeasonPicksLock } from "../lib/hooks.js";
@@ -64,7 +65,24 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
   // The full slate for the earliest week that still has unplayed games —
   // rather than an arbitrary "next 6" cut that could straddle two weeks.
   // Shared with the Predictions week selector so the two always agree.
-  const upcomingWeek = useMemo(() => nextOpenWeek(results), [results]);
+  //
+  // While the trial is running that agreement is the whole point. The
+  // regular season is closed for picks, so pointing at Week 1 here told
+  // everyone to go and do something the Predictions tab then refused —
+  // "Pick Week 1, 0 of 16", a nudge naming people who couldn't have picked,
+  // and an Upcoming strip for games nobody could touch. During the trial the
+  // dashboard follows the trial.
+  const [trialActive, setTrialActive] = useState(false);
+  useEffect(() => fsSubscribeTrialActive(setTrialActive), []);
+  const liveTrialWeek = useMemo(() => {
+    if (!trialActive) return null;
+    const now = Date.now();
+    const w = PRESEASON_WEEKS.find(n =>
+      preseasonFixturesForWeek(n).some(f => new Date(f.kickoffUTC).getTime() > now - 6 * 3600000));
+    return w != null ? `pre${w}` : `pre${PRESEASON_WEEKS[PRESEASON_WEEKS.length - 1]}`;
+  }, [trialActive]);
+  const seasonWeek = useMemo(() => nextOpenWeek(results), [results]);
+  const upcomingWeek = liveTrialWeek ?? seasonWeek;
 
   // ── The playoffs ──────────────────────────────────────────────────────────
   // Everything above keys off REGULAR_SEASON_FIXTURES, so from the moment
@@ -112,9 +130,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
     return { made, total: openPlayoffGames.length };
   }, [openPlayoffGames, allPredictions, user.uid]);
 
-  const upcoming = upcomingWeek != null
-    ? REGULAR_SEASON_FIXTURES.filter(f => f.week === upcomingWeek)
-    : openPlayoffGames;
+  const upcoming = upcomingWeek != null ? fixturesForWeek(upcomingWeek) : openPlayoffGames;
 
   const me = standings.find(s => s.uid === user.uid);
 
@@ -142,7 +158,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
   const myPicks = (allPredictions[user.uid] || {}).picks || {};
   const pickProgress = useMemo(() => {
     if (upcomingWeek == null) return null;
-    const weekFixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === upcomingWeek);
+    const weekFixtures = fixturesForWeek(upcomingWeek);
     const made = weekFixtures.filter(f => pickWinner(myPicks[f.id])).length;
     return { made, total: weekFixtures.length };
   }, [upcomingWeek, allPredictions, user.uid]);
@@ -158,13 +174,15 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
   const live = useMemo(() => {
     // Newest first: a stale part-played week (a game whose result never
     // arrived) would otherwise sit there forever and mask the current one.
-    const weeks = REGULAR_SEASON_FIXTURES.map(f => f.week);
-    for (const w of [...new Set(weeks)].sort((a, b) => b - a)) {
+    // Trial weeks first while one is running — that's the week being played.
+    const weeks = [...(liveTrialWeek ? [liveTrialWeek] : []),
+      ...[...new Set(REGULAR_SEASON_FIXTURES.map(f => f.week))].sort((a, b) => b - a)];
+    for (const w of weeks) {
       const st = liveWeekStatus(user.uid, w, allPredictions, results, scoring);
       if (st) return st;
     }
     return null;
-  }, [allPredictions, results, user.uid, league]);
+  }, [allPredictions, results, user.uid, league, liveTrialWeek]);
 
   // Who still hasn't done their picks. Nagging is the point.
   const pending = useMemo(
@@ -203,7 +221,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
       // counts in January — and because it could never be marked done, the
       // whole card sat there nagging for the entire playoffs.
       ...(upcomingWeek == null || !pickProgress ? [] : [{
-        id: "week", label: `Pick Week ${upcomingWeek}`,
+        id: "week", label: `Pick ${weekLabel(upcomingWeek)}`,
         note: `${pickProgress.made} of ${pickProgress.total} games`,
         done: pickProgress.made === pickProgress.total, go: "predictions",
       }]),
@@ -359,7 +377,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
               <span className="form-text">
                 <b>{live.tier.label} still alive</b>
                 <span>
-                  {live.correct} from {live.played} in Week {live.week}
+                  {live.correct} from {live.played} in {weekLabel(live.week)}
                   {" · "}{live.remaining} to go
                 </span>
               </span>
@@ -383,7 +401,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
             onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setTab("predictions"); } }}>
             <div className="nudge-head">
               <span className="mini-label inline">
-                {mine ? `Your Week ${pending.week} picks` : `Week ${pending.week} picks`}
+                {mine ? `Your ${weekLabel(pending.week)} picks` : `${weekLabel(pending.week)} picks`}
               </span>
               {pending.firstKickoffUTC && (
                 <span className="nudge-clock">
@@ -505,7 +523,7 @@ export default function DashboardTab({ user, league, allUsers, allPredictions, r
       </div>
 
       <div className="card-title">
-        {upcomingWeek != null ? `Week ${upcomingWeek} — Upcoming Games` : "Playoffs — Upcoming Games"}
+        {upcomingWeek != null ? `${weekLabel(upcomingWeek)} — Upcoming Games` : "Playoffs — Upcoming Games"}
       </div>
       {/* "No upcoming games loaded" reads like a failure. Once the regular
           season is done it isn't one — and if the playoff matchups simply

@@ -71,9 +71,14 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
   const tabs = trialOpen ? [TRIAL_TAB, ...PREDICTIONS_TABS] : PREDICTIONS_TABS;
 
   // A tab that vanishes underneath you (the admin just cleared the trial)
-  // must not leave the page blank.
+  // must not leave the page blank. And while a trial IS running, open on it:
+  // the Games tab is entirely locked during those weeks, so landing there —
+  // which is where the dashboard's "Pick Preseason Week 2" button used to
+  // send people — shows a wall of unpickable fixtures and no clue why.
+  const trialAutoSet = useRef(false);
   useEffect(() => {
-    if (!trialOpen && view === "preseason") setView("games");
+    if (!trialOpen && view === "preseason") { setView("games"); return; }
+    if (trialOpen && !trialAutoSet.current) { trialAutoSet.current = true; setView("preseason"); }
   }, [trialOpen, view]);
 
   // Open on the week that's actually live, not Week 1.

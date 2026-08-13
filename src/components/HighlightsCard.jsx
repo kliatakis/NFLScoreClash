@@ -4,6 +4,7 @@ import {
   computeHighlights, computeWeeklyRecap, getScoringSettings, resultWinner,
   MIN_LEAGUE_SIZE_FOR_HIGHLIGHTS,
 } from "../lib/scoring.js";
+import { weekLabel, isTrialWeek } from "../data/fixtures.js";
 import { TEAMS } from "../data/teams.js";
 import { pickLine, templateParts, usablePool } from "../lib/shoutouts.js";
 import {
@@ -139,16 +140,16 @@ export default function HighlightsCard({ league, user, allUsers, allPredictions,
           <div className="card-title" style={{ marginBottom: 0 }}>Announcement Board</div>
           {/* The week still has to be stated when there's only one and the
               selector is hidden. */}
-          <div className="board-sub">Week {week} · shoutouts and the week in numbers</div>
+          <div className="board-sub">{weekLabel(week)} · shoutouts and the week in numbers</div>
         </div>
         {weeks.length > 1 && (
           <select
             className="form-select form-select-sm"
             style={{ maxWidth: 130 }}
             value={week}
-            onChange={e => setPickedWeek(Number(e.target.value))}
+            onChange={e => setPickedWeek(isTrialWeek(e.target.value) ? e.target.value : Number(e.target.value))}
           >
-            {weeks.map(w => <option key={w} value={w}>Week {w}</option>)}
+            {weeks.map(w => <option key={w} value={w}>{weekLabel(w)}</option>)}
           </select>
         )}
       </div>
@@ -219,7 +220,7 @@ export default function HighlightsCard({ league, user, allUsers, allPredictions,
 
       {nothingHappened && (
         <div style={{ fontSize: 13, color: "var(--muted)" }}>
-          Nobody earned a week bonus in Week {week} — three or more misses across the board.
+          Nobody earned a week bonus in {weekLabel(week)} — three or more misses across the board.
           {/* The upset and clown callouts need a crowd to mean anything, so
               they're gated on league size. Without this line a four-person
               league just sees them stop appearing and has no idea why —

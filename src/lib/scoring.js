@@ -340,7 +340,10 @@ export function pickStreaks(uid, allPredictions, results) {
 // Returns null when there's nothing to say: week not started, already
 // finished, or you didn't pick the whole week so no bonus was ever possible.
 export function liveWeekStatus(uid, week, allPredictions, results, scoring = DEFAULT_SCORING) {
-  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+  // Same week abstraction as the bonus itself — the "sweep still alive"
+  // line is what makes a Sunday tense, and a rehearsal that can't show it
+  // isn't rehearsing the thing people actually feel.
+  const fixtures = fixturesForWeek(week);
   if (fixtures.length === 0) return null;
 
   const picks = (allPredictions[uid] || {}).picks || {};
@@ -376,7 +379,7 @@ export function liveWeekStatus(uid, week, allPredictions, results, scoring = DEF
 // first game of that week locks. Drives the "chase the stragglers" nudge —
 // the recurring friction in a friends league is the person who forgets.
 export function pendingPickers(league, allUsers, allPredictions, week, results = {}) {
-  const fixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week);
+  const fixtures = fixturesForWeek(week);
   if (fixtures.length === 0) return null;
   // Once the week is under way, nagging is pointless — those games are locked.
   if (fixtures.some(f => results[f.id])) return null;
@@ -635,7 +638,10 @@ export function calcSeasonProgression(league, allUsers, allPredictions, results,
 // The story of a week in a handful of facts: who won it, how the field did,
 // who moved, and which game caused the most damage.
 export function computeWeeklyRecap(league, allUsers, allPredictions, results, scoring = DEFAULT_SCORING, forWeek = null) {
-  const weeks = completedWeeks(results);
+  // Trial weeks included. The recap and the shoutouts under it are the loudest
+  // thing the app does, and a rehearsal that leaves them silent doesn't
+  // rehearse them — which is the one part nobody can check by reading code.
+  const weeks = allCompletedWeeks(results);
   if (weeks.length === 0) return null;
   const week = forWeek != null && weeks.includes(forWeek) ? forWeek : weeks[0];
 
@@ -686,8 +692,8 @@ export function computeWeeklyRecap(league, allUsers, allPredictions, results, sc
   // people who actually picked them.
   const members = league?.members || [];
   const games = [];
-  for (const f of REGULAR_SEASON_FIXTURES) {
-    if (f.week !== week || !results[f.id]) continue;
+  for (const f of fixturesForWeek(week)) {
+    if (!results[f.id]) continue;
     let picked = 0, right = 0;
     for (const uid of members) {
       const kind = classifyPick((allPredictions[uid] || {}).picks?.[f.id], results[f.id]);
@@ -967,12 +973,12 @@ export function computeHighlights(league, allUsers, allPredictions, results, for
   const members = league?.members || [];
   const empty = { week: null, weeks: [], sweeps: [], upsets: [], clowns: [], hiddenCount: 0 };
 
-  const weeksWithResults = completedWeeks(results);
+  const weeksWithResults = allCompletedWeeks(results);
   if (weeksWithResults.length === 0) return empty;
 
   // Default to the most recent week, but honour an explicit choice.
   const week = forWeek != null && weeksWithResults.includes(forWeek) ? forWeek : weeksWithResults[0];
-  const weekFixtures = REGULAR_SEASON_FIXTURES.filter(f => f.week === week && results[f.id]);
+  const weekFixtures = fixturesForWeek(week).filter(f => results[f.id]);
 
   // ── Badge shoutouts, grouped by tier ─────────────────────────────────────
   // These are INDIVIDUAL achievements — you either got the week nearly right

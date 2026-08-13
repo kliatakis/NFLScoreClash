@@ -11,7 +11,7 @@ import {
   REGULAR_SEASON_FIXTURES, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, PRESEASON_FIXTURES,
   SCORABLE_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC,
   isPlayoffMatchupReady, isPreseasonFixture, PRESEASON_WEEKS, preseasonFixturesForWeek,
-  fixturesForWeek, isTrialWeek, weekLabel, TRIAL_WEEK_KEYS,
+  fixturesForWeek, isTrialWeek, weekLabel, weekShortLabel, compareWeekKeys, TRIAL_WEEK_KEYS,
 } from "../src/data/fixtures.js";
 import { AVATAR_GROUPS, PRESET_AVATARS } from "../src/data/avatars.js";
 import {
@@ -19,7 +19,8 @@ import {
   calcMatchScore, weekAccuracyBadge, calcStandings, calcWeeklyStandings,
   computeWeeklyRecap, computeHighlights, headToHead, weeklyWinTally,
   calcSeasonProgression, explainTiebreak, finishedWeeks, completedWeeks, describeBonuses,
-  pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek, currentWeekByDate, openPickWeeks, weekPickState, finishedTrialWeeks, allFinishedWeeks,
+  pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek, currentWeekByDate, openPickWeeks, weekPickState,
+  finishedTrialWeeks, allFinishedWeeks, allCompletedWeeks,
 } from "../src/lib/scoring.js";
 import { TEAMS, TEAM_CODES, teamsForSpecialPick } from "../src/data/teams.js";
 import { css } from "../src/theme.js";
@@ -1218,8 +1219,10 @@ group("Preseason trial — a real week, on the real code path");
     t("...but do count as finished trial weeks", finishedTrialWeeks(g.results).join() === "pre1");
     t("...and the two are kept apart in the combined list",
       allFinishedWeeks(g.results).join() === "pre1");
-    t("the highlights board ignores them entirely",
-      computeHighlights(g.league, g.users, g.preds, g.results, null, SC).week === null);
+    // The board DOES cover a trial week — the roasts and the recap are the
+    // part of the app you can only test by watching it run.
+    t("the highlights board covers a trial week too",
+      computeHighlights(g.league, g.users, g.preds, g.results, null, SC).week === "pre1");
   }
 
   // ── The wipe's safety rail ───────────────────────────────────────────────
@@ -1235,6 +1238,128 @@ group("Preseason trial — a real week, on the real code path");
   t("the trial week keys line up with the schedule",
     TRIAL_WEEK_KEYS.join() === "pre1,pre2,pre3"
     && TRIAL_WEEK_KEYS.every(k => fixturesForWeek(k).length === 16));
+
+  // ── Bugs found in the audit after the constants landed ───────────────────
+  // Each of these shipped working for the regular season and silently wrong
+  // for a trial week, which is the exact failure mode the conversion invites.
+
+  // The weekly tab listed real weeks only, so during the trial it said "no
+  // weeks played yet" while weeklyWinTally was handing out medals for one.
+  {
+    const g = trial(0);
+    t("a played trial week is a completed week", allCompletedWeeks(g.results).join() === "pre1");
+    t("...so the weekly tab has something to show", allCompletedWeeks(g.results).length > 0);
+    t("...even though no real week has started", completedWeeks(g.results).length === 0);
+    t("and the tally agrees with it",
+      weeklyWinTally(g.league, g.users, g.preds, g.results, SC).perWeek.map(w => w.week).join() === "pre1");
+  }
+
+  // Week keys are numbers OR strings, and `1 - "pre1"` is NaN. A NaN
+  // comparator doesn't throw — it just leaves the array as it was.
+  t("mixed week keys sort, real season first",
+    [3, "pre2", 1, "pre1", 12].sort(compareWeekKeys).join() === "1,3,12,pre1,pre2");
+  t("...and never returns NaN", [1, "pre1", 2, "pre3"].every((a, i, arr) =>
+    arr.every(b => !Number.isNaN(compareWeekKeys(a, b)))));
+
+  // Labels: interpolating a raw key gives "Week pre1" / "WK pre1".
+  t("long labels read properly",
+    weekLabel(1) === "Week 1" && weekLabel("pre2") === "Preseason Week 2");
+  t("badge-sized labels too",
+    weekShortLabel(7) === "WK 7" && weekShortLabel("pre3") === "PRE 3");
+
+  // The live "sweep still alive" line and the straggler nudge both hardcoded
+  // the regular-season schedule, so neither said anything during the trial.
+  {
+    const g = trial(0);
+    const fixtures = preseasonFixturesForWeek(1);
+    for (let i = 8; i < 16; i++) delete g.results[fixtures[i].id];
+    const st = liveWeekStatus("a", "pre1", g.preds, g.results, SC);
+    t("a part-played trial week reports live status", st?.played === 8 && st?.total === 16);
+    t("...and says the sweep is still on", st?.perfect === true && st?.tier?.id === "sweep");
+  }
+  {
+    const league = { members: ["a", "b"] }, users = { a: { username: "A" }, b: { username: "B" } };
+    const preds = { a: { picks: {}, specials: {} }, b: { picks: {}, specials: {} } };
+    for (const f of preseasonFixturesForWeek(2)) preds.a.picks[f.id] = { winner: "H" };
+    const pend = pendingPickers(league, users, preds, "pre2", {});
+    t("the nudge finds who hasn't picked a trial week", pend?.missing.map(m => m.uid).join() === "b");
+    t("...and counts the right number of games", pend?.total === 16);
+    t("...and knows when it locks", !!pend?.firstKickoffUTC);
+  }
+
+  // The picks CSV filed preseason games under "Playoffs" — preseason fixtures
+  // carry `preWeek`, not `week`, so they fell through the playoff fallback.
+  {
+    const f = PRESEASON_FIXTURES[0];
+    const csv = buildPicksCsv({
+      fixtures: [f, REGULAR_SEASON_FIXTURES[0], { id: "po_sb", label: "Super Bowl", home: "KC", away: "SF" }],
+      members: [{ uid: "a", username: "A" }],
+      allPredictions: { a: { picks: { [f.id]: { winner: "H" } } } },
+      results: {},
+    });
+    const col = csv.split("\n").slice(1).map(line => line.split(",")[0]);
+    t("a trial game exports as its preseason week", col[0] === "Preseason 1");
+    t("...a regular game as its number", col[1] === "1");
+    t("...and a playoff game still as its round", col[2] === "Super Bowl");
+  }
+
+  // A replace-mode restore rewrites the whole results document. trialActive
+  // isn't in any backup file, so without carrying it across, restoring one
+  // mid-trial switched the trial off and reopened the regular season.
+  {
+    const b = { results: { scores: {}, specials: {}, playoffFixtures: {} }, predictions: {}, leagues: {}, users: {} };
+    const live = { results: { scores: {}, specials: {}, playoffFixtures: {}, trialActive: true } };
+    const on = planRestore(b, live, { mode: "replace", parts: ["results"] });
+    t("a replace during a trial leaves it running", on.results.doc.trialActive === true);
+    const off = planRestore(b, { results: { scores: {}, specials: {}, playoffFixtures: {} } },
+      { mode: "replace", parts: ["results"] });
+    t("...and doesn't invent one when none was running", off.results.doc.trialActive === undefined);
+    t("a merge restore never touches the switch either",
+      !("trialActive" in (planRestore(b, live, { mode: "merge", parts: ["results"] }).results?.doc || {})));
+  }
+
+  // The announcement board, the recap and the shoutouts under them ran off
+  // the regular season alone, so the loudest part of the app sat silent
+  // through the whole rehearsal.
+  {
+    const league = { members: ["a", "b", "c", "d", "e"] };
+    const users = {}; const preds = {};
+    for (const uid of league.members) {
+      users[uid] = { username: uid.toUpperCase() };
+      preds[uid] = { picks: {}, specials: {} };
+    }
+    const results = {};
+    const fixtures = preseasonFixturesForWeek(1);
+    fixtures.forEach((f, i) => {
+      results[f.id] = { homeScore: 24, awayScore: 10 };
+      // Everyone right except E, who misses the first game on their own.
+      for (const uid of league.members) {
+        preds[uid].picks[f.id] = { winner: (uid === "e" && i === 0) ? "A" : "H" };
+      }
+    });
+    const hl = computeHighlights(league, users, preds, results, null, SC);
+    t("a trial week reaches the announcement board", hl.week === "pre1");
+    // Clowns are per-game, listing whoever got it wrong on their own.
+    t("...and the solo miss gets roasted",
+      hl.clowns.length === 1 && hl.clowns[0].users.join() === "E"
+      && hl.clowns[0].fixture.id === fixtures[0].id);
+    // Bonus callouts are grouped by tier: four clean sweeps is one line with
+    // four names, and E's single miss is a Near Perfect line of its own.
+    t("...and the sweepers share one line",
+      hl.sweeps.length === 2 && hl.sweeps[0].badge.id === "sweep"
+      && hl.sweeps[0].users.slice().sort().join() === "A,B,C,D");
+    t("...with the near-perfect tier below it",
+      hl.sweeps[1].badge.id === "near" && hl.sweeps[1].users.join() === "E");
+    t("...while the one who missed gets Near Perfect instead",
+      weekAccuracyBadge("e", "pre1", preds, results, SC)?.id === "near");
+
+    const recap = computeWeeklyRecap(league, users, preds, results, SC);
+    t("the recap covers the trial week", recap?.week === "pre1");
+    t("...counting all sixteen games", recap.gamesPlayed === 16);
+    t("...naming the four who topped it", recap.winners.length === 4);
+    t("...and pointing at the one game that split the league",
+      recap.toughest?.fixture.id === fixtures[0].id);
+  }
 
   // Fetching: preseason games match the constant schedule.
   {

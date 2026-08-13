@@ -476,6 +476,23 @@ export function weekLabel(weekKey) {
   return isTrialWeek(weekKey) ? `Preseason Week ${weekKey.slice(3)}` : `Week ${weekKey}`;
 }
 
+// The badge-sized version. Badges are ~44px wide, so "Preseason Week 1"
+// doesn't fit and "WK pre1" is what you get from interpolating the raw key.
+export function weekShortLabel(weekKey) {
+  return isTrialWeek(weekKey) ? `PRE ${weekKey.slice(3)}` : `WK ${weekKey}`;
+}
+
+// Sort order for a mixed list of week keys: the real season in order, then
+// the trial. Numbers and "pre1" can't share a comparator — `1 - "pre1"` is
+// NaN, and a NaN comparator leaves the array in whatever order it started in,
+// which looks like it worked until the day it doesn't.
+export function compareWeekKeys(a, b) {
+  const at = isTrialWeek(a), bt = isTrialWeek(b);
+  if (at !== bt) return at ? 1 : -1;
+  if (at) return Number(a.slice(3)) - Number(b.slice(3));
+  return a - b;
+}
+
 // Everything that can carry a prediction and a result. Scoring walks this,
 // not just the regular season, so playoff picks count towards the table.
 export const SCORABLE_FIXTURES = [

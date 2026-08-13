@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { SEASON, REGULAR_SEASON_FIXTURES, PLAYOFF_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
+import { SEASON, REGULAR_SEASON_FIXTURES, PLAYOFF_FIXTURES, PRESEASON_FIXTURES, SPECIAL_PICK_TYPES } from "../data/fixtures.js";
 import { TEAMS } from "../data/teams.js";
 import { fsReadEverything, fsApplyRestorePlan } from "../firebase.js";
 import { calcStandings, getScoringSettings } from "../lib/scoring.js";
@@ -184,7 +184,15 @@ export default function BackupPanel({ user, league, isSuperAdmin, logChange }) {
         const playoffs = PLAYOFF_FIXTURES
           .map(f => ({ ...f, ...(all.results.playoffFixtures[f.id] || {}), roundLabel: f.label }))
           .filter(f => f.home && f.away);
-        const fixtures = [...REGULAR_SEASON_FIXTURES, ...playoffs];
+        // Preseason on the same rule: included once there's something in it.
+        // The trial scores for real, so an export taken during it that showed
+        // no preseason rows would disagree with the standings it sits next to.
+        // Once the trial is cleared they drop out again rather than trailing
+        // 48 blank rows through the whole season.
+        const trial = PRESEASON_FIXTURES.filter(f =>
+          all.results.scores[f.id] !== undefined
+          || Object.values(all.predictions).some(p => (p?.picks || {})[f.id] !== undefined));
+        const fixtures = [...trial, ...REGULAR_SEASON_FIXTURES, ...playoffs];
         csv = buildPicksCsv({ fixtures, members, allPredictions: all.predictions, results: all.results.scores, teamName });
         label = `${fixtures.length} games × ${members.length} player${members.length === 1 ? "" : "s"}`;
       } else {

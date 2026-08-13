@@ -160,6 +160,12 @@ export function planRestore(backup, current, { mode = "merge", parts = RESTORABL
     if (mode === "replace") {
       plan.results = { type: "set", doc: {
         scores: from.scores || {}, specials: from.specials || {}, playoffFixtures: from.playoffFixtures || {},
+        // Carried across explicitly because a replace is a whole-document
+        // write. `trialActive` is a switch, not data — it isn't in any backup
+        // file, so without this line restoring one mid-trial would quietly
+        // switch the trial off and reopen the regular season, with nobody
+        // having asked for either.
+        ...(current?.results?.trialActive === true ? { trialActive: true } : {}),
       } };
       plan.summary.scoresAdded = Object.keys(from.scores || {}).length;
       plan.summary.scoresOverwritten = Object.keys(to.scores).length;
