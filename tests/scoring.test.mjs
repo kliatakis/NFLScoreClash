@@ -1316,6 +1316,14 @@ group("Preseason trial — a real week, on the real code path");
     t("...and doesn't invent one when none was running", off.results.doc.trialActive === undefined);
     t("a merge restore never touches the switch either",
       !("trialActive" in (planRestore(b, live, { mode: "merge", parts: ["results"] }).results?.doc || {})));
+
+    // Which weeks have been cleared is what stops the fetcher re-adding them,
+    // so losing it to a restore would re-arm the bug it exists to prevent.
+    const wiped = { results: { scores: {}, specials: {}, playoffFixtures: {}, clearedTrialWeeks: ["pre1", "pre2"] } };
+    const kept = planRestore(b, wiped, { mode: "replace", parts: ["results"] });
+    t("a replace remembers which trial weeks were cleared",
+      kept.results.doc.clearedTrialWeeks?.join() === "pre1,pre2");
+    t("...and adds nothing when none were", off.results.doc.clearedTrialWeeks === undefined);
   }
 
   // The announcement board, the recap and the shoutouts under them ran off
@@ -1361,21 +1369,151 @@ group("Preseason trial — a real week, on the real code path");
       recap.toughest?.fixture.id === fixtures[0].id);
   }
 
-  // Fetching: preseason games match the constant schedule.
+  // ── THE REGULAR SEASON IS UNTOUCHED ──────────────────────────────────────
+  //
+  // Every change made for the trial was one of two kinds:
+  //   (a) swapping `REGULAR_SEASON_FIXTURES.filter(f => f.week === w)` for
+  //       `fixturesForWeek(w)`, or
+  //   (b) appending trial weeks to a list of real ones.
+  // So the regular season is safe exactly when (a) is an identity for numeric
+  // weeks and (b) appends nothing while no preseason data exists. Both are
+  // asserted directly here, over the whole season, rather than trusted.
+  {
+    for (let w = 1; w <= SEASON.regularSeasonWeeks; w++) {
+      const oldWay = REGULAR_SEASON_FIXTURES.filter(f => f.week === w);
+      const newWay = fixturesForWeek(w);
+      t(`week ${w} resolves to exactly the same fixtures as before`,
+        oldWay.length === newWay.length && oldWay.every((f, i) => f.id === newWay[i].id));
+    }
+    t("a week that doesn't exist still resolves to nothing",
+      fixturesForWeek(99).length === 0 && fixturesForWeek(0).length === 0);
+
+    // A realistic part-played season, with NO preseason data anywhere.
+    const league = { members: ["a", "b", "c", "d", "e"] };
+    const users = {}, preds = {}, results = {};
+    league.members.forEach((uid, n) => {
+      users[uid] = { username: uid.toUpperCase() };
+      preds[uid] = { picks: {}, specials: {} };
+    });
+    let seed = 7;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let w = 1; w <= 5; w++) {
+      for (const f of fixturesForWeek(w)) {
+        results[f.id] = { homeScore: 24, awayScore: rnd() > 0.5 ? 10 : 30 };
+        for (const uid of league.members) preds[uid].picks[f.id] = { winner: rnd() > 0.4 ? "H" : "A" };
+      }
+    }
+    // Week 6 half played, so liveWeekStatus has something to say.
+    const w6 = fixturesForWeek(6);
+    w6.forEach((f, i) => {
+      for (const uid of league.members) preds[uid].picks[f.id] = { winner: "H" };
+      if (i < 8) results[f.id] = { homeScore: 24, awayScore: 10 };
+    });
+
+    t("no trial week is finished", finishedTrialWeeks(results).length === 0);
+    t("the combined finished list is just the real one",
+      allFinishedWeeks(results).join() === finishedWeeks(results).join());
+    t("the combined completed list is just the real one",
+      allCompletedWeeks(results).join() === completedWeeks(results).join());
+    t("the weekly tally covers real weeks only",
+      weeklyWinTally(league, users, preds, results, SC).perWeek.every(x => typeof x.week === "number"));
+    t("the announcement board opens on the newest real week",
+      computeHighlights(league, users, preds, results, null, SC).week === completedWeeks(results)[0]);
+    t("the recap does too",
+      computeWeeklyRecap(league, users, preds, results, SC).week === completedWeeks(results)[0]);
+    t("the season chart still only plots real weeks",
+      calcSeasonProgression(league, users, preds, results, SC).weeks.every(w => typeof w === "number"));
+
+    // The two functions that switched to fixturesForWeek mid-week.
+    const live = liveWeekStatus("a", 6, preds, results, SC);
+    t("the live week status still reads the part-played week",
+      live?.week === 6 && live.played === 8 && live.total === w6.length);
+    t("the straggler nudge still works on an unplayed week",
+      pendingPickers(league, users, preds, 12, results)?.total === fixturesForWeek(12).length);
+    t("...and still refuses once a week is under way",
+      pendingPickers(league, users, preds, 6, results) === null);
+
+    // Points, bonuses and medals: the numbers people actually see.
+    const table = calcStandings(league, users, preds, results, {}, SC);
+    t("every member is still ranked", table.length === 5);
+    t("points reconcile with correct picks plus bonuses", table.every(r =>
+      r.points === r.correct * SC.correctPoints + r.bonusPoints + r.tieBonus));
+    t("no medal comes from anywhere but a real week", table.every(r =>
+      r.medals <= completedWeeks(results).length));
+    t("badges name real weeks only",
+      table.every(r => r.badges.every(b => typeof b.week === "number")));
+    t("a full week still settles its bonus",
+      weekAccuracyBadge("a", 1, preds, results, SC) !== undefined);
+    t("a half-played week still settles nothing",
+      weekAccuracyBadge("a", 6, preds, results, SC) === null);
+
+    // Labels and sorting for an all-numeric season.
+    t("real weeks label as before", weekLabel(6) === "Week 6" && weekShortLabel(6) === "WK 6");
+    t("real weeks sort as before",
+      [5, 1, 12, 3].sort(compareWeekKeys).join() === "1,3,5,12");
+  }
+
+  // ── Fetching, and whether a wipe stays wiped ─────────────────────────────
+  //
+  // The window we ask ESPN for reaches a day back and three days forward, so a
+  // preseason weekend is still fetchable for days after it was played. Clear a
+  // week the night it finished and the 06:00 cron put every score back — and
+  // the same held for the FINAL wipe if it happened before the last preseason
+  // game had aged out. Points from an August friendly, in the Week 1 table,
+  // with nobody having done anything wrong.
   {
     const f = PRESEASON_FIXTURES[0];
     const game = {
       homeAbbr: f.home, awayAbbr: f.away, homeScore: 17, awayScore: 13, completed: true,
       isRegularSeason: false, isPostSeason: false, isPreSeason: true, seasonYear: 2026, week: 2,
     };
-    const out = planResultWrites({ games: [game], currentScores: {}, seasonYear: 2026 });
-    t("a preseason result lands in its fixture", !!out.writes[`scores.${f.id}`]);
-    t("...and nowhere else", Object.keys(out.writes).length === 1);
+    const plan = (preseasonSlots) =>
+      planResultWrites({ games: [game], currentScores: {}, seasonYear: 2026, preseasonSlots });
+
+    // Trial running, week not cleared: fetched, which is the feature.
+    const open = plan(PRESEASON_FIXTURES);
+    t("a preseason result lands in its fixture", !!open.writes[`scores.${f.id}`]);
+    t("...and nowhere else", Object.keys(open.writes).length === 1);
+    t("...never in a regular-season fixture",
+      !Object.keys(open.writes).some(k => k.includes("w1_")));
     t("an existing preseason score is never overwritten",
-      planResultWrites({ games: [game], currentScores: { [f.id]: { homeScore: 1, awayScore: 0 } }, seasonYear: 2026 })
-        .skipped.already_exists === 1);
-    t("a preseason game still can't reach a regular-season fixture",
-      !Object.keys(out.writes).some(k => k.includes("w1_")));
+      planResultWrites({ games: [game], seasonYear: 2026, preseasonSlots: PRESEASON_FIXTURES,
+        currentScores: { [f.id]: { homeScore: 1, awayScore: 0 } } }).skipped.already_exists === 1);
+
+    // No trial running: refused. This is what makes the final wipe durable.
+    const shut = plan([]);
+    t("with no trial running, preseason results are refused",
+      Object.keys(shut.writes).length === 0);
+    t("...and reported rather than silently dropped", shut.skipped.no_preseason_slot === 1);
+
+    // That week cleared, trial still on: refused too, so rehearsing a week and
+    // wiping it doesn't get undone by the next morning's cron.
+    const others = PRESEASON_FIXTURES.filter(x => x.preWeek !== f.preWeek);
+    t("a cleared week isn't re-fetched", Object.keys(plan(others).writes).length === 0);
+    t("...while the weeks still in the trial are", (() => {
+      const g2 = PRESEASON_FIXTURES.find(x => x.preWeek === 2);
+      return !!planResultWrites({
+        games: [{ ...game, homeAbbr: g2.home, awayAbbr: g2.away }],
+        currentScores: {}, seasonYear: 2026, preseasonSlots: others,
+      }).writes[`scores.${g2.id}`];
+    })());
+
+    // Fail closed: forgetting the argument must not mean "write everything".
+    t("omitting the slots entirely refuses too",
+      Object.keys(planResultWrites({ games: [game], currentScores: {}, seasonYear: 2026 }).writes).length === 0);
+
+    // And none of this touches the regular season, which is fetched from the
+    // schedule and has no switch to be off.
+    {
+      const r = REGULAR_SEASON_FIXTURES[0];
+      const out = planResultWrites({
+        games: [{ homeAbbr: r.home, awayAbbr: r.away, homeScore: 21, awayScore: 20, completed: true,
+          isRegularSeason: true, isPostSeason: false, isPreSeason: false, seasonYear: 2026, week: r.week }],
+        currentScores: {}, seasonYear: 2026,
+      });
+      t("a regular-season result is written with no slots configured at all",
+        !!out.writes[`scores.${r.id}`] && Object.keys(out.writes).length === 1);
+    }
   }
 }
 

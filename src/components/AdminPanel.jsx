@@ -619,7 +619,8 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
               (scope === "all"
                 ? "This also ends the trial and reopens the regular season. "
                 : `Only Week ${scope} goes — the other preseason weeks are left alone. `)
-              + "Those points, medals and week bonuses disappear from the standings. Regular-season picks, season picks and scoring settings are untouched."
+              + "Those points, medals and week bonuses disappear from the standings. Regular-season picks, season picks and scoring settings are untouched. "
+              + "The results fetcher won't bring these games back; starting a new trial re-enables them."
             }
             confirmLabel={scope === "all" ? "Clear and end the trial" : `Clear Week ${scope}`}
             busy={busy}

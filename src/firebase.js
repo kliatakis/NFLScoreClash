@@ -222,6 +222,7 @@ export async function fsReadEverything({ includeHistory = false } = {}) {
       // here only so a replace-mode restore can put the switch back the way
       // it found it. See planRestore.
       trialActive: raw.trialActive === true,
+      clearedTrialWeeks: Array.isArray(raw.clearedTrialWeeks) ? raw.clearedTrialWeeks : [],
     },
   };
 }
@@ -584,7 +585,13 @@ export function fsSubscribePlayoffFixtures(callback) {
 // table back to zero. Both are decisions.
 
 export async function fsSetTrialActive(on) {
-  await setDoc(doc(db, "results", RESULTS_DOC_ID), { trialActive: !!on }, { merge: true });
+  await setDoc(doc(db, "results", RESULTS_DOC_ID), {
+    trialActive: !!on,
+    // Starting a trial forgets what a previous one cleared, so a fresh
+    // rehearsal can fetch every week again. Ending one leaves the list alone —
+    // that's what keeps a wipe wiped.
+    ...(on ? { clearedTrialWeeks: [] } : {}),
+  }, { merge: true });
 }
 
 export function fsSubscribeTrialActive(callback) {
@@ -620,9 +627,19 @@ export async function fsClearPreseasonTrial(fixtureIds) {
   let scoresCleared = 0, picksCleared = 0;
 
   // 1. The scores — one write, so it can't half-apply.
+  //
+  // The same write also remembers which preseason weeks have been cleared, and
+  // that is what makes a wipe stick. The results fetcher looks a day back and
+  // three forward, so clearing a week the night it was played put every score
+  // straight back at 06:00 the next morning — including the final wipe, if it
+  // happened before the last preseason game had aged a day out of the window.
+  // Silent, and it would have landed points from an August friendly in the
+  // Week 1 table.
   try {
     const payload = {};
     for (const id of ids) payload[`scores.${id}`] = deleteField();
+    const weeks = [...new Set(ids.map(id => id.split("_")[0]))];   // "pre1_7" -> "pre1"
+    if (weeks.length) payload.clearedTrialWeeks = arrayUnion(...weeks);
     await updateDoc(doc(db, "results", RESULTS_DOC_ID), payload);
     scoresCleared = ids.length;
   } catch (err) {

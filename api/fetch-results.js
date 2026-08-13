@@ -22,7 +22,7 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { SEASON, PLAYOFF_FIXTURES } from "../src/data/fixtures.js";
+import { SEASON, PLAYOFF_FIXTURES, PRESEASON_FIXTURES } from "../src/data/fixtures.js";
 import { espnProvider } from "../src/lib/resultsProviders.js";
 import { planResultWrites } from "../src/lib/resultsMatching.js";
 import { ALARMING_SKIPS } from "../src/lib/fetchHealth.js";
@@ -79,13 +79,27 @@ export default async function handler(req, res) {
       .map(f => ({ ...f, ...(stored[f.id] || {}) }))
       .filter(f => f.home && f.away);
 
-    // The preseason schedule is a constant, so nothing to assemble — the
-    // matcher defaults to it.
+    // Preseason games are only ever written while a trial is RUNNING, and only
+    // for weeks that haven't been cleared.
+    //
+    // Both halves matter. The window we ask ESPN for reaches a day back and
+    // three forward, so a preseason weekend stays fetchable for days after it
+    // was played — long enough that clearing a week the same night saw every
+    // score reappear at 06:00 the next morning. Without the trial check the
+    // final wipe was just as fragile: clear it on the 29th, and the 30th put
+    // August's results back into a table about to start Week 1.
+    const trialActive = data.trialActive === true;
+    const cleared = new Set(Array.isArray(data.clearedTrialWeeks) ? data.clearedTrialWeeks : []);
+    const preseasonSlots = trialActive
+      ? PRESEASON_FIXTURES.filter(f => !cleared.has(`pre${f.preWeek}`))
+      : [];
+
     const { writes, details, skipped, updatedCount } = planResultWrites({
       games,
       currentScores,
       seasonYear: SEASON.year,
       playoffSlots,
+      preseasonSlots,
     });
 
     if (updatedCount > 0) {
@@ -144,6 +158,8 @@ export default async function handler(req, res) {
       checked: fetchedCount,
       updated: updatedCount,
       playoffSlotsKnown: playoffSlots.length,
+      trialActive,
+      preseasonSlotsOpen: preseasonSlots.length,
       skipped,
       unmatched,
       error: null,

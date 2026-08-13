@@ -20,7 +20,7 @@
 // may well meet in both. That separation is the entire reason the teams-only
 // fallback below is safe.
 
-import { REGULAR_SEASON_FIXTURES, PRESEASON_FIXTURES } from "../data/fixtures.js";
+import { REGULAR_SEASON_FIXTURES } from "../data/fixtures.js";
 import { TEAMS } from "../data/teams.js";
 
 // Prefers an exact match on teams AND week, falling back to teams-only.
@@ -72,8 +72,13 @@ export function planResultWrites({
   // game is then skipped as unmatched — which is correct, and shows up in the
   // fetcher health panel rather than disappearing.
   playoffSlots = [],
-  // The preseason schedule — constants, like the regular season.
-  preseasonSlots = PRESEASON_FIXTURES,
+  // Which preseason games may be written. Empty by default — the same
+  // fail-closed rule as playoffSlots, and for a sharper reason: a preseason
+  // result is only ever wanted while a trial is actually running and that week
+  // hasn't been cleared. Defaulting to the full schedule meant any caller who
+  // forgot to think about it would happily re-add scores an admin had just
+  // deleted. The caller has to say yes.
+  preseasonSlots = [],
 }) {
   const writes = {};
   const details = [];

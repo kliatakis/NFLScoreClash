@@ -166,6 +166,11 @@ export function planRestore(backup, current, { mode = "merge", parts = RESTORABL
         // switch the trial off and reopen the regular season, with nobody
         // having asked for either.
         ...(current?.results?.trialActive === true ? { trialActive: true } : {}),
+        // Same reasoning: which trial weeks have been cleared is what stops
+        // the fetcher re-adding them. Losing it to a restore would quietly
+        // re-arm the bug it exists to prevent.
+        ...(current?.results?.clearedTrialWeeks?.length
+          ? { clearedTrialWeeks: current.results.clearedTrialWeeks } : {}),
       } };
       plan.summary.scoresAdded = Object.keys(from.scores || {}).length;
       plan.summary.scoresOverwritten = Object.keys(to.scores).length;
