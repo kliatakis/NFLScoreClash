@@ -110,6 +110,23 @@ export function planUndo(entry, current, { leagueId = null } = {}) {
 
   if (!entry) return refuse("There's nothing to undo.");
   if (NOT_UNDOABLE[entry.kind]) return refuse(NOT_UNDOABLE[entry.kind]);
+
+  // Clearing a trial week is a BULK operation — every score in the week plus
+  // every player's picks for it — so `target` is "preseason-trial" or
+  // "preseason-week-2" rather than a fixture id. There's no single before/after
+  // to swap back.
+  //
+  // It used to fall through to "this entry was recorded before undo existed",
+  // which blames the app's age for something that was never reversible. On the
+  // most consequential button in the trial, that's the wrong thing to read.
+  if (typeof entry.target === "string" && entry.target.startsWith("preseason-")) {
+    return refuse(
+      "Clearing a trial week wipes every score in it and every player's picks at once, so it "
+      + "can't be put back one entry at a time. Re-enter the scores under Preseason Trial, or "
+      + "restore the backup taken before the wipe."
+    );
+  }
+
   const target = undoTargetOf(entry);
   if (!target) return refuse("This kind of change can't be undone.");
   if (!hasUndoDetail(entry)) {

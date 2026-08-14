@@ -1370,6 +1370,34 @@ group("Preseason trial — a real week, on the real code path");
       recap.toughest?.fixture.id === fixtures[0].id);
   }
 
+  // ── Undo can't resurrect a wiped trial ───────────────────────────────────
+  {
+    // The wipe entry itself: a bulk clear, not a swap.
+    const wipeEntry = { kind: "result_cleared", target: "preseason-trial",
+      detail: { scope: "all", scoresCleared: 48, picksCleared: 200 } };
+    const r = planUndo(wipeEntry, null, { leagueId: "L" });
+    t("undoing a trial wipe is refused", r.ok === false);
+    t("...and says why, rather than blaming the app's age",
+      /can't be put back one entry at a time/.test(r.reason));
+    t("a per-week wipe is refused the same way",
+      planUndo({ ...wipeEntry, target: "preseason-week-2" }, null, { leagueId: "L" }).ok === false);
+
+    // A single trial score entered by hand, then wiped. The freshness check
+    // must stop undo from writing it back after the fact.
+    const one = { kind: "result_set", target: PRESEASON_FIXTURES[0].id,
+      detail: { before: null, after: { homeScore: 20, awayScore: 17 } } };
+    t("undoing a single trial result after the wipe is refused",
+      planUndo(one, null, {}).ok === false);
+    // ...but still works normally while the trial is running.
+    t("...and still works while the score is actually there",
+      planUndo(one, { homeScore: 20, awayScore: 17 }, {}).ok === true);
+
+    // A regular-season clear is untouched by any of this.
+    t("a real fixture is still undoable",
+      planUndo({ kind: "result_cleared", target: REGULAR_SEASON_FIXTURES[0].id,
+        detail: { before: { homeScore: 21, awayScore: 20 }, after: null } }, null, {}).ok === true);
+  }
+
   // ── The rehearsal must leave no trace in the season ──────────────────────
   //
   // Movement arrows are computed against a PERSISTED snapshot of everyone's
