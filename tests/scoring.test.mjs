@@ -19,6 +19,7 @@ import {
   calcMatchScore, weekAccuracyBadge, calcStandings, calcWeeklyStandings,
   computeWeeklyRecap, computeHighlights, headToHead, weeklyWinTally,
   calcSeasonProgression, explainTiebreak, finishedWeeks, completedWeeks, describeBonuses,
+  calcStandingsWithMovement,
   pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek, currentWeekByDate, openPickWeeks, weekPickState,
   finishedTrialWeeks, allFinishedWeeks, allCompletedWeeks,
 } from "../src/lib/scoring.js";
@@ -1367,6 +1368,49 @@ group("Preseason trial — a real week, on the real code path");
     t("...naming the four who topped it", recap.winners.length === 4);
     t("...and pointing at the one game that split the league",
       recap.toughest?.fixture.id === fixtures[0].id);
+  }
+
+  // ── The rehearsal must leave no trace in the season ──────────────────────
+  //
+  // Movement arrows are computed against a PERSISTED snapshot of everyone's
+  // rank, stored on the league. Rehearse a week and that snapshot records
+  // trial ranks — so after the wipe, with every score back at zero and nothing
+  // having happened, people were shown arrows saying they'd climbed or dropped
+  // places. Purely from a rehearsal that no longer existed.
+  {
+    const members = ["a", "b", "c", "d", "e"];
+    const users = {}, preds = {};
+    members.forEach(uid => { users[uid] = { username: uid.toUpperCase() }; preds[uid] = { picks: {}, specials: {} }; });
+    const results = {};
+    preseasonFixturesForWeek(1).forEach((f, i) => {
+      results[f.id] = { homeScore: 24, awayScore: 10 };
+      members.forEach((uid, n) => { preds[uid].picks[f.id] = { winner: n <= 1 ? "H" : (i % (n + 1) === 0 ? "A" : "H") }; });
+    });
+
+    let league = { id: "L", members };
+    const during = calcStandingsWithMovement(league, users, preds, results, {}, SC);
+    t("the trial produces a real order", during.standings[0].points > during.standings[4].points);
+    league = {
+      ...league,
+      standingsSnapshot: during.newSnapshot, standingsSnapshotVersion: during.newVersion,
+      standingsTrackedSnapshot: during.newTrackedSnapshot, standingsTrackedVersion: during.newTrackedVersion,
+    };
+
+    // The wipe clears scores and picks. If it did NOT also clear the league's
+    // snapshot, this is what everyone saw on opening the app:
+    members.forEach(uid => { preds[uid].picks = {}; });
+    const stale = calcStandingsWithMovement(league, users, preds, {}, {}, SC);
+    t("everyone really is back to zero", stale.standings.every(r => r.points === 0));
+    t("...yet the stale snapshot invents movement",
+      Object.values(stale.movementByUid).some(m => m.dir !== "same"));
+
+    // fsClearPreseasonTrial now deletes those four fields, which is this:
+    const cleaned = { id: "L", members };
+    const after = calcStandingsWithMovement(cleaned, users, preds, {}, {}, SC);
+    t("with the snapshot cleared, nobody has moved",
+      Object.values(after.movementByUid).every(m => m.dir === "same" && m.arrows === 0));
+    t("...and the fresh baseline is persisted for the season to build on",
+      after.shouldPersist === true && after.newVersion != null);
   }
 
   // ── THE REGULAR SEASON IS UNTOUCHED ──────────────────────────────────────

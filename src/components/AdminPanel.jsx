@@ -522,14 +522,14 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
     const what = scope === "all" ? "the whole trial" : `Preseason Week ${scope}`;
     setBusy(true); setError("");
     try {
-      const report = await fsClearPreseasonTrial(fixtures.map(f => f.id));
+      const report = await fsClearPreseasonTrial(fixtures.map(f => f.id), { leagueIds: league?.id ? [league.id] : [] });
       // Clearing everything also ends the trial — leaving it running with no
       // data would keep the regular season shut for no reason.
       if (scope === "all" && active) await fsSetTrialActive(false);
       logChange("result_cleared", {
         global: true,
         target: scope === "all" ? "preseason-trial" : `preseason-week-${scope}`,
-        summary: `${what} cleared — ${report.scoresCleared} score slot(s), ${report.picksCleared} pick(s)`,
+        summary: `${what} cleared — ${report.scoresCleared} score slot(s), ${report.picksCleared} pick(s), standings history reset`,
         detail: { scope, ...report },
       });
       setConfirming(null);

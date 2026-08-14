@@ -611,7 +611,7 @@ export function fsSubscribeTrialActive(callback) {
 //
 // Returns what it did so the caller can report it honestly rather than
 // claiming success it didn't verify.
-export async function fsClearPreseasonTrial(fixtureIds) {
+export async function fsClearPreseasonTrial(fixtureIds, { leagueIds = [] } = {}) {
   // The only irreversible operation in the trial, and the one place a wrong id
   // would delete real season scores. Callers pass ids from the constant
   // preseason schedule, so this filter should never drop anything — which is
@@ -621,10 +621,11 @@ export async function fsClearPreseasonTrial(fixtureIds) {
   const ids = all.filter(isPreseasonFixture);
   const refused = all.filter(id => !isPreseasonFixture(id));
   if (refused.length) console.error("Refused to clear non-preseason fixtures", refused);
-  if (ids.length === 0) return { scoresCleared: 0, picksCleared: 0, failed: [], refused };
+  if (ids.length === 0) return { scoresCleared: 0, picksCleared: 0, leaguesCleaned: 0, failed: [], refused };
 
   const failed = [];
-  let scoresCleared = 0, picksCleared = 0;
+  let scoresCleared = 0, picksCleared = 0, leaguesCleaned = 0;
+  const weeksCleared = new Set(ids.map(id => id.split("_")[0]));   // "pre1_7" -> "pre1"
 
   // 1. The scores — one write, so it can't half-apply.
   //
@@ -638,8 +639,7 @@ export async function fsClearPreseasonTrial(fixtureIds) {
   try {
     const payload = {};
     for (const id of ids) payload[`scores.${id}`] = deleteField();
-    const weeks = [...new Set(ids.map(id => id.split("_")[0]))];   // "pre1_7" -> "pre1"
-    if (weeks.length) payload.clearedTrialWeeks = arrayUnion(...weeks);
+    if (weeksCleared.size) payload.clearedTrialWeeks = arrayUnion(...weeksCleared);
     await updateDoc(doc(db, "results", RESULTS_DOC_ID), payload);
     scoresCleared = ids.length;
   } catch (err) {
@@ -664,7 +664,44 @@ export async function fsClearPreseasonTrial(fixtureIds) {
     }
   }
 
-  return { scoresCleared, picksCleared, failed, refused };
+  // 3. The two things a league keeps ABOUT the standings rather than in them.
+  //
+  //    Movement arrows are computed against a persisted snapshot of everyone's
+  //    rank. Rehearse a week and that snapshot records trial ranks — so the
+  //    first person to open the app after the wipe sees arrows saying they
+  //    climbed or dropped places, derived entirely from a rehearsal that no
+  //    longer exists and with every score at zero. Deleting the snapshot makes
+  //    the next render the new baseline, which is what a fresh season means.
+  //
+  //    Reactions are keyed by week ("pre1:clown:pre1_3"), so trial ones would
+  //    sit on the league document for the rest of the season, invisible and
+  //    carried through every backup.
+  for (const id of leagueIds) {
+    try {
+      const ref = doc(db, "leagues", id);
+      const payload = {
+        standingsSnapshot: deleteField(),
+        standingsSnapshotVersion: deleteField(),
+        standingsTrackedSnapshot: deleteField(),
+        standingsTrackedVersion: deleteField(),
+      };
+      await updateDoc(ref, payload);
+
+      const lg = await getDoc(ref);
+      const reactions = lg.exists() ? lg.data()?.reactions || {} : {};
+      const stale = Object.keys(reactions).filter(k => weeksCleared.has(k.split(":")[0]));
+      // FieldPath, not a dotted string: these keys contain ":" and emoji.
+      for (const k of stale) {
+        await updateDoc(ref, new FieldPath("reactions", k), deleteField());
+      }
+      leaguesCleaned++;
+    } catch (err) {
+      console.error("Couldn't reset standings history for league", id, err);
+      failed.push(`leagues/${id}`);
+    }
+  }
+
+  return { scoresCleared, picksCleared, leaguesCleaned, failed, refused };
 }
 
 export async function fsGetSpecialResults() {
