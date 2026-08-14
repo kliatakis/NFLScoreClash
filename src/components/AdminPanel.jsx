@@ -261,7 +261,6 @@ function ResultsEntry({ timezone, logChange }) {
   // there's no sensible way to record a score for an unknown game.
   const fixtures = isPreseason
     ? PRESEASON_FIXTURES
-        .map(f => ({ ...f, note: `Preseason Week ${f.preWeek}` }))
     : isPlayoffRound
       ? PLAYOFF_FIXTURES
           .filter(f => f.round === period && matchups[f.id]?.home && matchups[f.id]?.away)
@@ -320,7 +319,7 @@ function ResultsEntry({ timezone, logChange }) {
 // One row per game, with its own local input state seeded from the stored
 // result — so existing scores are visible and editable, and "Clear" only
 // appears when there's actually something to clear.
-function ResultRow({ fixture, result, timezone, logChange }) {
+function ResultRow({ fixture, result, timezone, logChange, chips = null }) {
   const [away, setAway] = useState(result?.awayScore ?? "");
   const [home, setHome] = useState(result?.homeScore ?? "");
   const [dirty, setDirty] = useState(false);
@@ -395,6 +394,7 @@ function ResultRow({ fixture, result, timezone, logChange }) {
       <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {formatKickoff(fixture.kickoffUTC, timezone)}
         {hasResult && <span className="chip active">Entered</span>}
+        {chips}
         {error && <span style={{ color: "var(--accent2)" }}>{error}</span>}
       </span>
       <span style={{ flex: 1, fontSize: 15 }}><TeamBadge code={fixture.away} /> @ <TeamBadge code={fixture.home} /></span>
@@ -564,21 +564,24 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
         </span>
       </div>
 
+      {/* Full entry rows, not a read-only list.
+          These used to be read-only, with a footnote saying scores were typed
+          in under Results → "Preseason Trial". Nobody reads a footnote: the
+          tab called Preseason Trial shows the games, so that is where you go
+          to enter them, and finding no boxes there reads as the feature being
+          broken. The Results tab still has the same games under Rehearsal —
+          both work, this one is just where you already are. */}
       {weekFixtures.map(f => (
-        <div key={f.id} className="standings-row" style={{ flexWrap: "wrap" }}>
-          <span style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            {formatKickoff(f.kickoffUTC, timezone)}
-            {results[f.id] && <span className="chip active">Final {results[f.id].awayScore}–{results[f.id].homeScore}</span>}
-            {picksFor(f) > 0 && <span className="chip">{picksFor(f)} picked</span>}
-          </span>
-          <span style={{ flex: 1, fontSize: 15 }}>
-            <TeamBadge code={f.away} /> @ <TeamBadge code={f.home} />
-          </span>
-        </div>
+        <ResultRow
+          key={f.id} fixture={f} result={results[f.id]}
+          timezone={timezone} logChange={logChange}
+          chips={picksFor(f) > 0 ? <span className="chip">{picksFor(f)} picked</span> : null}
+        />
       ))}
 
       <p className="backup-note" style={{ marginTop: 10 }}>
-        Scores arrive from ESPN on their own, or type them in under Results → “Preseason Trial”.
+        Scores also arrive from ESPN on their own while the trial is running — usually within a day
+        of a game finishing. Anything you type here wins: the fetcher never overwrites a score.
       </p>
 
       <div className="backup-block danger" style={{ marginTop: 18 }}>
