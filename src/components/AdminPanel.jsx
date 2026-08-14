@@ -97,7 +97,27 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
     setFetching(true); setFetchMsg("");
     try {
       const res = await fetch("/api/fetch-results?manual=true");
-      const data = await res.json();
+
+      // Read as TEXT first, then parse.
+      //
+      // `res.json()` on a 404 page or a crashed function throws a parse error,
+      // which the catch below reported as "Could not reach the results
+      // service" — pointing at the network when the request had in fact
+      // arrived and failed for a nameable reason. This tells the difference.
+      const body = await res.text();
+      let data;
+      try {
+        data = JSON.parse(body);
+      } catch {
+        setFetchMsg(
+          res.status === 404
+            ? "⚠️ /api/fetch-results isn't deployed (404). Check the api folder made it into the repo and that the last Vercel deploy succeeded."
+            : `⚠️ The results service returned ${res.status} and not JSON — it crashed before it could run. `
+              + `Vercel → Deployments → the latest one → Logs will name it. ${body.slice(0, 120)}`
+        );
+        return;
+      }
+
       if (!data.success) {
         setFetchMsg(`⚠️ ${data.error || "Something went wrong."}`);
       } else {
@@ -114,8 +134,10 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
         );
       }
 
-    } catch {
-      setFetchMsg("⚠️ Could not reach the results service.");
+    } catch (err) {
+      // Genuinely couldn't make the request — offline, or blocked. Everything
+      // that reached the server and failed is handled above, with its reason.
+      setFetchMsg(`⚠️ Couldn't reach the results service: ${err?.message || "no response"}. Scores can still be entered by hand below.`);
     } finally {
       setFetching(false);
       setTimeout(() => setFetchMsg(""), 12000);

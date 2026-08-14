@@ -27,11 +27,40 @@ import { espnProvider } from "../src/lib/resultsProviders.js";
 import { planResultWrites } from "../src/lib/resultsMatching.js";
 import { ALARMING_SKIPS } from "../src/lib/fetchHealth.js";
 
-if (!getApps().length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-  initializeApp({ credential: cert(serviceAccount) });
+// Firebase admin is initialised INSIDE the handler, not at module load.
+//
+// It used to run at import time, so a missing or malformed
+// FIREBASE_SERVICE_ACCOUNT_KEY threw before the function existed. Vercel then
+// returned an HTML crash page, the app's `res.json()` choked on it, and the
+// admin panel said "Could not reach the results service" — which points at the
+// network and says nothing about the actual cause. A whole season's auto-fetch
+// could be dead behind that message with no way to tell.
+//
+// Now the same failure returns JSON that names it.
+function getDb() {
+  if (!getApps().length) {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+    if (!raw) {
+      throw new Error(
+        "FIREBASE_SERVICE_ACCOUNT_KEY isn't set on this deployment. "
+        + "Vercel → Project → Settings → Environment Variables — paste the whole "
+        + "service-account JSON as the value, then redeploy."
+      );
+    }
+    let serviceAccount;
+    try {
+      serviceAccount = JSON.parse(raw);
+    } catch {
+      throw new Error(
+        "FIREBASE_SERVICE_ACCOUNT_KEY is set but isn't valid JSON. It should be the "
+        + "entire file from Firebase → Project settings → Service accounts → "
+        + "Generate new private key, pasted verbatim."
+      );
+    }
+    initializeApp({ credential: cert(serviceAccount) });
+  }
+  return getFirestore();
 }
-const db = getFirestore();
 const RESULTS_DOC_ID = `results_${SEASON.year}`;
 
 // Swap this one line to change provider.
@@ -44,8 +73,9 @@ const provider = espnProvider;
 // Written even when the run fails, and even when it writes nothing. That's
 // the entire point: a run that leaves no trace is indistinguishable from a
 // run that never happened.
-async function recordHealth(fields) {
+async function recordHealth(db, fields) {
   try {
+    if (!db) return;
     await db.collection("health").doc("fetcher").set(fields, { merge: true });
   } catch (err) {
     console.error("Couldn't record fetcher health", err);
@@ -62,8 +92,10 @@ export default async function handler(req, res) {
   }
 
   const startedAt = Date.now();
+  let db = null;
 
   try {
+    db = getDb();
     const { games, fetchedCount } = await provider.fetchRecentGames();
 
     const resultsDocRef = db.collection("results").doc(RESULTS_DOC_ID);
@@ -150,7 +182,7 @@ export default async function handler(req, res) {
       .map(d => d.game)
       .filter(Boolean);
 
-    await recordHealth({
+    await recordHealth(db, {
       at: startedAt,
       ok: true,
       provider: provider.name,
@@ -177,7 +209,7 @@ export default async function handler(req, res) {
       details,
     });
   } catch (error) {
-    await recordHealth({
+    await recordHealth(db, {
       at: startedAt,
       ok: false,
       provider: provider.name,
