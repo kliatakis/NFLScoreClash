@@ -41,6 +41,9 @@ import {
   csvEscape, toCsv, buildStandingsCsv, buildPicksCsv, buildSeasonPicksCsv, csvFilename,
 } from "../src/lib/csv.js";
 import {
+  assessCapacity, readsPerOpen, assessWrites, FREE_READS_PER_DAY, FIXED_READS_PER_OPEN,
+} from "../src/lib/capacity.js";
+import {
   shouldRefresh, gamesInProgress, REFRESH_THROTTLE_MS, IN_PROGRESS_WINDOW_MS,
 } from "../src/lib/liveRefresh.js";
 import {
@@ -2059,6 +2062,59 @@ group("Shoutout lines");
   }
 }
 
+
 // ────────────────────────────────────────────────────────────────────────────
+group("Capacity gauge");
+{
+  // The cost model: every client reads every account and every picks document
+  // on every open, so the total is quadratic in headcount.
+  t("reads per open counts both collections plus the fixed overhead",
+    readsPerOpen(40, 40) === 40 + 40 + FIXED_READS_PER_OPEN);
+  t("a missing predictions count falls back to the account count",
+    readsPerOpen(30) === readsPerOpen(30, 30));
+  t("negatives can't produce a nonsense total", readsPerOpen(-5, -5) === FIXED_READS_PER_OPEN);
+
+  const five = assessCapacity({ accounts: 5, predictionDocs: 5 });
+  t("a five-person league is comfortable", five.level === "good");
+  t("...using a sliver of the quota", five.usedPct < 5);
+  t("...with room to grow", five.roomFor > 40);
+
+  const hundred = assessCapacity({ accounts: 100, predictionDocs: 100 });
+  t("a hundred accounts is over the line", hundred.level === "bad");
+  t("...and says so plainly", /At the limit/.test(hundred.headline));
+  t("...with no room left", hundred.roomFor === 0);
+
+  // The headroom figure is the solution to n·opens·(2n+fixed) = FREE, so the
+  // league it claims to support must actually fit, and one more must not.
+  for (const opens of [2, 5, 12]) {
+    const { maxAccounts } = assessCapacity({ accounts: 1, opensPerPerson: opens });
+    const at = maxAccounts * opens * readsPerOpen(maxAccounts);
+    const over = (maxAccounts + 1) * opens * readsPerOpen(maxAccounts + 1);
+    t(`at ${opens} opens/day the stated maximum fits`, at <= FREE_READS_PER_DAY);
+    t(`...and one more doesn't`, over > FREE_READS_PER_DAY);
+  }
+
+  t("opening the app more often lowers the ceiling",
+    assessCapacity({ accounts: 1, opensPerPerson: 12 }).maxAccounts
+    < assessCapacity({ accounts: 1, opensPerPerson: 2 }).maxAccounts);
+  t("an empty app doesn't divide by zero",
+    Number.isFinite(assessCapacity({ accounts: 0 }).opensPerDay));
+
+  // Writes genuinely aren't the constraint, and the panel says so.
+  t("even a hundred players stay far inside the write quota",
+    assessWrites(100).daily < assessWrites(100).limit / 10);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Anything appended BELOW this line runs after the tally is printed and is
+// therefore invisible to it — assertions that can't fail the build. That
+// happened once; this guard makes the next occurrence loud instead.
+const countedAt = total;
+queueMicrotask(() => {
+  if (total !== countedAt) {
+    console.error(`\n${total - countedAt} assertion(s) ran AFTER the summary and were not counted — move that group above the tally.`);
+    process.exit(1);
+  }
+});
 console.log(`\n${total - failures}/${total} passed.`);
 if (failures) { console.error(`${failures} FAILED`); process.exit(1); }

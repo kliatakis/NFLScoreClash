@@ -27,8 +27,9 @@ import TeamBadge from "./TeamBadge.jsx";
 import BackupPanel from "./BackupPanel.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import HistoryPanel from "./HistoryPanel.jsx";
+import AppHealthPanel from "./AppHealthPanel.jsx";
 
-const SECTIONS = ["Results", "Preseason Trial", "Playoffs", "Overrides", "Special Picks", "Scoring Settings", "History", "Backup", "Danger Zone"];
+const SECTIONS = ["Results", "Preseason Trial", "Playoffs", "Overrides", "Special Picks", "Scoring Settings", "History", "Backup", "App Health", "Danger Zone"];
 
 // Saves an object as a downloaded .json. Same helper as BackupPanel's; kept
 // local rather than shared because it's six lines and importing a component's
@@ -179,6 +180,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
           isSuperAdmin={isSuperAdmin} logChange={logChange} />
       )}
       {section === "Backup" && <BackupPanel user={user} league={league} isSuperAdmin={isSuperAdmin} logChange={logChange} />}
+      {section === "App Health" && <AppHealthPanel league={league} />}
       {section === "Danger Zone" && isSuperAdmin && (
         <DangerZone league={league} user={user} logChange={logChange} onLeagueDeleted={onLeagueDeleted} />
       )}
