@@ -139,7 +139,7 @@ export default function ProfileDropdown({ user, onLogout, onUpdate, darkMode, on
             </div>
             <div className="profile-section">
               <div className="form-label">Kickoff times shown in</div>
-              <select
+              <select aria-label="Your time zone"
                 className="form-select"
                 value={user.timezone || DEFAULT_TIMEZONE}
                 onChange={e => saveTimezone(e.target.value)}

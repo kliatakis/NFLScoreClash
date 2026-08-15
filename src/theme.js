@@ -16,13 +16,20 @@ export const css = (dark = true) => `
     --surface3:  ${dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"};
     --border:    ${dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"};
     --border2:   ${dark ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.15)"};
-    --accent:    #3b82f6;
-    --accent-glow: rgba(59,130,246,0.35);
-    --accent2:   #f43f5e;
-    --gold:      #f59e0b;
+    /* These four were a single value shared by both themes — tuned against a
+       near-black page and then reused on a near-white one, where every last
+       one of them failed WCAG AA for small text. Gold was the worst: amber
+       #f59e0b on #f3f4f8 measures 1.95:1, which is not "a bit low", it is
+       barely visible. It coloured the Super Admin chip, the medals and the
+       week-winner rows, so light mode quietly hid its own status badges.
+       Dark mode keeps the exact values it always had. */
+    --accent:    ${dark ? "#3b82f6" : "#1d4ed8"};
+    --accent-glow: ${dark ? "rgba(59,130,246,0.35)" : "rgba(29,78,216,0.30)"};
+    --accent2:   ${dark ? "#f43f5e" : "#9f1239"};
+    --gold:      ${dark ? "#f59e0b" : "#7c5307"};
     --text:      ${dark ? "#f2f3fa" : "#0f1120"};
     --muted:     ${dark ? "#8890ab" : "#6b7290"};
-    --green:     #22c55e;
+    --green:     ${dark ? "#22c55e" : "#15653a"};
     --font-display: 'Anton', 'Arial Black', Impact, sans-serif;
     --font-body: 'Inter', sans-serif;
     /* Referenced in a few places as var(--font-mono, monospace) but never
@@ -800,6 +807,18 @@ export const css = (dark = true) => `
 
   /* STANDINGS TABLE + MOVEMENT ARROWS */
   .standings-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; margin-bottom: 6px; transition: background 0.15s; }
+
+  /* MEMBER ROWS (Leagues → Members)
+     A member row carries an avatar, a name, a role chip and up to two
+     buttons. As a single non-wrapping flex line that fits on a desktop and
+     falls apart on a phone: the buttons get squeezed until their own labels
+     break in half ("Revoke / Admin"), every row ends up a different height
+     depending on which controls it has, and the last button is clipped off
+     the right edge. Splitting identity from actions fixes all three. */
+  .member-row { flex-wrap: wrap; }
+  .member-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .member-actions { display: flex; gap: 8px; margin-left: auto; flex-shrink: 0; }
+  .member-actions .btn { white-space: nowrap; }
   .standings-row:hover { background: var(--surface2); }
   .standings-rank { font-family: var(--font-display); font-size: 18px; color: var(--muted); text-align: center; }
   .standings-name { font-weight: 700; font-size: 14px; }
@@ -913,6 +932,14 @@ export const css = (dark = true) => `
        section tabs, which turns six filter chips into four stacked rows
        before you reach a single entry. */
     .admin-panel .history-filters .chip { font-size: 11px; padding: 5px 10px; font-weight: 700; }
+
+    /* Section tabs. There are ten of them now, and at the desktop chip size
+       they stack three rows deep on a phone — most of the first screen spent
+       on navigation before any content. Shrinking them fits it in two.
+       Deliberately still WRAPPED rather than side-scrolled: a scroll strip
+       hides tabs off the edge, and a hidden admin tab is exactly the mistake
+       that made results entry undiscoverable in the trial. */
+    .admin-sections .chip { font-size: 12px; padding: 8px 10px; }
     .history-filters { gap: 5px; }
     .history-row { padding: 8px 10px; gap: 8px; }
     .history-summary { font-size: 11.5px; }
@@ -1229,6 +1256,10 @@ export const css = (dark = true) => `
     /* Two numeric columns AND a readable name don't fit. The columns go; the
        same numbers reappear under the name via .standings-substats. */
     .standings-row { gap: 8px; padding: 10px 6px; }
+    /* Actions drop to their own line and share the width equally, so every
+       member row is the same shape whatever controls it happens to have. */
+    .member-actions { width: 100%; margin-left: 0; margin-top: 4px; }
+    .member-actions .btn { flex: 1; }
     .standings-col-rank { width: 20px; font-size: 15px; }
     .standings-col-stat { display: none; }
     .standings-substats { display: block; }

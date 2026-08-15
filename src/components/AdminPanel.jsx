@@ -151,7 +151,7 @@ export default function AdminPanel({ league, user, isSuperAdmin, onLeagueDeleted
     <div className="admin-panel">
       <TrialPrompt onGo={() => setSection("Preseason Trial")} />
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+      <div className="admin-sections" style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
         {SECTIONS.filter(s => s !== "Danger Zone" || isSuperAdmin).map(s => (
           <button key={s} className={`chip ${section === s ? "active" : ""}`} style={{ cursor: "pointer" }} onClick={() => setSection(s)}>{s}</button>
         ))}
@@ -299,7 +299,7 @@ function ResultsEntry({ timezone, logChange }) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-        <select className="form-select" style={{ maxWidth: 220 }} value={period} onChange={e => setPeriod(e.target.value)}>
+        <select aria-label="Which week or round to enter results for" className="form-select" style={{ maxWidth: 220 }} value={period} onChange={e => setPeriod(e.target.value)}>
           <optgroup label="Regular Season">
             {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1)
               .map(w => <option key={w} value={String(w)}>Week {w}</option>)}
@@ -579,7 +579,7 @@ function PreseasonTrial({ league, timezone, logChange, isSuperAdmin }) {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "14px 0", flexWrap: "wrap" }}>
-        <select className="form-select" style={{ maxWidth: 240 }} value={week}
+        <select aria-label="Which preseason week to show" className="form-select" style={{ maxWidth: 240 }} value={week}
           onChange={e => setWeek(Number(e.target.value))}>
           {PRESEASON_WEEKS.map(w => <option key={w} value={w}>Preseason Week {w}</option>)}
         </select>
@@ -806,12 +806,12 @@ function PlayoffRow({
         {error && <span style={{ color: "var(--accent2)" }}>{error}</span>}
       </span>
 
-      <select className="form-select" style={{ maxWidth: 190 }} value={away} onChange={e => setAway(e.target.value)}>
+      <select aria-label="Away team" className="form-select" style={{ maxWidth: 190 }} value={away} onChange={e => setAway(e.target.value)}>
         <option value="">Away team…</option>
         {options.map(c => <option key={c} value={c}>{TEAMS[c].city} {TEAMS[c].name}</option>)}
       </select>
       <span className="score-sep">@</span>
-      <select className="form-select" style={{ maxWidth: 190 }} value={home} onChange={e => setHome(e.target.value)}>
+      <select aria-label="Home team" className="form-select" style={{ maxWidth: 190 }} value={home} onChange={e => setHome(e.target.value)}>
         <option value="">Home team…</option>
         {options.map(c => <option key={c} value={c}>{TEAMS[c].city} {TEAMS[c].name}</option>)}
       </select>
@@ -944,14 +944,14 @@ function OverridesEntry({ league, adminUid, logChange }) {
       {error && <div className="error-msg">{error}</div>}
       <div className="form-group">
         <label className="form-label">Member</label>
-        <select className="form-select" value={targetUid} onChange={e => setTargetUid(e.target.value)}>
+        <select aria-label="Whose pick to override" className="form-select" value={targetUid} onChange={e => setTargetUid(e.target.value)}>
           <option value="">Select a member…</option>
           {league.members.map(uid => <option key={uid} value={uid}>{users[uid]?.username || uid}</option>)}
         </select>
       </div>
       <div className="form-group">
         <label className="form-label">Game</label>
-        <select className="form-select" value={fixtureId}
+        <select aria-label="Which game to override" className="form-select" value={fixtureId}
           onChange={e => { setFixtureId(e.target.value); setWinner(""); }}>
           <option value="">Select a game…</option>
           {REGULAR_SEASON_FIXTURES.map(f => <option key={f.id} value={f.id}>Wk{f.week}: {f.away} @ {f.home}</option>)}
@@ -973,7 +973,7 @@ function OverridesEntry({ league, adminUid, logChange }) {
           because the options are that game's teams. */}
       <div className="form-group">
         <label className="form-label">Corrected pick</label>
-        <select className="form-select" value={winner} disabled={!fixture}
+        <select aria-label="The winner to set" className="form-select" value={winner} disabled={!fixture}
           onChange={e => setWinner(e.target.value)}>
           <option value="">{fixture ? "Select the winner…" : "Pick a game first"}</option>
           {fixture && <option value="A">{fixture.away} (away)</option>}
@@ -1059,7 +1059,7 @@ function SpecialResultsEntry({ logChange }) {
         return (
           <div key={type.id} className="standings-row">
             <span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{type.label}</span>
-            <select className="form-select" style={{ maxWidth: 200 }} value={specials[type.id] || ""}
+            <select aria-label="Winning team" className="form-select" style={{ maxWidth: 200 }} value={specials[type.id] || ""}
               disabled={busy}
               onChange={e => change(type, e.target.value)}>
               <option value="">Not decided yet</option>
@@ -1170,7 +1170,7 @@ function ScoringSettings({ league, logChange }) {
     return (
       <div className="form-group">
         <label className="form-label">{label}</label>
-        <select
+        <select aria-label="Points for this outcome"
           className="form-select"
           value={value}
           onChange={e => setDraft(d => ({ ...d, [key]: Number(e.target.value) }))}

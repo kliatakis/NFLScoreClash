@@ -318,19 +318,28 @@ function MembersList({ league, user, allUsers, isSuperAdmin, isAdmin, onLeft }) 
         const u = allUsers[uid] || {};
         const isSuper = league.superAdminId === uid;
         const isMemberAdmin = (league.adminIds || []).includes(uid);
+        const canToggle = isSuperAdmin && !isSuper;
+        const canRemove = isAdmin && !isSuper && uid !== user.uid;
         return (
-          <div key={uid} className="standings-row">
+          <div key={uid} className="standings-row member-row">
             <Avatar user={u} size={30} />
-            <span style={{ flex: 1, fontWeight: 600 }}>{u.username || uid} {uid === user.uid && <span style={{ color: "var(--muted)", fontWeight: 400 }}>(you)</span>}</span>
+            <span className="member-name">
+              {u.username || uid}
+              {uid === user.uid && <span style={{ color: "var(--muted)", fontWeight: 400 }}> (you)</span>}
+            </span>
             {isSuper && <span className="chip super">Super Admin</span>}
             {!isSuper && isMemberAdmin && <span className="chip active">Admin</span>}
-            {isSuperAdmin && !isSuper && (
-              <button className="btn btn-ghost btn-sm" onClick={() => toggleAdmin(uid)}>
-                {isMemberAdmin ? "Revoke Admin" : "Make Admin"}
-              </button>
-            )}
-            {isAdmin && !isSuper && uid !== user.uid && (
-              <button className="btn btn-ghost btn-sm" onClick={() => setConfirmKick(uid)}>Remove</button>
+            {(canToggle || canRemove) && (
+              <span className="member-actions">
+                {canToggle && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => toggleAdmin(uid)}>
+                    {isMemberAdmin ? "Revoke Admin" : "Make Admin"}
+                  </button>
+                )}
+                {canRemove && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setConfirmKick(uid)}>Remove</button>
+                )}
+              </span>
             )}
           </div>
         );

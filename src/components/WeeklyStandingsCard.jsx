@@ -45,7 +45,7 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
           <div className="card-title" style={{ marginBottom: 0 }}>{weekLabel(week)} Points</div>
           {weeks.length > 1 && (
-            <select className="form-select form-select-sm" style={{ maxWidth: 160 }}
+            <select aria-label="Which week to show" className="form-select form-select-sm" style={{ maxWidth: 160 }}
               value={week}
               // A select value is always a string. Number("pre1") is NaN, so
               // coercing unconditionally made every trial week unselectable.

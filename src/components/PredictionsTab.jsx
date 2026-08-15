@@ -233,7 +233,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
             {/* Weeks outside the window stay selectable so you can LOOK at
                 them — the schedule is public and hiding it helps nobody. They
                 just can't be picked, and the card below says why. */}
-            <select className="form-select" style={{ maxWidth: 190 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
+            <select aria-label="Which week to pick" className="form-select" style={{ maxWidth: 190 }} value={week} onChange={e => setWeek(Number(e.target.value))}>
               {Array.from({ length: SEASON.regularSeasonWeeks }, (_, i) => i + 1).map(w => (
                 <option key={w} value={w}>
                   Week {w}{openWeeks.includes(w) ? "" : " 🔒"}
@@ -696,7 +696,7 @@ function TrialPicks({ preds, predsLoaded, results, uid, timezone, league, allUse
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
-        <select className="form-select" style={{ maxWidth: 220 }} value={week}
+        <select aria-label="Which preseason week to pick" className="form-select" style={{ maxWidth: 220 }} value={week}
           onChange={e => setWeek(Number(e.target.value))}>
           {PRESEASON_WEEKS.map(w => <option key={w} value={w}>Preseason Week {w}</option>)}
         </select>
@@ -799,7 +799,7 @@ function SpecialPicks({ kind, preds, uid, league, allUsers, allPredictions, spec
                 {!saving && justSaved && <span className="picked-badge saved-flash">✓ Saved</span>}
                 {!saving && !justSaved && current && <span className="picked-badge">✓ Picked</span>}
               </span>
-              <select className={`form-select ${current ? "has-pick" : ""}`} style={{ maxWidth: 220 }}
+              <select aria-label="Your pick" className={`form-select ${current ? "has-pick" : ""}`} style={{ maxWidth: 220 }}
                 disabled={seasonLocked || saving} value={current}
                 onChange={e => save(type.id, e.target.value)}>
                 <option value="">Pick a team…</option>

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { fsGetAllUsers, fsSubscribeAllPredictions, fsSubscribeResults, fsSubscribeFetchHealth } from "../firebase.js";
 import { assessCapacity, assessWrites, FREE_READS_PER_DAY, TYPICAL_OPENS_PER_PERSON } from "../lib/capacity.js";
 import { assessFetchHealth } from "../lib/fetchHealth.js";
-import { SCORABLE_FIXTURES, PRESEASON_FIXTURES, isPreseasonFixture } from "../data/fixtures.js";
+import { SCORABLE_FIXTURES, isPreseasonFixture } from "../data/fixtures.js";
 
 // Admin-only: how much room is left, and whether the moving parts are moving.
 //
@@ -10,14 +10,22 @@ import { SCORABLE_FIXTURES, PRESEASON_FIXTURES, isPreseasonFixture } from "../da
 // one-shot read (they change when somebody signs up, not while you watch), and
 // everything else reuses subscriptions the panel already has open. A capacity
 // gauge that itself consumed the quota would be a poor joke.
-export default function AppHealthPanel({ league }) {
+export default function AppHealthPanel() {
   const [accounts, setAccounts] = useState(null);
   const [allPredictions, setAllPredictions] = useState({});
   const [results, setResults] = useState({});
   const [health, setHealth] = useState(null);
   const [opens, setOpens] = useState(TYPICAL_OPENS_PER_PERSON);
 
-  useEffect(() => { fsGetAllUsers().then(u => setAccounts(Object.keys(u).length)).catch(() => setAccounts(null)); }, []);
+  // A failed read must not look like a slow one. Leaving `accounts` null on
+  // error left the panel showing "Reading the numbers…" for ever, which reads
+  // as a hang rather than as the error it is.
+  const [loadError, setLoadError] = useState("");
+  useEffect(() => {
+    fsGetAllUsers()
+      .then(u => setAccounts(Object.keys(u).length))
+      .catch(err => { console.error("Couldn't count accounts", err); setLoadError(err?.message || "Couldn't read the account list."); });
+  }, []);
   useEffect(() => fsSubscribeAllPredictions(setAllPredictions), []);
   useEffect(() => fsSubscribeResults(setResults), []);
   useEffect(() => fsSubscribeFetchHealth(setHealth), []);
@@ -40,6 +48,9 @@ export default function AppHealthPanel({ league }) {
   const scores = Object.keys(results).length;
   const trialScores = Object.keys(results).filter(isPreseasonFixture).length;
 
+  if (loadError) {
+    return <div className="error-msg">Couldn't work out capacity: {loadError}</div>;
+  }
   if (accounts == null) {
     return <div style={{ color: "var(--muted)", fontSize: 14 }}>Reading the numbers…</div>;
   }
@@ -70,7 +81,8 @@ export default function AppHealthPanel({ league }) {
           </div>
           <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Assuming each person opens it</span>
-            <select className="form-select form-select-sm" style={{ maxWidth: 110 }}
+            <select aria-label="How often each person opens the app"
+              className="form-select form-select-sm" style={{ maxWidth: 110 }}
               value={opens} onChange={e => setOpens(Number(e.target.value))}>
               {[2, 3, 5, 8, 12].map(n => <option key={n} value={n}>{n}×/day</option>)}
             </select>
@@ -105,8 +117,8 @@ export default function AppHealthPanel({ league }) {
           </p>
         )}
         <div className="fetch-health-line" style={{ marginTop: 6 }}>
-          Writes are never the limit: about <b>{writes.weekly.toLocaleString()}</b> a week at
-          {" "}{PRESEASON_FIXTURES.length > 0 ? "16" : "16"} games each, against {writes.limit.toLocaleString()} a day.
+          Writes are never the limit: about <b>{writes.weekly.toLocaleString()}</b> a week across
+          a full slate, against {writes.limit.toLocaleString()} a day.
         </div>
       </div>
 

@@ -143,7 +143,7 @@ export default function HighlightsCard({ league, user, allUsers, allPredictions,
           <div className="board-sub">{weekLabel(week)} · shoutouts and the week in numbers</div>
         </div>
         {weeks.length > 1 && (
-          <select
+          <select aria-label="Which week to show on the board"
             className="form-select form-select-sm"
             style={{ maxWidth: 130 }}
             value={week}
