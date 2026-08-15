@@ -578,12 +578,27 @@ export function calcWeeklyStandings(league, allUsers, allPredictions, results, s
 // league "we both won that week" is the right answer, not an arbitrary
 // tiebreak on something that's meant to be a bit of fun.
 export function weeklyWinTally(league, allUsers, allPredictions, results, scoring) {
-  // Real weeks in order, then trial weeks. Sorted separately — mixing numbers
-  // and "pre1" in one comparison is exactly the kind of thing that sorts
-  // silently wrong.
+  // FINISHED weeks only — every game in the week has a result.
+  //
+  // This used to count any week with a single result in it, which meant the
+  // medal was handed out on Thursday night: one game played, whoever called it
+  // sits top of a one-game table, and the app declares them the week's winner.
+  // Sunday then moves it to somebody else. The same thing made a medal appear
+  // for a preseason trial week that still had eleven games to play.
+  //
+  // It also fed tiebreaker #4, so the season table could reorder itself on a
+  // Thursday for a week nobody had won yet.
+  //
+  // weekAccuracyBadge already waits for the whole week for exactly this reason
+  // — points that appear and vanish mid-week are worse than points that arrive
+  // late. A medal is a point of pride rather than a score, which makes it
+  // worse to take away, not better. Same rule, applied consistently.
+  //
+  // Real weeks first, then trial weeks: mixing numbers and "pre1" in one
+  // comparison is the kind of thing that sorts silently wrong.
   const weeks = [
-    ...completedWeeks(results).slice().sort((a, b) => a - b),
-    ...TRIAL_WEEK_KEYS.filter(key => fixturesForWeek(key).some(f => results[f.id])),
+    ...finishedWeeks(results).slice().sort((a, b) => a - b),
+    ...finishedTrialWeeks(results),
   ];
   const byUid = {};
   const perWeek = [];

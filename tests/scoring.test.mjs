@@ -1373,6 +1373,60 @@ group("Preseason trial — a real week, on the real code path");
       recap.toughest?.fixture.id === fixtures[0].id);
   }
 
+  // ── A medal is only for a week somebody actually won ─────────────────────
+  //
+  // The tally used to count any week with a single result in it. So the
+  // Thursday night game finished, whoever called it topped a one-game table,
+  // and the app awarded them the week — visible as a 🏅 in the standings and
+  // counted in tiebreaker #4 — with three days of football still to play.
+  // Reported from the live trial: a medal for Preseason Week 1 while eleven
+  // of its sixteen games hadn't kicked off.
+  {
+    const members = ["a", "b", "c", "d"];
+    const users = {}, preds = {};
+    members.forEach(uid => { users[uid] = { username: uid }; preds[uid] = { picks: {}, specials: {} }; });
+    const league = { id: "L", members };
+    const fx = preseasonFixturesForWeek(1);
+    fx.forEach((f, i) => {
+      preds.a.picks[f.id] = { winner: "H" };
+      preds.b.picks[f.id] = { winner: i < 3 ? "H" : "A" };
+      preds.c.picks[f.id] = { winner: i < 3 ? "H" : "A" };
+      preds.d.picks[f.id] = { winner: i < 2 ? "H" : "A" };
+    });
+
+    // Part way through: five games in, eleven to play.
+    const partial = {};
+    fx.slice(0, 5).forEach(f => { partial[f.id] = { homeScore: 24, awayScore: 10 }; });
+    t("a part-played week isn't finished", allFinishedWeeks(partial).length === 0);
+    t("...so no medal is handed out",
+      Object.keys(weeklyWinTally(league, users, preds, partial, SC).byUid).length === 0);
+    t("...and none reaches the standings",
+      calcStandings(league, users, preds, partial, {}, SC).every(r => r.medals === 0));
+    t("...while the points from those five games still count",
+      calcStandings(league, users, preds, partial, {}, SC)[0].points === 5 * SC.correctPoints);
+
+    // The same rule the week bonus already followed.
+    t("the week bonus was already withholding itself",
+      weekAccuracyBadge("a", "pre1", preds, partial, SC) === null);
+
+    // Once every game is in, the medal lands.
+    const full = {};
+    fx.forEach(f => { full[f.id] = { homeScore: 24, awayScore: 10 }; });
+    const tally = weeklyWinTally(league, users, preds, full, SC);
+    t("a finished week does award one", tally.byUid.a === 1);
+    t("...to the person who actually topped it", Object.keys(tally.byUid).join() === "a");
+    t("...and it shows in the standings",
+      calcStandings(league, users, preds, full, {}, SC).find(r => r.uid === "a").medals === 1);
+
+    // Regular season, same failure: one Thursday game used to settle the week.
+    const w1 = fixturesForWeek(1);
+    const thursday = { [w1[0].id]: { homeScore: 24, awayScore: 10 } };
+    const rp = { a: { picks: {}, specials: {} }, b: { picks: {}, specials: {} } };
+    w1.forEach(f => { rp.a.picks[f.id] = { winner: "H" }; rp.b.picks[f.id] = { winner: "A" }; });
+    t("one Thursday game doesn't win the week either",
+      Object.keys(weeklyWinTally({ id: "L", members: ["a", "b"] }, { a: {}, b: {} }, rp, thursday, SC).byUid).length === 0);
+  }
+
   // ── Undo can't resurrect a wiped trial ───────────────────────────────────
   {
     // The wipe entry itself: a bulk clear, not a swap.
