@@ -1174,6 +1174,18 @@ export const css = (dark = true) => `
   .admin-panel .btn-sm { font-size: 13px; padding: 8px 16px; }
   .admin-panel .score-input { font-size: 15px; }
 
+  /* BOOT SPLASH
+     Full-screen while booting, then fades out over the app rather than being
+     swapped for it in a single frame. Pointer events are off while leaving so
+     it can't eat a tap during the fade, and it is removed from the tree
+     entirely once done (see App.jsx). */
+  .boot-splash { position: fixed; inset: 0; z-index: 9000; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+  .boot-splash.leaving { pointer-events: none; animation: splash-out 0.42s ease forwards; }
+  @keyframes splash-out { to { opacity: 0; transform: scale(1.04); } }
+  @media (prefers-reduced-motion: reduce) {
+    .boot-splash.leaving { animation: none; opacity: 0; }
+  }
+
   /* Shared keyframes used by the animated logo intro (components/Logo.jsx) */
   @keyframes draw-ring { to { stroke-dashoffset: 0; } }
   /* Boot animation extras — the bolt landing should have a consequence, and

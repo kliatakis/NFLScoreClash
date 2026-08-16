@@ -54,17 +54,28 @@ function clearInviteCode() {
   try { sessionStorage.removeItem(JOIN_KEY); } catch { /* nothing to do */ }
 }
 // Full run of the intro animation, played once per browser session.
-const INTRO_MS = 2600;
+// The timeline finishes at 2.55s (tagline) and the loading bar only appears
+// at 2.3s, so exiting at 2.6s cut away the moment the composition was finally
+// whole — the bar was on screen for a third of a second and never completed a
+// pulse. 3.2s lets the finished mark hold for a beat, which is the part that
+// reads as deliberate rather than rushed.
+const INTRO_MS = 3200;
 // On a reload the animation is already familiar, so it's cut short — but not
 // arbitrarily. The timeline is: ring draws to 1.1s, bolt strikes 1.05–1.55s,
 // wordmark slides in 1.5–2.0s. Leaving before ~1.8s means exiting on a
 // half-built logo, which is exactly the "something flashed" feeling this is
 // meant to remove. 1.8s is the first moment the composition looks finished.
-const INTRO_REPLAY_MS = 1800;
+// Same reasoning on a reload, one stage earlier: the wordmark slides in over
+// 1.5–2.0s, so 1.8s exited half way through it. 2.1s is the first moment the
+// wordmark is actually settled.
+const INTRO_REPLAY_MS = 2100;
 // Hard ceiling. If Firestore never answers (offline, blocked, rules broken)
 // the boot screen must still get out of the way and let the app render
 // whatever it has, rather than spinning forever.
 const BOOT_MAX_MS = 6000;
+// How long the splash takes to fade away over the app underneath. Long enough
+// to read as a transition, short enough not to be a second wait.
+const SPLASH_FADE_MS = 420;
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -81,6 +92,10 @@ export default function App() {
   // actually arrived.
   const [introMinDone, setIntroMinDone] = useState(false);
   const [bootTimedOut, setBootTimedOut] = useState(false);
+  // Unmounts the splash once its fade-out has finished. Kept as state rather
+  // than a CSS-only trick so the element genuinely leaves the tree and can't
+  // swallow taps on the page underneath.
+  const [splashGone, setSplashGone] = useState(false);
   const [tab, setTab] = useState("dashboard");
   const [selectedLeagueId, setSelectedLeagueId] = useState(null);
   const [darkMode, setDarkMode] = useState(true);
@@ -108,6 +123,15 @@ export default function App() {
     const bail = setTimeout(() => setBootTimedOut(true), BOOT_MAX_MS);
     return () => { clearTimeout(hold); clearTimeout(bail); };
   }, []);
+
+  // Retire the splash once its fade has run. Must outlast the CSS duration or
+  // it vanishes mid-fade, which looks worse than no fade at all.
+  const bootDone = bootTimedOut || (introMinDone && authChecked && (!user || leaguesLoaded));
+  useEffect(() => {
+    if (!bootDone || splashGone) return;
+    const id = setTimeout(() => setSplashGone(true), SPLASH_FADE_MS + 60);
+    return () => clearTimeout(id);
+  }, [bootDone, splashGone]);
 
   useEffect(() => {
     const saved = localStorage.getItem("gc_darkMode"); // display preference only — not app data, fine on-device
@@ -303,20 +327,29 @@ export default function App() {
   const dataReady = authChecked && (!user || leaguesLoaded);
   const stillBooting = !bootTimedOut && (!introMinDone || !dataReady);
 
+  // The splash used to be swapped for the app in a single frame — a hard cut
+  // from a full-screen dark logo to a populated page. Everything the intro
+  // builds up is spent in that one jump. Keeping it mounted for one more beat
+  // while it fades lets the page arrive underneath it instead.
   if (stillBooting) {
     return (
       <>
         <style>{css(darkMode)}</style>
-        <LogoIntro name={APP_NAME} />
+        <div className="boot-splash"><LogoIntro name={APP_NAME} /></div>
       </>
     );
   }
+
+  const splash = splashGone ? null : (
+    <div className="boot-splash leaving" aria-hidden="true"><LogoIntro name={APP_NAME} /></div>
+  );
 
   if (!user) {
     return (
       <>
         <style>{css(darkMode)}</style>
         <AuthPage onLogin={handleLogin} />
+        {splash}
       </>
     );
   }
