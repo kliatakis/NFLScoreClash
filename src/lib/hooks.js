@@ -203,3 +203,27 @@ export function useFocusTrap(active = true) {
   }, [active]);
   return ref;
 }
+
+// Live answer to a CSS media query.
+//
+// Needed by anything drawn in SVG. A viewBox scales its whole coordinate
+// system to fit the element, so a chart authored 720 units wide and rendered
+// into a 300px card shrinks EVERYTHING by 0.4 — an 11px axis label lands on
+// screen at 4px and a 3px data point at barely one. CSS can't fix that from
+// outside, because the units being scaled are inside the picture. The only
+// real fix is to author a smaller picture on small screens.
+export function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => {
+    try { return window.matchMedia?.(query).matches ?? false; } catch { return false; }
+  });
+  useEffect(() => {
+    let mq;
+    try { mq = window.matchMedia?.(query); } catch { return; }
+    if (!mq) return;
+    const on = (e) => setMatches(e.matches);
+    setMatches(mq.matches);
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, [query]);
+  return matches;
+}
