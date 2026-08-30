@@ -1182,7 +1182,13 @@ export const css = (dark = true) => `
      swapped for it in a single frame. Pointer events are off while leaving so
      it can't eat a tap during the fade, and it is removed from the tree
      entirely once done (see App.jsx). */
-  .boot-splash { position: fixed; inset: 0; z-index: 9000; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+  /* No flex centring here. LogoIntro already centres itself and is 100vh
+     tall, and as a flex ITEM it shrank to the width of its own content — a
+     ~360px dark column with the page background either side. Invisible in
+     dark mode, where the two backgrounds match, and obvious in light. As a
+     plain block child of a fixed, inset-0 box it fills the viewport. */
+  .boot-splash { position: fixed; inset: 0; z-index: 9000; background: var(--bg); }
+  .boot-splash > * { width: 100%; }
   .boot-splash.leaving { pointer-events: none; animation: splash-out 0.42s ease forwards; }
   @keyframes splash-out { to { opacity: 0; transform: scale(1.04); } }
   @media (prefers-reduced-motion: reduce) {
