@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { css } from "./theme.js";
 import { HexIcon } from "./components/Logo.jsx";
 import { LogoIntro } from "./components/Logo.jsx";

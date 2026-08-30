@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/scoring.test.mjs"
+    "test": "node tests/scoring.test.mjs",
+    "audit": "node scripts/audit.mjs",
+    "check": "npm run audit && npm test && npm run build"
   },
   "dependencies": {
     "firebase": "^10.12.2",
