@@ -319,6 +319,14 @@ export default function App() {
   const handleLogout = async () => { await fbLogout(); };
   const handleProfileUpdate = (updated) => setUser(updated);
 
+  // The stylesheet is ~80,000 characters, and it was being rebuilt from the
+  // template literal on EVERY render of this component — which is every
+  // Firestore snapshot, every tab switch, every countdown tick. React then
+  // compared the fresh string against the old one and, finding them equal,
+  // did nothing with it. Pure waste, and it peaks on game day when results
+  // are landing. It only actually changes when the theme does.
+  const sheet = useMemo(() => css(darkMode), [darkMode]);
+
   // The intro used to end on a fixed timer regardless of whether anything was
   // ready. On a reload that meant: hexagon appears, animation is cut off
   // part-way, then a skeleton, then the real screen — three states in about a
@@ -334,7 +342,7 @@ export default function App() {
   if (stillBooting) {
     return (
       <>
-        <style>{css(darkMode)}</style>
+        <style>{sheet}</style>
         <div className="boot-splash"><LogoIntro name={APP_NAME} /></div>
       </>
     );
@@ -347,7 +355,7 @@ export default function App() {
   if (!user) {
     return (
       <>
-        <style>{css(darkMode)}</style>
+        <style>{sheet}</style>
         <AuthPage onLogin={handleLogin} />
         {splash}
       </>
@@ -372,7 +380,7 @@ export default function App() {
 
   return (
     <>
-      <style>{css(darkMode)}</style>
+      <style>{sheet}</style>
       <div className="app">
         <div className="topbar">
         <header className="header">
