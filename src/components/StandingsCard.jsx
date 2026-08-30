@@ -127,7 +127,10 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
                       readable name, so on mobile the stats drop under the name
                       and the columns are hidden instead. */}
                   <span className="standings-substats">
-                    {entry.correct} correct{entry.totalBonus > 0 ? ` · +${entry.totalBonus} bonus` : ""}
+                    {entry.gamesScored > 0
+                      ? `${entry.correct} of ${entry.gamesScored} correct`
+                      : "no picks scored yet"}
+                    {entry.totalBonus > 0 ? ` · +${entry.totalBonus} bonus` : ""}
                     {/* The tooltip is unreachable on a phone, so the mobile
                         line spells the breakdown out instead. */}
                     {bonusLines.length > 0 && (
@@ -136,7 +139,17 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
                   </span>
                 </span>
               </span>
-              <span className="standings-col-stat">{entry.correct}</span>
+              {/* "5" alone can't be read: five from five and five from sixty
+                  are the same number on screen. That was survivable while
+                  everyone started together and stops being so the moment
+                  people join at different weeks — the table then ranks tenure
+                  as much as skill, with nothing on it saying so. The
+                  denominator is the whole fix. */}
+              <span className="standings-col-stat">
+                {entry.gamesScored > 0
+                  ? <>{entry.correct}<span className="stat-of">/{entry.gamesScored}</span></>
+                  : "–"}
+              </span>
               <span className="standings-col-stat">
                 {entry.totalBonus > 0 ? (
                   <>

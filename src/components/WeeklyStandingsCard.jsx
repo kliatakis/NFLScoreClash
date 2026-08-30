@@ -77,7 +77,14 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
                   </span>
                 </span>
               </span>
-              <span className="standings-col-stat">{row.correct}</span>
+              {/* Same denominator as the season table — and here it matters
+                  mid-week too, where "3" means 3 of the 5 games played so
+                  far, not 3 of the week's sixteen. */}
+              <span className="standings-col-stat">
+                {row.gamesInWeek > 0
+                  ? <>{row.correct}<span className="stat-of">/{row.gamesInWeek}</span></>
+                  : "–"}
+              </span>
               <span className="standings-col-stat" title={row.badge ? `${row.badge.label} (+${row.badge.points})` : undefined}>
                 {row.badge ? `${row.badge.icon}+${row.badge.points}` : "–"}
               </span>

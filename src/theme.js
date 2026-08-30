@@ -856,6 +856,9 @@ export const css = (dark = true) => `
      the mobile breakpoint needs it. */
   .standings-substats { display: none; font-size: 10.5px; color: var(--muted); }
   .standings-col-stat { width: 84px; flex-shrink: 0; text-align: center; }
+  /* The denominator is context, not the number itself — same line, quieter,
+     so "5/16" still reads as "5" at a glance down the column. */
+  .stat-of { color: var(--muted); font-size: 0.82em; font-weight: 600; }
   .standings-col-pts { width: 74px; flex-shrink: 0; text-align: right; }
   .standings-col-move { width: 30px; flex-shrink: 0; display: flex; justify-content: center; }
   .standings-head { padding-top: 0; padding-bottom: 10px; }
