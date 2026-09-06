@@ -26,13 +26,13 @@ export const DIVISIONS = {
 
 export const TEAMS = {
   // ── AFC East ──
-  BUF: { city: "Buffalo",       name: "Bills",       abbr: "BUF", conf: "AFC", div: "AFC East",  primary: "#00338D", secondary: "#C60C30", emoji: "🦬" },
+  BUF: { city: "Buffalo",       name: "Bills",       abbr: "BUF", conf: "AFC", div: "AFC East",  primary: "#00338D", secondary: "#C60C30", emoji: "🐃" },
   MIA: { city: "Miami",         name: "Dolphins",    abbr: "MIA", conf: "AFC", div: "AFC East",  primary: "#008E97", secondary: "#FC4C02", emoji: "🐬" },
-  NE:  { city: "New England",   name: "Patriots",    abbr: "NE",  conf: "AFC", div: "AFC East",  primary: "#002244", secondary: "#C60C30", emoji: "🇺🇸" },
+  NE:  { city: "New England",   name: "Patriots",    abbr: "NE",  conf: "AFC", div: "AFC East",  primary: "#002244", secondary: "#C60C30", emoji: "🎩" },
   NYJ: { city: "New York",      name: "Jets",        abbr: "NYJ", conf: "AFC", div: "AFC East",  primary: "#125740", secondary: "#000000", emoji: "✈️" },
 
   // ── AFC North ──
-  BAL: { city: "Baltimore",     name: "Ravens",      abbr: "BAL", conf: "AFC", div: "AFC North", primary: "#241773", secondary: "#000000", emoji: "🐦‍⬛" },
+  BAL: { city: "Baltimore",     name: "Ravens",      abbr: "BAL", conf: "AFC", div: "AFC North", primary: "#241773", secondary: "#000000", emoji: "🌑" },
   CIN: { city: "Cincinnati",    name: "Bengals",     abbr: "CIN", conf: "AFC", div: "AFC North", primary: "#FB4F14", secondary: "#000000", emoji: "🐯" },
   CLE: { city: "Cleveland",     name: "Browns",      abbr: "CLE", conf: "AFC", div: "AFC North", primary: "#311D00", secondary: "#FF3C00", emoji: "🐶" },
   PIT: { city: "Pittsburgh",    name: "Steelers",    abbr: "PIT", conf: "AFC", div: "AFC North", primary: "#FFB612", secondary: "#101820", emoji: "🔩" },
@@ -53,7 +53,7 @@ export const TEAMS = {
   DAL: { city: "Dallas",        name: "Cowboys",     abbr: "DAL", conf: "NFC", div: "NFC East",  primary: "#003594", secondary: "#869397", emoji: "🤠" },
   NYG: { city: "New York",      name: "Giants",      abbr: "NYG", conf: "NFC", div: "NFC East",  primary: "#0B2265", secondary: "#A71930", emoji: "🗽" },
   PHI: { city: "Philadelphia",  name: "Eagles",      abbr: "PHI", conf: "NFC", div: "NFC East",  primary: "#004C54", secondary: "#A5ACAF", emoji: "🦅" },
-  WAS: { city: "Washington",    name: "Commanders",  abbr: "WAS", conf: "NFC", div: "NFC East",  primary: "#5A1414", secondary: "#FFB612", emoji: "🪖" },
+  WAS: { city: "Washington",    name: "Commanders",  abbr: "WAS", conf: "NFC", div: "NFC East",  primary: "#5A1414", secondary: "#FFB612", emoji: "🎖️" },
 
   // ── NFC North ──
   CHI: { city: "Chicago",       name: "Bears",       abbr: "CHI", conf: "NFC", div: "NFC North", primary: "#0B162A", secondary: "#C83803", emoji: "🐻" },
@@ -62,10 +62,10 @@ export const TEAMS = {
   MIN: { city: "Minnesota",     name: "Vikings",     abbr: "MIN", conf: "NFC", div: "NFC North", primary: "#4F2683", secondary: "#FFC62F", emoji: "⚔️" },
 
   // ── NFC South ──
-  ATL: { city: "Atlanta",       name: "Falcons",     abbr: "ATL", conf: "NFC", div: "NFC South", primary: "#A71930", secondary: "#000000", emoji: "🪶" },
-  CAR: { city: "Carolina",      name: "Panthers",    abbr: "CAR", conf: "NFC", div: "NFC South", primary: "#0085CA", secondary: "#101820", emoji: "🐈‍⬛" },
+  ATL: { city: "Atlanta",       name: "Falcons",     abbr: "ATL", conf: "NFC", div: "NFC South", primary: "#A71930", secondary: "#000000", emoji: "🦉" },
+  CAR: { city: "Carolina",      name: "Panthers",    abbr: "CAR", conf: "NFC", div: "NFC South", primary: "#0085CA", secondary: "#101820", emoji: "🐈" },
   NO:  { city: "New Orleans",   name: "Saints",      abbr: "NO",  conf: "NFC", div: "NFC South", primary: "#D3BC8D", secondary: "#101820", emoji: "⚜️" },
-  TB:  { city: "Tampa Bay",     name: "Buccaneers",  abbr: "TB",  conf: "NFC", div: "NFC South", primary: "#D50A0A", secondary: "#34302B", emoji: "🏴‍☠️" },
+  TB:  { city: "Tampa Bay",     name: "Buccaneers",  abbr: "TB",  conf: "NFC", div: "NFC South", primary: "#D50A0A", secondary: "#34302B", emoji: "⚓" },
 
   // ── NFC West ──
   ARI: { city: "Arizona",       name: "Cardinals",   abbr: "ARI", conf: "NFC", div: "NFC West",  primary: "#97233F", secondary: "#000000", emoji: "🐦" },
