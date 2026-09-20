@@ -96,7 +96,7 @@ export default async function handler(req, res) {
 
   try {
     db = getDb();
-    const { games, fetchedCount } = await provider.fetchRecentGames();
+    const { games, fetchedCount, daysRequested, daysFailed } = await provider.fetchRecentGames();
 
     const resultsDocRef = db.collection("results").doc(RESULTS_DOC_ID);
     const snap = await resultsDocRef.get();
@@ -190,6 +190,10 @@ export default async function handler(req, res) {
       checked: fetchedCount,
       updated: updatedCount,
       playoffSlotsKnown: playoffSlots.length,
+      // Which days ESPN actually answered. A run that got three days of five
+      // still "succeeds", so without this a partial outage is invisible.
+      daysRequested: daysRequested ?? null,
+      daysFailed: daysFailed ?? [],
       trialActive,
       preseasonSlotsOpen: preseasonSlots.length,
       skipped,

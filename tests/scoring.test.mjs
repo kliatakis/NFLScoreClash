@@ -31,7 +31,7 @@ import {
 import { planResultWrites, findFixture } from "../src/lib/resultsMatching.js";
 import { assessFetchHealth, describeAge } from "../src/lib/fetchHealth.js";
 import { computeSeasonAwards, isSeasonComplete } from "../src/lib/awards.js";
-import { espnDateRange } from "../src/lib/resultsProviders.js";
+import { espnDateList, espnProvider } from "../src/lib/resultsProviders.js";
 import {
   SOLO_MISS, GROUP_MISS, LONE_CALL, SWEEP_LINES, NEAR_LINES, SHARP_LINES,
 } from "../src/data/roasts.js";
@@ -774,17 +774,90 @@ group("Restore — full round trip");
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-group("Results fetch — the date window asked of ESPN");
+group("Results fetch — the days asked of ESPN");
 {
-  const r = espnDateRange(new Date("2026-09-13T06:00:00Z"), 1, 3);
-  t("is a hyphenated range, not a comma list", /^\d{8}-\d{8}$/.test(r), r);
-  t("starts the day before", r.startsWith("20260912"), r);
-  t("ends three days after", r.endsWith("20260916"), r);
-  t("crosses a month boundary correctly", espnDateRange(new Date("2026-10-01T06:00:00Z"), 1, 3) === "20260930-20261004");
-  t("crosses a year boundary correctly", espnDateRange(new Date("2027-01-01T06:00:00Z"), 1, 3) === "20261231-20270104");
+  // THIS GROUP EXISTS BECAUSE THE FETCHER HAS DIED TWICE IN PRODUCTION.
+  //
+  // First on a comma-separated list, which ESPN silently ignored and fell
+  // back to "today". Then on a hyphenated range, `20260919-20260923`, which
+  // worked for a season and then started returning HTTP 400 mid-year — taking
+  // every automatic score with it. Only single dates have ever been observed
+  // to work, so that is what these assertions pin.
+  const days = espnDateList(new Date("2026-09-20T06:00:00Z"), 1, 3);
+  t("asks for one day at a time, yesterday through three ahead",
+    days.join() === "20260919,20260920,20260921,20260922,20260923");
+  t("five days for a 1-back/3-forward window", days.length === 5);
+  t("NO entry is a range — the exact thing that broke", days.every(d => !d.includes("-")));
+  t("...or a list", days.every(d => !d.includes(",")));
+  t("every entry is a bare YYYYMMDD", days.every(d => /^\d{8}$/.test(d)));
+  t("crosses a month boundary",
+    espnDateList(new Date("2026-10-01T06:00:00Z"), 1, 3).join() === "20260930,20261001,20261002,20261003,20261004");
+  t("crosses a year boundary",
+    espnDateList(new Date("2027-01-01T06:00:00Z"), 1, 3).join() === "20261231,20270101,20270102,20270103,20270104");
+  t("a zero-width window is still today", espnDateList(new Date("2026-09-20T06:00:00Z"), 0, 0).join() === "20260920");
+
+  // ── The network behaviour, driven by a fake fetch ────────────────────────
+  const ev = (id, away, home) => ({
+    id, date: "2026-09-20T17:00:00Z",
+    season: { year: 2026, type: 2 }, week: { number: 3 },
+    status: { type: { completed: true, state: "post" } },
+    competitions: [{ competitors: [
+      { homeAway: "home", team: { abbreviation: home }, score: "24" },
+      { homeAway: "away", team: { abbreviation: away }, score: "10" },
+    ] }],
+  });
+  const reply = (events) => Promise.resolve({ ok: true, json: () => Promise.resolve({ events }) });
+
+  // The same game appears under two adjacent days — ESPN buckets by US date.
+  {
+    const calls = [];
+    const fetchImpl = (url) => { calls.push(url); return reply([ev("401", "DET", "CIN")]); };
+    const out = await espnProvider.fetchRecentGames({ now: new Date("2026-09-20T06:00:00Z"), fetchImpl });
+    t("one request per day", calls.length === 5);
+    t("each request carries a single date",
+      calls.every(u => /dates=\d{8}$/.test(u)));
+    t("a game returned on several days is counted once", out.fetchedCount === 1);
+    t("...and normalised once", out.games.length === 1);
+  }
+
+  // One day fails; the rest must still land.
+  {
+    let n = 0;
+    const fetchImpl = () => (++n === 2
+      ? Promise.resolve({ ok: false, status: 500 })
+      : reply([ev(`e${n}`, "DET", "CIN")]));
+    const out = await espnProvider.fetchRecentGames({ now: new Date("2026-09-20T06:00:00Z"), fetchImpl });
+    t("a single bad day doesn't lose the others", out.fetchedCount === 4);
+    t("...and is reported", out.daysFailed.length === 1 && out.daysFailed[0].includes("500"));
+    t("...against the number attempted", out.daysRequested === 5);
+  }
+
+  // A thrown request is survivable too, not just a bad status.
+  {
+    let n = 0;
+    const fetchImpl = () => (++n === 1
+      ? Promise.reject(new Error("socket hang up"))
+      : reply([ev(`x${n}`, "DET", "CIN")]));
+    const out = await espnProvider.fetchRecentGames({ now: new Date("2026-09-20T06:00:00Z"), fetchImpl });
+    t("a thrown request costs only its own day", out.fetchedCount === 4 && out.daysFailed.length === 1);
+  }
+
+  // Everything failing IS an error — that's ESPN being down, and the health
+  // panel must show it rather than reporting a clean run that wrote nothing.
+  {
+    let threw = null;
+    try {
+      await espnProvider.fetchRecentGames({
+        now: new Date("2026-09-20T06:00:00Z"),
+        fetchImpl: () => Promise.resolve({ ok: false, status: 400 }),
+      });
+    } catch (err) { threw = err; }
+    t("all five days failing throws", threw !== null);
+    t("...and says so plainly", /unreachable for all 5 days/.test(threw.message));
+    t("...naming the status", threw.message.includes("400"));
+  }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 group("Results fetch — what gets written and what gets refused");
 {
   const real = REGULAR_SEASON_FIXTURES[0];
