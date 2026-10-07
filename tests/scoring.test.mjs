@@ -22,6 +22,7 @@ import {
   calcStandingsWithMovement,
   pickStreaks, liveWeekStatus, pendingPickers, nextOpenWeek, currentWeekByDate, openPickWeeks, weekPickState,
   finishedTrialWeeks, allFinishedWeeks, allCompletedWeeks,
+  closedGameWeeks, computeMovementVersion, gameWeeksAwaitingSpecials,
 } from "../src/lib/scoring.js";
 import { TEAMS, TEAM_CODES, teamsForSpecialPick } from "../src/data/teams.js";
 import { css } from "../src/theme.js";
@@ -1559,8 +1560,23 @@ group("Preseason trial — a real week, on the real code path");
     members.forEach(uid => { preds[uid].picks = {}; });
     const stale = calcStandingsWithMovement(league, users, preds, {}, {}, SC);
     t("everyone really is back to zero", stale.standings.every(r => r.points === 0));
-    t("...yet the stale snapshot invents movement",
-      Object.values(stale.movementByUid).some(m => m.dir !== "same"));
+
+    // This used to be the bug: the arrows compared the stored snapshot against
+    // the LIVE table, so a leftover trial snapshot showed everyone climbing and
+    // dropping places purely from a rehearsal that no longer existed.
+    //
+    // Moving to a game-week rotation removed that failure mode by construction
+    // — the arrows now compare the two STORED generations against each other
+    // and never look at the live table, so a stale snapshot can only ever be
+    // compared against itself, which is no movement at all.
+    //
+    // Pinned as the invariant rather than deleted, because the comparison going
+    // back to "stored vs live" is exactly the regression that would bring the
+    // phantom arrows back.
+    t("a stale trial snapshot can no longer invent movement",
+      Object.values(stale.movementByUid).every(m => m.dir === "same" && m.arrows === 0));
+    t("...and the trial snapshot is nonetheless still there to be cleared",
+      league.standingsSnapshot != null && league.standingsTrackedVersion != null);
 
     // fsClearPreseasonTrial now deletes those four fields, which is this:
     const cleaned = { id: "L", members };
@@ -2189,6 +2205,309 @@ group("Shoutout lines");
   }
 }
 
+
+group("Movement arrows: game-week rotation");
+
+// ── MOVEMENT ARROWS ROTATE ON CLOSED GAME-WEEKS, NOT ON EVERY RESULT ───────
+//
+// The old trigger was a hash of every result + special + override: any single
+// score moved the arrows. That made them mean "since the last score entered",
+// so a Sunday 1pm finish reset the arrows everyone had been looking at since
+// Monday, and by the time the late games landed the arrows described a
+// ten-minute window rather than a week of football.
+//
+// They now rotate on a GAME-WEEK boundary. Regular weeks 1-18 plus the four
+// playoff rounds are 22 game-weeks; a week closes when every one of its games
+// is scored. Three of them also carry season-long picks that are only decided
+// by that week's football, and those are part of the same closing:
+//   Week 18    → the eight division winners
+//   Conference → the two conference champions
+//   Super Bowl → the champion
+// Those are typed in by an admin AFTER the final score of the week, so gating
+// on them is what keeps the division points inside Week 18's arrows instead of
+// leaking into the Wild Card round's.
+{
+  const weekFixtures = (w) => REGULAR_SEASON_FIXTURES.filter(f => f.week === w);
+  const scoreAll = (into, fixtures) => {
+    fixtures.forEach(f => { into[f.id] = { homeScore: 24, awayScore: 10 }; });
+    return into;
+  };
+  const roundFixtures = (r) => PLAYOFF_FIXTURES.filter(f => f.round === r);
+  const specialsOfKind = (k) => SPECIAL_PICK_TYPES.filter(t => t.kind === k).map(t => t.id);
+  const allOf = (ids) => { const o = {}; ids.forEach(id => { o[id] = "KC"; }); return o; };
+
+  // ── a plain week closes on its last score, and not before ────────────────
+  {
+    const partial = {};
+    weekFixtures(1).slice(0, -1).forEach(f => { partial[f.id] = { homeScore: 24, awayScore: 10 }; });
+    t("a week with one game still to play is not closed",
+      closedGameWeeks(partial, {}).includes(1) === false);
+
+    const full = scoreAll({}, weekFixtures(1));
+    t("...and closes the moment the last score lands",
+      closedGameWeeks(full, {}).includes(1) === true);
+  }
+
+  // ── Week 18 waits for the division winners ───────────────────────────────
+  {
+    const divisions = specialsOfKind("division");
+    t("there are eight division winners to wait for", divisions.length === 8);
+
+    const scores = {};
+    for (let w = 1; w <= 18; w++) scoreAll(scores, weekFixtures(w));
+
+    t("every other week closes on scores alone",
+      [...Array(17)].every((_, i) => closedGameWeeks(scores, {}).includes(i + 1)));
+    t("but Week 18 does not close on scores alone",
+      closedGameWeeks(scores, {}).includes(18) === false);
+
+    const sevenOfEight = allOf(divisions.slice(0, 7));
+    t("...nor with seven of the eight entered",
+      closedGameWeeks(scores, sevenOfEight).includes(18) === false);
+    t("...and closes once the eighth is in",
+      closedGameWeeks(scores, allOf(divisions)).includes(18) === true);
+
+    // This is the whole point of the gating: the division points must land
+    // inside Week 18's rotation, not the next one's.
+    const before = computeMovementVersion(scores, sevenOfEight);
+    const after = computeMovementVersion(scores, allOf(divisions));
+    t("entering the last division winner is itself a game-week boundary",
+      before !== after);
+  }
+
+  // ── the four playoff rounds are game-weeks too ───────────────────────────
+  {
+    const scores = {};
+    for (let w = 1; w <= 18; w++) scoreAll(scores, weekFixtures(w));
+    const divisions = allOf(specialsOfKind("division"));
+
+    t("every playoff round is a distinct round in the fixture list",
+      PLAYOFF_ROUNDS.every(r => roundFixtures(r.id).length > 0));
+
+    scoreAll(scores, roundFixtures("wildcard").slice(0, -1));
+    t("a half-played Wild Card round is not closed",
+      closedGameWeeks(scores, divisions).includes("wildcard") === false);
+    scoreAll(scores, roundFixtures("wildcard"));
+    t("...and closes on its last game, with no specials to wait for",
+      closedGameWeeks(scores, divisions).includes("wildcard") === true);
+
+    scoreAll(scores, roundFixtures("divisional"));
+    t("the Divisional round closes on scores alone as well",
+      closedGameWeeks(scores, divisions).includes("divisional") === true);
+
+    // Conference: both games AND both champions.
+    scoreAll(scores, roundFixtures("conference"));
+    t("the Conference round does NOT close on its two scores alone",
+      closedGameWeeks(scores, divisions).includes("conference") === false);
+    const withOneConf = { ...divisions, conf_AFC: "KC" };
+    t("...nor with only one conference champion named",
+      closedGameWeeks(scores, withOneConf).includes("conference") === false);
+    const withConfs = { ...divisions, conf_AFC: "KC", conf_NFC: "PHI" };
+    t("...and closes once both are named",
+      closedGameWeeks(scores, withConfs).includes("conference") === true);
+
+    // Super Bowl: the game AND the champion.
+    scoreAll(scores, roundFixtures("superbowl"));
+    t("the Super Bowl does NOT close on the final score alone",
+      closedGameWeeks(scores, withConfs).includes("superbowl") === false);
+    const done = { ...withConfs, superbowl: "KC" };
+    t("...and closes when the champion is entered",
+      closedGameWeeks(scores, done).includes("superbowl") === true);
+
+    t("a finished season is exactly 22 game-weeks",
+      closedGameWeeks(scores, done).length === 22);
+    t("...in football order, regular season then rounds",
+      JSON.stringify(closedGameWeeks(scores, done))
+        === JSON.stringify([...Array(18)].map((_, i) => i + 1).concat(PLAYOFF_ROUNDS.map(r => r.id))));
+  }
+
+  // ── the rehearsal must not move real arrows ──────────────────────────────
+  {
+    const pre = {};
+    PRESEASON_FIXTURES.forEach(f => { pre[f.id] = { homeScore: 24, awayScore: 10 }; });
+    t("a fully-scored preseason trial closes no game-week",
+      closedGameWeeks(pre, {}).length === 0);
+    t("...so it cannot rotate the arrows",
+      computeMovementVersion(pre, {}) === computeMovementVersion({}, {}));
+  }
+
+  // ── out-of-order weeks: the hole that a highest-week counter would miss ──
+  //
+  // If one Thursday game never gets a result, that week stays open while the
+  // weeks after it close. Entering the missing score months later DOES change
+  // the standings, so it has to rotate the arrows — but the highest closed
+  // week is unchanged, and a count is unchanged if something else opened at
+  // the same time. The signature is the list, so it catches both.
+  {
+    const holed = {};
+    [1, 2, 4, 5].forEach(w => scoreAll(holed, weekFixtures(w)));
+    weekFixtures(3).slice(0, -1).forEach(f => { holed[f.id] = { homeScore: 24, awayScore: 10 }; });
+
+    t("the closed weeks really do have a hole in them",
+      JSON.stringify(closedGameWeeks(holed, {})) === JSON.stringify([1, 2, 4, 5]));
+
+    const filled = scoreAll({ ...holed }, weekFixtures(3));
+    t("the highest closed week is the same before and after the backfill",
+      Math.max(...closedGameWeeks(holed, {})) === Math.max(...closedGameWeeks(filled, {})));
+    t("...yet backfilling it still rotates the arrows",
+      computeMovementVersion(holed, {}) !== computeMovementVersion(filled, {}));
+
+    // And the count-only blind spot: close 3, clear 5 — same count, different set.
+    const swapped = { ...filled };
+    weekFixtures(5).forEach(f => { delete swapped[f.id]; });
+    t("a simultaneous close-and-clear keeps the count identical",
+      closedGameWeeks(swapped, {}).length === closedGameWeeks(holed, {}).length);
+    t("...and is still caught, because the signature is the list",
+      computeMovementVersion(swapped, {}) !== computeMovementVersion(holed, {}));
+  }
+
+  // ── what the arrows actually do across a live week ───────────────────────
+  {
+    const members = ["a", "b", "c", "d", "e"];
+    const users = {}, preds = {};
+    members.forEach(uid => { users[uid] = { username: uid.toUpperCase() }; preds[uid] = { picks: {}, specials: {} }; });
+
+    // Week 1 complete, everyone picked, so there is a real order and a baseline.
+    const results = {};
+    weekFixtures(1).forEach((f, i) => {
+      results[f.id] = { homeScore: 24, awayScore: 10 };
+      members.forEach((uid, n) => { preds[uid].picks[f.id] = { winner: (i + n) % 3 === 0 ? "A" : "H" }; });
+    });
+    weekFixtures(2).forEach((f, i) => {
+      members.forEach((uid, n) => { preds[uid].picks[f.id] = { winner: (i + n) % 2 === 0 ? "A" : "H" }; });
+    });
+
+    let league = { id: "L", members };
+    const w1 = calcStandingsWithMovement(league, users, preds, results, {}, SC);
+    const store = (st) => ({
+      ...league,
+      standingsSnapshot: st.newSnapshot, standingsSnapshotVersion: st.newVersion,
+      standingsTrackedSnapshot: st.newTrackedSnapshot, standingsTrackedVersion: st.newTrackedVersion,
+    });
+    league = store(w1);
+
+    // Mid-week: Week 2's games start landing one at a time. Points move, the
+    // table can reorder — but the arrows must not budge.
+    const beforeWeek2 = JSON.stringify(league.standingsSnapshot);
+    const beforeWeek2Version = league.standingsSnapshotVersion;
+    // Key order follows the table order, which legitimately changes mid-week,
+    // so compare the arrows themselves rather than the serialized object.
+    const arrowFingerprint = (m) => Object.keys(m).sort()
+      .map(uid => `${uid}:${m[uid].dir}${m[uid].arrows}`).join("|");
+    const beforeWeek2Arrows = arrowFingerprint(w1.movementByUid);
+    let rotations = 0;
+    let mid = null;
+    weekFixtures(2).slice(0, -1).forEach(f => {
+      results[f.id] = { homeScore: 13, awayScore: 31 };
+      mid = calcStandingsWithMovement(league, users, preds, results, {}, SC);
+      if (mid.shouldPersist) rotations++;
+      league = store(mid);
+    });
+    t("mid-week scores do not rotate the arrow baseline",
+      JSON.stringify(league.standingsSnapshot) === beforeWeek2);
+    // The ranks alone are not enough to pin this: the first-ever baseline and
+    // the generation behind it can hold identical ranks, so a wrong trigger
+    // rotates and the snapshot still compares equal. The version is what
+    // actually proves no rotation happened.
+    t("...nor the version behind it", league.standingsSnapshotVersion === beforeWeek2Version);
+    t("...and not one of the week's games rotated it", rotations === 0);
+    t("...so the arrows people are looking at never change during the week",
+      arrowFingerprint(mid.movementByUid) === beforeWeek2Arrows);
+    t("...and nothing is written, so a live Sunday costs no extra Firestore writes",
+      mid.shouldPersist === false);
+
+    // The last game of the week lands. Now they rotate — once.
+    const last = weekFixtures(2)[weekFixtures(2).length - 1];
+    results[last.id] = { homeScore: 13, awayScore: 31 };
+    const priorTracked = league.standingsTrackedVersion;
+    const closed = calcStandingsWithMovement(league, users, preds, results, {}, SC);
+    // The rotation is about which generation is on display, not about the ranks
+    // happening to differ — a week where nobody overtakes anybody still rotates,
+    // it just shows dashes. So this pins the generations, not the numbers.
+    t("closing the week rotates the baseline exactly once",
+      closed.shouldPersist === true
+      && closed.newVersion === priorTracked
+      && closed.newTrackedVersion !== closed.newVersion);
+    t("...and the displayed baseline is the state as of the previous close",
+      JSON.stringify(closed.newSnapshot) === JSON.stringify(league.standingsTrackedSnapshot));
+    league = store(closed);
+
+    const settled = calcStandingsWithMovement(league, users, preds, results, {}, SC);
+    t("...and then stays put instead of collapsing to a flat dash",
+      settled.shouldPersist === false
+      && JSON.stringify(settled.movementByUid) === JSON.stringify(closed.movementByUid));
+  }
+
+  // ── the arrows have to be RIGHT, not merely stable ───────────────────────
+  //
+  // A frozen comparison that froze on the wrong pair of generations would pass
+  // every stability test above, so this one engineers an actual overtake and
+  // checks the arrow describes it.
+  {
+    const members = ["climber", "faller"];
+    const users = { climber: { username: "Climber" }, faller: { username: "Faller" } };
+    const preds = { climber: { picks: {}, specials: {} }, faller: { picks: {}, specials: {} } };
+
+    // Week 1: faller gets everything right, climber nothing. Faller leads.
+    weekFixtures(1).forEach(f => {
+      preds.faller.picks[f.id] = { winner: "H" };
+      preds.climber.picks[f.id] = { winner: "A" };
+    });
+    // Week 2: the reverse, by a wide enough margin to overtake.
+    weekFixtures(2).forEach(f => {
+      preds.climber.picks[f.id] = { winner: "H" };
+      preds.faller.picks[f.id] = { winner: "A" };
+    });
+
+    const results = {};
+    weekFixtures(1).forEach(f => { results[f.id] = { homeScore: 24, awayScore: 10 }; });
+
+    let league = { id: "L", members };
+    let st = calcStandingsWithMovement(league, users, preds, results, {}, SC);
+    t("week 1 leaves the faller on top", st.standings[0].uid === "faller");
+    const put = (x) => ({
+      ...league,
+      standingsSnapshot: x.newSnapshot, standingsSnapshotVersion: x.newVersion,
+      standingsTrackedSnapshot: x.newTrackedSnapshot, standingsTrackedVersion: x.newTrackedVersion,
+    });
+    league = put(st);
+
+    weekFixtures(2).forEach(f => { results[f.id] = { homeScore: 24, awayScore: 10 }; });
+    st = calcStandingsWithMovement(league, users, preds, results, {}, SC);
+    t("week 2 puts the climber on top", st.standings[0].uid === "climber");
+    t("...and the arrows say so", st.movementByUid.climber.dir === "up"
+      && st.movementByUid.faller.dir === "down");
+    league = put(st);
+
+    // Reload, no new football. Same arrows, no write.
+    const again = calcStandingsWithMovement(league, users, preds, results, {}, SC);
+    t("...and reloading the page shows the same arrows, not a flat dash",
+      again.movementByUid.climber.dir === "up" && again.movementByUid.faller.dir === "down"
+      && again.shouldPersist === false);
+  }
+
+  // ── the admin nudge: which weeks are blocked on a special ────────────────
+  {
+    const scores = {};
+    for (let w = 1; w <= 18; w++) weekFixtures(w).forEach(f => { scores[f.id] = { homeScore: 24, awayScore: 10 }; });
+
+    const waiting = gameWeeksAwaitingSpecials(scores, {});
+    t("with Week 18 played and no division winners, one week is blocked",
+      waiting.length === 1 && waiting[0].week === 18);
+    t("...and it names all eight that are missing", waiting[0].missing.length === 8);
+
+    const divisions = {};
+    SPECIAL_PICK_TYPES.filter(x => x.kind === "division").forEach(x => { divisions[x.id] = "KC"; });
+    t("once they're entered nothing is blocked",
+      gameWeeksAwaitingSpecials(scores, divisions).length === 0);
+
+    // A round that hasn't been played yet is not "waiting" — only a week whose
+    // football is finished can be blocked by a missing special. Otherwise the
+    // admin panel would nag about the Super Bowl all season.
+    t("an unplayed Conference round is not reported as blocked",
+      gameWeeksAwaitingSpecials(scores, divisions).some(x => x.week === "conference") === false);
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 group("Capacity gauge");

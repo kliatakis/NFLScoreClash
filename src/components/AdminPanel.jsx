@@ -16,7 +16,7 @@ import {
 } from "../firebase.js";
 import { buildBackup, backupFilename } from "../lib/backup.js";
 import { assessFetchHealth } from "../lib/fetchHealth.js";
-import { getScoringSettings, pickWinner } from "../lib/scoring.js";
+import { getScoringSettings, pickWinner, gameWeeksAwaitingSpecials } from "../lib/scoring.js";
 import { formatKickoff } from "../lib/time.js";
 import {
   makeEntry, resultKind, resultSummary, fixtureText, scoreText,
@@ -1006,6 +1006,9 @@ function OverridesEntry({ league, adminUid, logChange }) {
 
 function SpecialResultsEntry({ logChange }) {
   const [saved, setSaved] = useState({});
+  // Only here to answer "are the standings arrows stuck waiting on me?" — see
+  // the notice below. One document listener, in an admin-only panel.
+  const [results, setResults] = useState({});
   // Live, and CONTROLLED — these dropdowns used to be uncontrolled with a
   // hardcoded empty default, so they always read "Not decided yet" even for
   // winners that had already been set. The admin had no way to see or verify
@@ -1014,6 +1017,7 @@ function SpecialResultsEntry({ logChange }) {
   const [confirming, setConfirming] = useState(null);  // { type, next }
   const [busy, setBusy] = useState(false);
   useEffect(() => fsSubscribeSpecialResults(setSpecials), []);
+  useEffect(() => fsSubscribeResults(setResults), []);
 
   const teamName = (code) => (code && TEAMS[code] ? `${TEAMS[code].city} ${TEAMS[code].name}` : "");
 
@@ -1046,12 +1050,36 @@ function SpecialResultsEntry({ logChange }) {
 
   const decidedCount = SPECIAL_PICK_TYPES.filter(t => specials[t.id]).length;
 
+  // Three game-weeks are only FINISHED once their season-long picks are in:
+  // Week 18 (the eight division winners), the Conference round (both champions)
+  // and the Super Bowl (the champion). The standings movement arrows rotate on
+  // a finished game-week, so until these are entered the arrows sit frozen
+  // showing the previous week — which from the outside looks like a bug rather
+  // than a missing entry on this very page. So it says so, here.
+  const blocked = gameWeeksAwaitingSpecials(results, specials);
+  const blockedLabel = (week) => (typeof week === "number"
+    ? `Week ${week}`
+    : (PLAYOFF_ROUNDS.find(r => r.id === week)?.label || String(week)));
+
   return (
     <div>
       <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14 }}>
         Set the actual winner once known — these score everyone's season picks across every league.
         {" "}<b>{decidedCount} of {SPECIAL_PICK_TYPES.length}</b> decided so far.
       </p>
+
+      {blocked.length > 0 && (
+        <div className="fetch-health warn">
+          <span className="fetch-health-icon" aria-hidden="true">⏳</span>
+          <div>
+            <b>The standings arrows are waiting on this page.</b>{" "}
+            {blocked.map(b => `${blockedLabel(b.week)} needs ${b.missing.length} more`).join("; ")}.
+            {" "}Every game is scored, so points and positions are already up to date — but the
+            up/down arrows only move once a game-week is completely finished, and these picks are
+            part of it. They update the moment the last one is set.
+          </div>
+        </div>
+      )}
       {SPECIAL_PICK_TYPES.map(type => {
         // Constrained per pick type — an admin could previously record an
         // NFC team as the AFC champion.

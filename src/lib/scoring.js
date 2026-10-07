@@ -1,6 +1,6 @@
 import {
   REGULAR_SEASON_FIXTURES, SCORABLE_FIXTURES, SPECIAL_PICK_TYPES, effectiveKickoffUTC,
-  TRIAL_WEEK_KEYS, fixturesForWeek,
+  TRIAL_WEEK_KEYS, fixturesForWeek, PLAYOFF_FIXTURES, PLAYOFF_ROUNDS,
 } from "../data/fixtures.js";
 
 // ─── SCORING SETTINGS ───────────────────────────────────────────────────────
@@ -167,35 +167,91 @@ function stableHash(str) {
   return hash.toString(36);
 }
 
-// A version marker that changes whenever a result, special result, or an
-// admin override of a scored prediction happens — the three things that can
-// actually move a league's standings. Used to know when to recompute the
-// movement-arrow baseline (shared for every viewer, not per-login).
-// Serializes an object with its keys in sorted order.
+// The old arrow trigger lived here: a stable hash of every result, special
+// result and admin override, so the arrows rotated on each individual score.
+// It was deleted rather than left unused, because an unused second version
+// function sitting next to the live one is an invitation to rewire the wrong
+// one. What replaced it is immediately below.
+
+// ─── GAME-WEEKS: WHEN THE MOVEMENT ARROWS ROTATE ────────────────────────────
 //
-// Plain JSON.stringify follows insertion order, which for Firestore data can
-// legitimately differ between clients holding identical data — two people
-// would then compute different "versions" of the same standings, each
-// thinking something had changed, and the movement arrows would rotate for
-// no reason. Sorting makes the hash depend only on content.
-function stableStringify(value) {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const keys = Object.keys(value).sort();
-  return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+// A season is 22 GAME-WEEKS: regular-season weeks 1-18, then the four playoff
+// rounds, each round behaving exactly like a week. A game-week is CLOSED when
+// every one of its games has a result — and, for the three weeks that decide
+// season-long picks, when those picks have been entered too.
+//
+// WHY THE SPECIALS ARE PART OF IT
+// ───────────────────────────────
+// The division winners, conference champions and Super Bowl champion are not
+// derived from scores; an admin types them into the Admin panel, necessarily
+// AFTER the last score of the week that decided them. Those picks are worth a
+// lot of points, so if a week closed on its final score alone the points would
+// land a few minutes later with no arrow movement at all — and then be folded
+// silently into the NEXT week's rotation, so the Wild Card round's arrows would
+// show movement that Week 18 actually caused. Gating the week on them keeps
+// cause and effect together.
+//
+// The cost is that forgetting one freezes that week's arrows indefinitely,
+// which is why gameWeeksAwaitingSpecials() exists and the Admin panel says so.
+//
+// Preseason is deliberately absent. The trial is a rehearsal and must never
+// move the real table's arrows.
+const SPECIALS_BY_GAME_WEEK = {
+  18: SPECIAL_PICK_TYPES.filter(t => t.kind === "division").map(t => t.id),
+  conference: SPECIAL_PICK_TYPES.filter(t => t.kind === "conference").map(t => t.id),
+  superbowl: SPECIAL_PICK_TYPES.filter(t => t.kind === "superbowl").map(t => t.id),
+};
+
+// Every game-week in football order, with the fixtures that belong to it.
+// Built once: the fixture lists are compile-time constants.
+const GAME_WEEKS = [
+  ...[...new Set(REGULAR_SEASON_FIXTURES.map(f => f.week))]
+    .sort((a, b) => a - b)
+    .map(week => ({ week, fixtures: REGULAR_SEASON_FIXTURES.filter(f => f.week === week) })),
+  ...PLAYOFF_ROUNDS.map(r => ({ week: r.id, fixtures: PLAYOFF_FIXTURES.filter(f => f.round === r.id) })),
+];
+
+const gamesAllScored = (fixtures, results) =>
+  fixtures.length > 0 && fixtures.every(f => results[f.id]);
+
+const missingSpecials = (week, specialResults) =>
+  (SPECIALS_BY_GAME_WEEK[week] || []).filter(id => !specialResults[id]);
+
+// The closed game-weeks, in football order: [1, 2, ... 18, "wildcard", ...].
+export function closedGameWeeks(results = {}, specialResults = {}) {
+  return GAME_WEEKS
+    .filter(({ week, fixtures }) =>
+      gamesAllScored(fixtures, results) && missingSpecials(week, specialResults).length === 0)
+    .map(({ week }) => week);
 }
 
-export function computeResultsVersion(results, specialResults, allPredictions, leagueMembers) {
-  const overrideMarkers = [];
-  for (const uid of leagueMembers) {
-    const picks = (allPredictions[uid] || {}).picks || {};
-    for (const fid of Object.keys(picks)) {
-      if (picks[fid]?.overriddenAt) overrideMarkers.push(`${uid}:${fid}:${picks[fid].overriddenAt}`);
-    }
-  }
-  overrideMarkers.sort();
-  const payload = stableStringify(results) + stableStringify(specialResults) + overrideMarkers.join(",");
-  return stableHash(payload);
+// Game-weeks whose football is finished but which are still waiting on a
+// season-long pick — the one way the arrows can get stuck. Surfaced in the
+// Admin panel so it is a visible to-do rather than a silent freeze.
+export function gameWeeksAwaitingSpecials(results = {}, specialResults = {}) {
+  return GAME_WEEKS
+    .filter(({ fixtures }) => gamesAllScored(fixtures, results))
+    .map(({ week }) => ({ week, missing: missingSpecials(week, specialResults) }))
+    .filter(x => x.missing.length > 0);
+}
+
+// The arrow-rotation marker. Hashes the LIST of closed game-weeks, not the
+// highest one and not how many there are.
+//
+// Both of those have a blind spot. If a Thursday game never gets a result its
+// week stays open while later weeks close, so the closed set can read
+// [1, 2, 4, 5] — entering that missing score in November genuinely reorders the
+// table, but the highest closed week is 5 either side of it, so a
+// highest-week trigger would never fire and the arrows would be quietly wrong
+// for the rest of the season. A count is caught out by the same backfill
+// happening alongside a cleared score somewhere else. The list catches both,
+// for the same single string.
+//
+// Hashed rather than stored raw so the field keeps the same shape it has
+// always had (a short opaque string) — nothing in firestore.rules, the backup
+// format or the snapshot-clearing path has to know this changed.
+export function computeMovementVersion(results = {}, specialResults = {}) {
+  return stableHash(`gw|${closedGameWeeks(results, specialResults).join(",")}`);
 }
 
 // ─── LEADERBOARD ────────────────────────────────────────────────────────────
@@ -475,7 +531,7 @@ export function explainTiebreak(a, b) {
 // entered by an admin or pulled in by the auto-fetch cron) actually arrives.
 export function calcStandingsWithMovement(league, allUsers, allPredictions, results, specialResults, scoring = DEFAULT_SCORING) {
   const standings = calcStandings(league, allUsers, allPredictions, results, specialResults, scoring);
-  const currentVersion = computeResultsVersion(results, specialResults, allPredictions, league.members || []);
+  const currentVersion = computeMovementVersion(results, specialResults);
 
   const currentRanks = {};
   standings.forEach((entry, i) => { currentRanks[entry.uid] = i + 1; });
@@ -512,15 +568,31 @@ export function calcStandingsWithMovement(league, allUsers, allPredictions, resu
   // else: currentVersion === trackedVersion — nothing new since last time
   // anyone looked, so baseline stays exactly as already stored. No write.
 
+  // The arrows compare the two STORED generations against each other — NOT the
+  // older generation against the live table.
+  //
+  // That distinction is the whole behaviour. Comparing against live ranks means
+  // every score that lands on a Sunday afternoon nudges somebody's arrow, so the
+  // arrows creep all week and describe "since last Monday, so far" — a moving
+  // target that is different every time anyone reloads. Comparing the two closed
+  // generations instead makes them mean exactly one thing, "where you moved in
+  // the last completed game-week", and makes them completely still from the
+  // moment a week closes until the moment the next one does.
+  //
+  // There is no discontinuity at the rotation itself: the instant a week closes,
+  // the new tracked generation IS the live ranks, so the arrows that appear are
+  // the ones that then stay put.
   const movementByUid = {};
-  standings.forEach((entry, i) => {
-    const rank = i + 1;
+  standings.forEach((entry) => {
     const prevRank = baselineSnapshot ? baselineSnapshot[entry.uid] : null;
-    if (!baselineSnapshot || prevRank == null) {
+    const nowRank = newTrackedSnapshot ? newTrackedSnapshot[entry.uid] : null;
+    if (prevRank == null || nowRank == null) {
+      // Nothing to compare: a brand-new league, or somebody who joined after
+      // the last close and so wasn't in the table either generation.
       movementByUid[entry.uid] = { dir: "same", arrows: 0 };
       return;
     }
-    const delta = prevRank - rank; // positive = moved up
+    const delta = prevRank - nowRank; // positive = moved up
     if (delta === 0) movementByUid[entry.uid] = { dir: "same", arrows: 0 };
     else if (delta > 0) movementByUid[entry.uid] = { dir: "up", arrows: delta > 2 ? 2 : 1 };
     else movementByUid[entry.uid] = { dir: "down", arrows: (-delta) > 2 ? 2 : 1 };
