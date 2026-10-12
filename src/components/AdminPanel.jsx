@@ -1224,8 +1224,8 @@ function ScoringSettings({ league, logChange }) {
 
       <div className="form-label" style={{ marginTop: 18, marginBottom: 8 }}>Week accuracy bonuses</div>
       <p style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
-        Counted in misses, not a fixed score — weeks run 13 to 16 games because of byes. You must
-        pick the whole week to qualify. Regular season only.
+        Counted in misses, not a fixed score — weeks run 13 to 16 games because of byes. A game
+        left unpicked counts as a miss. Regular season only.
       </p>
       {field("sweepBonus", "🧹 Clean Sweep — no misses")}
       {field("nearPerfectBonus", "🎯 Near Perfect — one miss")}

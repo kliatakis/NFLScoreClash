@@ -72,9 +72,10 @@ export default function HowItWorks({ onClose }) {
           </div>
           <p style={{ marginTop: 8, fontSize: 11.5, opacity: 0.75 }}>
             Counted in <b>misses</b>, not a fixed number correct — weeks run from 13 to 16 games
-            because of bye weeks, so a clean sweep means every game in that particular week. You
-            have to pick the whole week to qualify, and bonuses are regular season only.
-            They're settled once the last game of the week is in, so don't expect one on
+            because of bye weeks, so a clean sweep means every game in that particular week. A game
+            you leave unpicked counts as a miss, exactly like getting it wrong — so three skipped
+            games costs you the bonus just as three bad calls would. Bonuses are regular season
+            only, and they're settled once the last game of the week is in, so don't expect one on
             Thursday night.
           </p>
         </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   REGULAR_SEASON_FIXTURES, SPECIAL_PICK_TYPES, SEASON, effectiveKickoffUTC, hasEstimatedKickoff,
   PLAYOFF_FIXTURES, PLAYOFF_ROUNDS, PRESEASON_FIXTURES, PRESEASON_WEEKS,
@@ -14,6 +14,7 @@ import { useFixtureLock, useSeasonPicksLock, useCountdown, LOCK_MINUTES_BEFORE_K
 import { formatKickoff, lockUrgency, formatDuration } from "../lib/time.js";
 import {
   classifyPick, pickWinner, resultWinner, nextOpenWeek, weekPickState, openPickWeeks,
+  calcStandings, getScoringSettings,
 } from "../lib/scoring.js";
 import TeamBadge from "./TeamBadge.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -89,6 +90,26 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
   // time. Worse, the dashboard's "Pick Week 6 →" button led straight here and
   // still showed Week 1.
   //
+  // Reveal lists are ordered by the league table, not by whoever happens to be
+  // first in the members array (which is Firestore insertion order, i.e.
+  // arbitrary). Opening "Everyone's Picks" on a 53-person league and hunting
+  // for a name in no particular order is the thing this fixes.
+  //
+  // Computed ONCE per tab render rather than per game row — calcStandings walks
+  // every scorable fixture for every member, so doing it inside sixteen rows
+  // would be sixteen times the work for an identical answer. Memoised on the
+  // same inputs the standings card uses, so it recomputes only when a result,
+  // a pick or the league itself actually changes. No extra Firestore reads.
+  //
+  // Display order only: this cannot affect a pick, a point or a position.
+  const rankByUid = useMemo(() => {
+    if (!league) return {};
+    const order = {};
+    calcStandings(league, allUsers, allPredictions, results, specialResults || {}, getScoringSettings(league))
+      .forEach((entry, i) => { order[entry.uid] = i + 1; });
+    return order;
+  }, [league, allUsers, allPredictions, results, specialResults]);
+
   // Waits for results to arrive: on first paint `results` is {} and every week
   // looks unplayed, which would answer Week 1 and immediately be right for the
   // wrong reason.
@@ -319,7 +340,7 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
           {fixtures.map(f => (
             <GameRow
               key={f.id} fixture={f} pick={preds.picks?.[f.id]} result={results[f.id]} uid={user.uid} timezone={user.timezone}
-              league={league} allUsers={allUsers} allPredictions={allPredictions}
+              league={league} allUsers={allUsers} allPredictions={allPredictions} rankByUid={rankByUid}
               draft={draftFor(f.id)}
               onDraftChange={(patch) => setDraft(f.id, patch)}
               // A closed week is read-only: the rows still show, with
@@ -333,26 +354,26 @@ export default function PredictionsTab({ user, league, allUsers, allPredictions,
       {view === "preseason" && (
         <TrialPicks
           preds={preds} predsLoaded={predsLoaded} results={results} uid={user.uid} timezone={user.timezone}
-          league={league} allUsers={allUsers} allPredictions={allPredictions}
+          league={league} allUsers={allUsers} allPredictions={allPredictions} rankByUid={rankByUid}
         />
       )}
 
       {view === "playoffs" && (
         <PlayoffPicks
           preds={preds} predsLoaded={predsLoaded} results={results} uid={user.uid} timezone={user.timezone}
-          league={league} allUsers={allUsers} allPredictions={allPredictions}
+          league={league} allUsers={allUsers} allPredictions={allPredictions} rankByUid={rankByUid}
         />
       )}
 
       {(view === "division" || view === "conference" || view === "superbowl") && (
-        <SpecialPicks kind={view} preds={preds} uid={user.uid} league={league} allUsers={allUsers} allPredictions={allPredictions} specialResults={specialResults} />
+        <SpecialPicks kind={view} preds={preds} uid={user.uid} league={league} allUsers={allUsers} allPredictions={allPredictions} specialResults={specialResults} rankByUid={rankByUid} />
       )}
     </div>
   );
 }
 
 function GameRow({
-  fixture, pick, result, uid, timezone, league, allUsers, allPredictions,
+  fixture, pick, result, uid, timezone, league, allUsers, allPredictions, rankByUid,
   draft, onDraftChange, readOnly = false,
 }) {
   // Locks against the effective kickoff, which falls back to a derived time
@@ -432,6 +453,12 @@ function GameRow({
   const sideName = (side) =>
     side === "T" ? "Tie" : (TEAMS[side === "H" ? fixture.home : fixture.away]?.abbr ?? side);
 
+  // League-table order. Anyone the standings don't know about (shouldn't
+  // happen, but a member added between renders would) sorts to the end rather
+  // than to the front, where a missing rank would otherwise put them.
+  const byStanding = (a, b) =>
+    (rankByUid?.[a.uid] ?? Number.MAX_SAFE_INTEGER) - (rankByUid?.[b.uid] ?? Number.MAX_SAFE_INTEGER);
+
   const revealRows = revealOpen ? league.members.map(mUid => {
     const mPick = (allPredictions[mUid]?.picks || {})[fixture.id];
     const side = pickWinner(mPick);
@@ -450,7 +477,7 @@ function GameRow({
       status: kind === "correct" ? "correct" : "wrong",
       side,
     };
-  }) : null;
+  }).sort(byStanding) : null;
 
   // "5 of 6 backed KC" — the headline that makes the list worth opening, and
   // the thing that tells you instantly whether you're with the crowd.
@@ -581,7 +608,7 @@ function RevealPicks({ rows, allUsers, consensus, settled }) {
 // Playoff games are predictable exactly like regular-season ones — the only
 // difference is that who's playing isn't known until January, so each fixture
 // shows as a locked placeholder until a league admin attaches the teams.
-function PlayoffPicks({ preds, predsLoaded, results, uid, timezone, league, allUsers, allPredictions }) {
+function PlayoffPicks({ preds, predsLoaded, results, uid, timezone, league, allUsers, allPredictions, rankByUid }) {
   const [matchups, setMatchups] = useState({});
   useEffect(() => fsSubscribePlayoffFixtures(setMatchups), []);
 
@@ -646,7 +673,7 @@ function PlayoffPicks({ preds, predsLoaded, results, uid, timezone, league, allU
                 <GameRow
                   key={f.id} fixture={merged} pick={preds.picks?.[f.id]} result={results[f.id]}
                   uid={uid} timezone={timezone}
-                  league={league} allUsers={allUsers} allPredictions={allPredictions}
+                  league={league} allUsers={allUsers} allPredictions={allPredictions} rankByUid={rankByUid}
                   draft={draftFor(f.id)}
                   onDraftChange={(winner) => setDrafts(d => ({ ...d, [f.id]: winner }))}
                 />
@@ -664,7 +691,7 @@ function PlayoffPicks({ preds, predsLoaded, results, uid, timezone, league, allU
 // These are ordinary fixtures — constants with teams and kickoffs, like any
 // regular-season game — so they lock, reveal and score down exactly the same
 // paths. Grouped by preseason week because a week is what earns a bonus.
-function TrialPicks({ preds, predsLoaded, results, uid, timezone, league, allUsers, allPredictions }) {
+function TrialPicks({ preds, predsLoaded, results, uid, timezone, league, allUsers, allPredictions, rankByUid }) {
   const [drafts, setDrafts] = useState({});
   const hydrated = useRef(false);
   useEffect(() => {
@@ -716,7 +743,7 @@ function TrialPicks({ preds, predsLoaded, results, uid, timezone, league, allUse
         <GameRow
           key={f.id} fixture={f} pick={preds.picks?.[f.id]} result={results[f.id]}
           uid={uid} timezone={timezone}
-          league={league} allUsers={allUsers} allPredictions={allPredictions}
+          league={league} allUsers={allUsers} allPredictions={allPredictions} rankByUid={rankByUid}
           draft={drafts[f.id] ?? null}
           onDraftChange={(winner) => setDrafts(d => ({ ...d, [f.id]: winner }))}
         />
@@ -725,7 +752,7 @@ function TrialPicks({ preds, predsLoaded, results, uid, timezone, league, allUse
   );
 }
 
-function SpecialPicks({ kind, preds, uid, league, allUsers, allPredictions, specialResults }) {
+function SpecialPicks({ kind, preds, uid, league, allUsers, allPredictions, specialResults, rankByUid }) {
   const seasonLocked = useSeasonPicksLock();
   const countdown = useCountdown(SEASON_LOCK_AT);
 
@@ -788,7 +815,9 @@ function SpecialPicks({ kind, preds, uid, league, allUsers, allPredictions, spec
             label: `${team ? `${team.city} ${team.name}` : mPick} ${isCorrect ? "✅" : "❌"}`,
             status: isCorrect ? "correct" : "wrong",
           };
-        }) : null;
+        }).sort((a, b) =>
+          (rankByUid?.[a.uid] ?? Number.MAX_SAFE_INTEGER) - (rankByUid?.[b.uid] ?? Number.MAX_SAFE_INTEGER)
+        ) : null;
 
         return (
           <div key={type.id} style={{ marginBottom: 4 }}>

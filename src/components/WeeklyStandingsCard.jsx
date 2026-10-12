@@ -139,7 +139,9 @@ export default function WeeklyStandingsCard({ league, user, allUsers, allPredict
                   ))}
                   {accuracy.slice().reverse().map(b => (
                     <span key={`acc-${b.week}`} className={`badge-medal acc-${b.id}`}
-                      title={`${b.label} in ${weekLabel(b.week)} — ${b.blurb} of ${b.games} games, +${b.points} points`}>
+                      title={`${b.label} in ${weekLabel(b.week)} — ${b.blurb} of ${b.games} games`
+                        + (b.blanks ? ` (${b.blanks} left unpicked, which counts as a miss)` : "")
+                        + `, +${b.points} points`}>
                       <span className="badge-medal-icon">{b.icon}</span>
                       <span className="badge-medal-week">{weekShortLabel(b.week)}</span>
                     </span>

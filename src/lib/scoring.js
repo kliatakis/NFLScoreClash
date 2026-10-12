@@ -108,8 +108,25 @@ export function calcMatchScore(pick, result, scoring = DEFAULT_SCORING) {
 //  1. Measured in MISSES, not a fixed hit count. Weeks run 13–16 games, so
 //     "15 of 16" would be unreachable in the nine short weeks of the season.
 //     A clean sweep is every game in THAT week.
-//  2. You must have picked the whole week. Otherwise you could pick only the
-//     three games you were sure of, go three-for-three, and claim a sweep.
+//  2. An unpicked game counts as a MISS — not as a disqualification, and not
+//     as nothing at all.
+//
+//     The anti-farming rule this replaces is the reason the middle option is
+//     wrong: if blanks were simply ignored you could pick the three games you
+//     were sure of, go three-for-three and claim a sweep. Charging a miss per
+//     blank closes that just as firmly, because every game you skip spends one
+//     of the three misses you are allowed, and skipping four can never pay.
+//
+//     But the old rule went further and threw the whole week away: 15 from 15
+//     with one box left empty earned nothing, while somebody who picked all 16
+//     and got 14 wrong-ish took the +3. That punished a forgotten game harder
+//     than a bad call, and contradicted the pick-streak rule two screens away,
+//     which deliberately treats "didn't play" as not the same as "got it
+//     wrong". A blank is now worth exactly what a wrong pick is worth here —
+//     never better (so skipping is never a tactic), never worse.
+//
+//     This is the SCORING side only. Accuracy, streaks, head-to-head and the
+//     announcement-board callouts all still skip a game you didn't pick.
 //
 // Regular season only — the playoff rounds are 6, 4, 2 and 1 games, and a
 // "clean sweep" of a one-game round is meaningless.
@@ -131,17 +148,25 @@ export function weekAccuracyBadge(uid, week, allPredictions, results, scoring = 
   if (fixtures.length === 0 || !fixtures.every(f => results[f.id])) return null;
 
   const picks = (allPredictions[uid] || {}).picks || {};
-  let misses = 0;
+  let misses = 0, blanks = 0;
   for (const f of fixtures) {
+    // null (no pick) and "wrong" both cost one miss. The week has already been
+    // confirmed finished above, so a null here can only mean an unpicked game,
+    // never an unscored one.
     const kind = classifyPick(picks[f.id], results[f.id]);
-    if (kind === null) return null;      // an unpicked game disqualifies the week
-    if (kind === "wrong") misses++;
+    if (kind !== "correct") misses++;
+    if (kind === null) blanks++;
     if (misses > 2) return null;         // beyond the lowest tier, stop early
   }
 
   const badge = WEEK_BADGES.find(b => b.misses === misses);
   if (!badge) return null;
-  return { ...badge, week, points: Number(scoring[badge.bonusKey] ?? 0), games: fixtures.length };
+  // `blanks` is carried for the UI only. Without it a 16-game week with one
+  // unpicked game shows "15/15 correct" (blanks are excluded from the accuracy
+  // denominator, deliberately) next to a badge reading "one miss", which looks
+  // like the app contradicting itself. The tooltip uses this to say where the
+  // miss came from.
+  return { ...badge, week, points: Number(scoring[badge.bonusKey] ?? 0), games: fixtures.length, misses, blanks };
 }
 
 // Every accuracy badge a member has earned this season, newest week first.
@@ -406,8 +431,15 @@ export function liveWeekStatus(uid, week, allPredictions, results, scoring = DEF
   const withResults = fixtures.filter(f => results[f.id]);
   if (withResults.length === 0 || withResults.length === fixtures.length) return null; // not started, or done
 
-  // A bonus needs the WHOLE week picked, including games not yet played.
-  if (!fixtures.every(f => pickWinner(picks[f.id]))) return null;
+  // Games still to be played are NOT judged here, picked or not.
+  //
+  // This used to drop you out of the chase the instant the week wasn't fully
+  // picked — including for games that hadn't kicked off and were still open to
+  // pick, so the panel told people they had nothing left to play for while
+  // they were still leading it. Now a blank costs a miss when its game
+  // FINISHES (the loop below counts anything not correct, which includes an
+  // unpicked game), and a game you simply haven't got to yet costs nothing
+  // until it's played. That keeps this an honest "best tier still reachable".
 
   let misses = 0, correct = 0;
   for (const f of withResults) {

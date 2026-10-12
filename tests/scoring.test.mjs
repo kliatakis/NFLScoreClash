@@ -429,11 +429,23 @@ group("Live week status");
     liveWeekStatus("a", 1, g.preds, g.results, SC) === null);
 }
 {
+  // This used to assert the opposite: any unpicked game anywhere in the week
+  // ended the chase outright. That was wrong once a blank became an ordinary
+  // miss — game 16 hasn't kicked off, is still open to pick, and cannot
+  // sensibly count against someone who is 5-from-5 so far.
   const g = scenario({ a: { 1: 0 } });
   for (const f of week(1).slice(5)) delete g.results[f.id];
-  delete g.preds.a.picks[week(1)[15].id];                       // an unpicked game later in the week
-  t("an unpicked game later in the week kills the live status",
-    liveWeekStatus("a", 1, g.preds, g.results, SC) === null);
+  delete g.preds.a.picks[week(1)[15].id];                       // unpicked, and unplayed
+  const live = liveWeekStatus("a", 1, g.preds, g.results, SC);
+  t("an unpicked game LATER in the week doesn't end the chase",
+    live !== null && live.misses === 0 && live.tier.id === "sweep");
+
+  // ...but the moment that game is played, the blank is a miss like any other.
+  const played = { ...g.results, [week(1)[15].id]: { homeScore: 20, awayScore: 17 } };
+  for (const f of week(1).slice(5, 15)) delete played[f.id];
+  const after = liveWeekStatus("a", 1, g.preds, played, SC);
+  t("...and costs a miss as soon as it is",
+    after !== null && after.misses === 1);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -2205,6 +2217,188 @@ group("Shoutout lines");
   }
 }
 
+
+group("Week bonus: an unpicked game is a miss, not a disqualification");
+
+// ── A BLANK IS A MISS FOR SCORING, INVISIBLE TO STATISTICS ────────────────
+//
+// The old rule disqualified the whole week the moment any game was left
+// unpicked: 15 from 15 with one box empty earned nothing, while somebody who
+// picked all 16 and got 14 right took the +3. That sat badly next to the pick
+// streak rule, which goes out of its way to say "didn't play is not the same
+// as got it wrong", and it punished a slip harder than a bad call.
+//
+// Now a blank counts as exactly one miss — no better and no worse than being
+// wrong. That keeps the anti-farming property the full-card rule existed for
+// (skipping the coin-flips can't buy you a sweep, because each skip costs a
+// miss) while making a forgotten game cost one miss instead of the week.
+//
+// The statistics side is deliberately unchanged: accuracy, streaks, the roast
+// pool and head-to-head all still skip a game you didn't pick.
+{
+  const wk = (w) => REGULAR_SEASON_FIXTURES.filter(f => f.week === w);
+  // A week where every home side wins, so "H" is right and "A" is wrong.
+  const scoreWeek = (w, into = {}) => {
+    wk(w).forEach(f => { into[f.id] = { homeScore: 27, awayScore: 13 }; });
+    return into;
+  };
+  // Build one player's week: `wrong` games picked badly, `blank` left empty,
+  // the rest correct.
+  const player = (w, { wrong = 0, blank = 0 } = {}) => {
+    const picks = {};
+    wk(w).forEach((f, i) => {
+      if (i < wrong) picks[f.id] = { winner: "A" };
+      else if (i < wrong + blank) { /* left unpicked on purpose */ }
+      else picks[f.id] = { winner: "H" };
+    });
+    return { u: { picks, specials: {} } };
+  };
+  const badgeOf = (w, shape) => {
+    const results = scoreWeek(w);
+    return weekAccuracyBadge("u", w, player(w, shape), results, DEFAULT_SCORING);
+  };
+  const games = wk(1).length;
+
+  // ── the three tiers, reached with blanks instead of wrong picks ─────────
+  t(`a full card with no misses is still a Clean Sweep`,
+    badgeOf(1, {})?.id === "sweep");
+  t("one unpicked game and everything else right is Near Perfect, not nothing",
+    badgeOf(1, { blank: 1 })?.id === "near");
+  t("...worth the same as being wrong once",
+    badgeOf(1, { blank: 1 })?.points === badgeOf(1, { wrong: 1 })?.points);
+  // The UI needs to be able to explain where a miss came from, because the
+  // accuracy column deliberately doesn't show the blank.
+  t("the badge reports how many of the misses were unpicked games",
+    badgeOf(1, { blank: 1 })?.blanks === 1 && badgeOf(1, { blank: 1 })?.misses === 1);
+  t("...and reports none when every miss was a real wrong call",
+    badgeOf(1, { wrong: 2 })?.blanks === 0 && badgeOf(1, { wrong: 2 })?.misses === 2);
+
+  t("two unpicked is a Sharp Week",
+    badgeOf(1, { blank: 2 })?.id === "sharp");
+  t("one wrong plus one unpicked is also a Sharp Week",
+    badgeOf(1, { wrong: 1, blank: 1 })?.id === "sharp");
+  t("three unpicked earns nothing",
+    badgeOf(1, { blank: 3 }) === null);
+  t("...and so does any other three-miss mix",
+    badgeOf(1, { wrong: 2, blank: 1 }) === null
+    && badgeOf(1, { wrong: 1, blank: 2 }) === null);
+
+  // ── skipping the hard games must not be a strategy ─────────────────────
+  //
+  // This is the property the old full-card rule was protecting, and the whole
+  // reason a blank has to cost a miss rather than be ignored. Picking only the
+  // three games you're sure of must not buy a sweep.
+  t("picking three games and leaving the rest blank claims nothing",
+    badgeOf(1, { blank: games - 3 }) === null);
+  t("a blank is never better than a guess that went wrong",
+    (badgeOf(1, { blank: 1 })?.points ?? 0) <= (badgeOf(1, { wrong: 1 })?.points ?? 0));
+
+  // ── the whole week still has to be FINISHED ────────────────────────────
+  {
+    const partial = {};
+    wk(1).slice(0, -1).forEach(f => { partial[f.id] = { homeScore: 27, awayScore: 13 }; });
+    t("nothing is awarded until the last game of the week is scored",
+      weekAccuracyBadge("u", 1, player(1, {}), partial, DEFAULT_SCORING) === null);
+  }
+
+  // ── the statistics side is untouched ───────────────────────────────────
+  {
+    const results = scoreWeek(1);
+    const preds = player(1, { blank: 1 });
+    const league = { id: "L", members: ["u"] };
+    const users = { u: { username: "U" } };
+    const row = calcStandings(league, users, preds, results, {}, DEFAULT_SCORING)[0];
+
+    t("an unpicked game stays out of the Correct column's denominator",
+      row.gamesScored === games - 1 && row.correct === games - 1);
+    t("...so accuracy is unharmed by the blank", row.correct === row.gamesScored);
+    t("...while the bonus it now earns is in the points",
+      row.bonusPoints === DEFAULT_SCORING.nearPerfectBonus);
+
+    // Streaks: still skipped, not broken.
+    const streak = pickStreaks("u", preds, results);
+    t("a blank does not break a pick streak", streak.current === games - 1);
+
+    // The roast pool / highlights: a game you didn't pick can't make you the
+    // clown or the hero.
+    const wide = { id: "L", members: ["u", "v", "w", "x", "y"] };
+    const allUsers = { u: { username: "U" }, v: { username: "V" }, w: { username: "W" }, x: { username: "X" }, y: { username: "Y" } };
+    const allPreds = { ...preds };
+    ["v", "w", "x", "y"].forEach(uid => { allPreds[uid] = player(1, {}).u; });
+    const blankFixture = wk(1)[0];
+    const blankPreds = { ...allPreds, u: player(1, { blank: 1 }).u };
+    const hl = computeHighlights(wide, allUsers, blankPreds, results, 1, DEFAULT_SCORING);
+    // Narrow deliberately: U DOES now appear under `sweeps`, because the blank
+    // earns a bonus — that's the point of the change. What must not happen is U
+    // being named as a hero or a clown on the game they never picked.
+    const namedInGameCallouts = [...(hl?.upsets || []), ...(hl?.clowns || [])]
+      .filter(c => c.fixture?.id === blankFixture.id)
+      .some(c => (c.users || []).includes("U"));
+    t("the player who left a game blank is not named in that game's callouts",
+      blankPreds.u.picks[blankFixture.id] === undefined && !namedInGameCallouts);
+    t("...but does appear as a bonus earner, which is the whole point",
+      (hl?.sweeps || []).some(g => g.badge.id === "near" && (g.users || []).includes("U")));
+  }
+
+  // ── the live "still alive" tracker follows the same rule ───────────────
+  //
+  // It used to drop you from the chase entirely the moment the week wasn't
+  // fully picked — including for games that hadn't kicked off yet and were
+  // still open to pick. Under the new rule that is simply wrong: a blank on a
+  // FINISHED game is a miss like any other, and a game you haven't picked yet
+  // is not a miss at all until it's played.
+  {
+    const w = 1;
+    const fixtures = wk(w);
+    const half = {};
+    fixtures.slice(0, 8).forEach(f => { half[f.id] = { homeScore: 27, awayScore: 13 }; });
+
+    // Picked and called the first eight; the rest of the week is still blank
+    // and still open.
+    const onlyPlayed = { picks: {}, specials: {} };
+    fixtures.slice(0, 8).forEach(f => { onlyPlayed.picks[f.id] = { winner: "H" }; });
+    const alive = liveWeekStatus("u", w, { u: onlyPlayed }, half, DEFAULT_SCORING);
+    t("a perfect start keeps you in the chase even with later games unpicked",
+      alive !== null && alive.misses === 0 && alive.tier.id === "sweep");
+
+    // A blank on a game that HAS finished is a miss.
+    const missedOne = { picks: {}, specials: {} };
+    fixtures.slice(1, 8).forEach(f => { missedOne.picks[f.id] = { winner: "H" }; });
+    const dented = liveWeekStatus("u", w, { u: missedOne }, half, DEFAULT_SCORING);
+    t("a blank on a game already played counts against the chase",
+      dented !== null && dented.misses === 1 && dented.tier.id === "near");
+
+    // Three finished blanks and the chase is over.
+    const missedThree = { picks: {}, specials: {} };
+    fixtures.slice(3, 8).forEach(f => { missedThree.picks[f.id] = { winner: "H" }; });
+    t("three blanks on finished games ends the chase",
+      liveWeekStatus("u", w, { u: missedThree }, half, DEFAULT_SCORING) === null);
+  }
+}
+
+// The reveal lists on the Predictions tab ("Show Everyone's Picks") are sorted
+// by league position, which only works if the standings contain EVERY member —
+// anyone missing would be ranked undefined and silently sort to one end.
+{
+  const members = [...Array(53)].map((_, i) => `u${i}`);
+  const users = {}, preds = {};
+  members.forEach(uid => { users[uid] = { username: uid }; preds[uid] = { picks: {}, specials: {} }; });
+  const league = { id: "L", members };
+
+  // Nobody has picked anything and nothing has been scored — the emptiest case,
+  // which is also the one most likely to drop people.
+  const empty = calcStandings(league, users, preds, {}, {}, SC);
+  t("every member appears in the standings even with no picks and no results",
+    empty.length === members.length && members.every(uid => empty.some(r => r.uid === uid)));
+  t("...and every one of them gets a distinct position",
+    new Set(empty.map((_, i) => i + 1)).size === members.length);
+
+  // A member with no user record at all (deleted account) still has to appear,
+  // or the reveal list would be missing a row rather than showing "Unknown".
+  const orphaned = calcStandings({ id: "L", members: [...members, "ghost"] }, users, preds, {}, {}, SC);
+  t("a member with no user document is still ranked",
+    orphaned.length === members.length + 1 && orphaned.some(r => r.uid === "ghost"));
+}
 
 group("Movement arrows: game-week rotation");
 
