@@ -1,4 +1,4 @@
-import { useEffect, useMemo, Fragment } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 import { calcStandingsWithMovement, getScoringSettings, explainTiebreak, hasCompletedWeek, weeklyWinTally, describeBonuses } from "../lib/scoring.js";
 import { weekLabel } from "../data/fixtures.js";
 import { useFlipRows } from "../lib/hooks.js";
@@ -41,7 +41,21 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
   const podiumReady = useMemo(() => hasCompletedWeek(results), [results]);
 
   // Slide rows into place when the order changes, rather than teleporting.
-  const rowsRef = useFlipRows(standings.map(s => s.uid).join(","));
+  // Which row has its ⓘ detail open, as "uid:kind". One at a time: two open
+  // panels on a phone push the table around more than they explain.
+  const [openInfo, setOpenInfo] = useState(null);
+  const toggleInfo = (key) => setOpenInfo(cur => (cur === key ? null : key));
+
+  // The open panel is part of the flip dependency, which it HAS to be.
+  //
+  // useFlipRows caches each row's offsetTop and re-measures only when this
+  // string changes. Opening a panel moves every row below it without changing
+  // the standings order, so without this the cache would still hold the
+  // pre-open positions — and the next genuine reorder would animate rows from
+  // a start point that no longer existed, which looks like the table glitching.
+  // Including it here means positions are re-measured on open and close, and
+  // the rows below slide into place instead of jumping.
+  const rowsRef = useFlipRows(standings.map(s => s.uid).join(",") + "|" + (openInfo || ""));
 
   // A badge for every week you topped. Shown inline so the table says who's
   // been consistently sharp, not just who's accumulated the most.
@@ -120,7 +134,18 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
                       );
                     })()}
                     {tieInfo && (
-                      <span className="tiebreak-info" title={tieInfo}>ⓘ</span>
+                      // A button, not a span: `title` alone is a hover
+                      // tooltip, and a phone has no hover — so on mobile this
+                      // was an icon that looked tappable and did nothing.
+                      // Hover still shows the tooltip on desktop.
+                      <button
+                        type="button"
+                        className="tiebreak-info info-toggle"
+                        title={tieInfo}
+                        aria-label={`Why ${entry.username} is ranked here`}
+                        aria-expanded={openInfo === `${entry.uid}:tie`}
+                        onClick={() => toggleInfo(`${entry.uid}:tie`)}
+                      >ⓘ</button>
                     )}
                   </span>
                   {/* Phones have no room for two extra numeric columns AND a
@@ -154,13 +179,28 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
                 {entry.totalBonus > 0 ? (
                   <>
                     +{entry.totalBonus}
-                    <span className="tiebreak-info bonus-info" title={bonusLines.join("\n")}>ⓘ</span>
+                    <button
+                      type="button"
+                      className="tiebreak-info bonus-info info-toggle"
+                      title={bonusLines.join("\n")}
+                      aria-label={`How ${entry.username} earned ${entry.totalBonus} bonus points`}
+                      aria-expanded={openInfo === `${entry.uid}:bonus`}
+                      onClick={() => toggleInfo(`${entry.uid}:bonus`)}
+                    >ⓘ</button>
                   </>
                 ) : "–"}
               </span>
               <span className="standings-pts standings-col-pts">{entry.points}</span>
               <span className="standings-col-move"><MovementArrows movement={movementByUid[entry.uid]} /></span>
             </div>
+            {openInfo === `${entry.uid}:tie` && (
+              <div className="standings-info">{tieInfo}</div>
+            )}
+            {openInfo === `${entry.uid}:bonus` && (
+              <div className="standings-info">
+                {bonusLines.map((line, n) => <div key={n}>{line}</div>)}
+              </div>
+            )}
           </Fragment>
         );
       })}
@@ -199,7 +239,7 @@ export default function StandingsCard({ league, user, allUsers, allPredictions, 
             whole week to qualify.
           </li>
           <li>
-            Ties on Total Points are broken in this order — look for the <span className="tiebreak-info" style={{ position: "static" }}>ⓘ</span> next
+            Ties on Total Points are broken in this order — look for the <span className="tiebreak-info" style={{ position: "static" }} aria-hidden="true">ⓘ</span> next
             to a name for the exact reason:
             <div className="tiebreak-steps">
               <span className="tiebreak-step"><span className="tiebreak-step-num">1</span>Super Bowl pick</span>

@@ -870,6 +870,32 @@ export const css = (dark = true) => `
      spacing and a gold tint to read as "there's more detail here". */
   .bonus-info { margin-left: 5px; width: 14px; height: 14px; font-size: 10px; color: var(--gold); vertical-align: middle; }
 
+  /* The icon is a real button so it works on touch, where a title tooltip
+     cannot. These reset the button chrome back to the span it used to be, so
+     nothing about the look changes on desktop. */
+  .tiebreak-info.info-toggle {
+    border: 0; padding: 0; margin: 0; font: inherit; line-height: 1;
+    cursor: pointer; -webkit-appearance: none; appearance: none;
+  }
+  .tiebreak-info.info-toggle:hover { background: var(--border2); }
+  .tiebreak-info.info-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* The panel the icon opens. Sits under its row, full width, and is the only
+     way any of this detail is reachable on a phone. */
+  .standings-info {
+    margin: -2px 0 6px; padding: 9px 12px; border-radius: 9px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    font-size: 12.5px; line-height: 1.55; color: var(--muted);
+    white-space: pre-line;
+    animation: standings-info-in 0.18s ease-out;
+  }
+  .standings-info div + div { margin-top: 3px; }
+  @keyframes standings-info-in {
+    from { opacity: 0; transform: translateY(-3px); }
+    to   { opacity: 1; transform: none; }
+  }
+
   /* SEASON PICKS — a made pick should be obvious at a glance, since these are
      set once in August and then not looked at for months. Green edge on the
      row, green border on the select, and a confirmation chip. */
